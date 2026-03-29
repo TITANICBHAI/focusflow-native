@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Accessibility service configuration for AppBlockerAccessibilityService.
+  This file is referenced from AndroidManifest.xml via:
+    android:resource="@xml/accessibility_service_config"
+
+  canRetrieveWindowContent: lets us read window package names.
+  notificationTimeout: ms between repeated events (100ms = responsive but not spammy).
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="100"
+    android:settingsActivity="" />

@@ -1,0 +1,83 @@
+<!--
+  AndroidManifest.xml additions for FocusDay native modules.
+
+  HOW TO APPLY:
+  After running `npx expo prebuild`, open:
+    android/app/src/main/AndroidManifest.xml
+
+  1. Inside <manifest> (top level), add these permissions if not already present:
+  ═══════════════════════════════════════════════════════════════════════════════
+
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
+        tools:ignore="ProtectedPermissions" />
+
+  2. Inside <application> (add alongside existing <activity> entries):
+  ═══════════════════════════════════════════════════════════════════════════════
+
+    <!-- Foreground countdown service -->
+    <service
+        android:name="com.tbtechs.focusday.services.ForegroundTaskService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="productivity" />
+    </service>
+
+    <!-- Accessibility service for app blocking (more reliable than UsageStats) -->
+    <service
+        android:name="com.tbtechs.focusday.services.AppBlockerAccessibilityService"
+        android:enabled="true"
+        android:exported="true"
+        android:label="FocusDay Focus Mode"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+        <intent-filter>
+            <action android:name="android.accessibilityservice.AccessibilityService" />
+        </intent-filter>
+        <meta-data
+            android:name="android.accessibilityservice"
+            android:resource="@xml/accessibility_service_config" />
+    </service>
+
+    <!-- Boot receiver: restarts the foreground service after device reboot -->
+    <receiver
+        android:name="com.tbtechs.focusday.services.BootReceiver"
+        android:enabled="true"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.BOOT_COMPLETED" />
+            <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+        </intent-filter>
+    </receiver>
+
+  3. Add the accessibility description string.
+     Open (or create): android/app/src/main/res/values/strings.xml
+     Add inside <resources>:
+
+    <string name="accessibility_service_description">
+        FocusDay uses Accessibility to detect and block distracting apps during your scheduled focus sessions.
+        No personal data, messages, or browsing history are read or stored.
+    </string>
+
+  4. Register FocusDayPackage in MainApplication.kt
+     Open: android/app/src/main/java/com/tbtechs/focusday/MainApplication.kt
+     Add the import at the top:
+
+    import com.tbtechs.focusday.modules.FocusDayPackage
+
+     Then inside getPackages():
+
+    override fun getPackages(): List<ReactPackage> {
+        val packages = PackageList(this).packages
+        packages.add(FocusDayPackage())   // ← add this line
+        return packages
+    }
+-->
