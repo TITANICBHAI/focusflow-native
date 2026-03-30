@@ -49,8 +49,14 @@ export default function FocusScreen() {
     };
     void checkPermission();
 
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void checkPermission();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') {
+        // Check immediately then retry — Samsung One UI may not have flushed
+        // the updated permission state by the time the app regains focus.
+        void checkPermission();
+        const t = setTimeout(() => void checkPermission(), 800);
+        return () => clearTimeout(t);
+      }
     });
     return () => sub.remove();
   }, []);

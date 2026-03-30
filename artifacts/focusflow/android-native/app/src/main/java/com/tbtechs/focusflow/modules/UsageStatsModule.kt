@@ -69,7 +69,12 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Returns whether the PACKAGE_USAGE_STATS permission has been granted.
+     * Returns whether the PACKAGE_USAGE_STATS (Usage Access) permission has been granted.
+     *
+     * Primary check: AppOpsManager.checkOpNoThrow — the standard API.
+     * Secondary check: try a live query via UsageStatsManager; if we get results back, the
+     * permission is actually granted even if AppOps reports an ambiguous mode (seen on some
+     * Samsung One UI builds that return MODE_DEFAULT for granted usage-access permissions).
      */
     @ReactMethod
     fun hasPermission(promise: Promise) {
@@ -80,7 +85,20 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
                 Process.myUid(),
                 reactContext.packageName
             )
-            promise.resolve(mode == AppOpsManager.MODE_ALLOWED)
+            if (mode == AppOpsManager.MODE_ALLOWED) {
+                promise.resolve(true)
+                return
+            }
+            // MODE_DEFAULT is returned on some Samsung One UI builds when the permission
+            // has actually been granted. Verify by attempting a live usage-stats query.
+            if (mode == AppOpsManager.MODE_DEFAULT) {
+                val usm = reactContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+                val now = System.currentTimeMillis()
+                val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60_000, now)
+                promise.resolve(!stats.isNullOrEmpty())
+                return
+            }
+            promise.resolve(false)
         } catch (e: Exception) {
             promise.resolve(false)
         }
@@ -206,6 +224,55 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
                 promise.resolve(false)
             }
         }
+    }
+
+    /**
+     * Opens the battery optimization exemption dialog directly for this app.
+     *
+     * ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS requires a "package:<name>" data URI —
+     * it cannot be opened correctly via Linking.sendIntent() extras from JS.
+     *
+     * Samsung One UI 5+ blocks this action entirely (treats it as a security risk).
+     * Fallback chain: full battery optimization list → general battery settings.
+     */
+    @ReactMethod
+    fun openBatteryOptimizationSettings(promise: Promise) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            promise.resolve(null)
+            return
+        }
+        val activity = reactContext.currentActivity
+        val launch = { intent: Intent ->
+            try {
+                if (activity != null && !activity.isFinishing) {
+                    activity.startActivity(intent)
+                } else {
+                    reactContext.startActivity(intent.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
+                }
+                true
+            } catch (_: Exception) { false }
+        }
+
+        // Best: opens a direct "Ignore optimizations?" dialog for FocusFlow
+        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${reactContext.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        if (launch(direct)) { promise.resolve(null); return }
+
+        // Samsung One UI blocks ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS —
+        // fall back to the full battery optimization list.
+        val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        if (launch(list)) { promise.resolve(null); return }
+
+        // Last resort
+        val settings = Intent(Settings.ACTION_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        launch(settings)
+        promise.resolve(null)
     }
 
     /**

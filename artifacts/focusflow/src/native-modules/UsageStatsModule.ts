@@ -5,7 +5,7 @@
  * User must manually grant in: Settings → Apps → Special app access → Usage access
  *
  * ─── Kotlin Implementation ────────────────────────────────────────────────────
- * File: android-native/app/src/main/java/com/tbtechs/focusday/modules/UsageStatsModule.kt
+ * File: android-native/app/src/main/java/com/tbtechs/focusflow/modules/UsageStatsModule.kt
  *
  * Exposes these methods to JS:
  *   - getForegroundApp(): String? — returns package name of foreground app
@@ -13,6 +13,9 @@
  *   - openUsageAccessSettings()  — opens the Usage Access settings page
  *   - hasAccessibilityPermission(): Boolean — checks if our AccessibilityService is enabled
  *   - isIgnoringBatteryOptimizations(): Boolean — checks battery optimization exemption
+ *   - openBatteryOptimizationSettings() — opens battery exemption dialog (needs package: URI, must be done in Kotlin)
+ *   - isDeviceAdminActive(): Boolean — checks if Device Admin receiver is active
+ *   - openDeviceAdminSettings() — opens Device Admin activation dialog
  */
 
 import { TurboModuleRegistry, TurboModule } from 'react-native';
@@ -23,6 +26,7 @@ interface UsageStatsSpec extends TurboModule {
   openUsageAccessSettings(): Promise<void>;
   hasAccessibilityPermission(): Promise<boolean>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
+  openBatteryOptimizationSettings(): Promise<void>;
   isDeviceAdminActive(): Promise<boolean>;
   openDeviceAdminSettings(): Promise<void>;
 }
@@ -77,6 +81,20 @@ export const UsageStatsModule = {
       return false;
     }
     return UsageStats.isIgnoringBatteryOptimizations();
+  },
+
+  /**
+   * Opens the battery optimization exemption dialog directly for this app.
+   * Must be done in Kotlin because ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+   * requires a "package:<name>" data URI that cannot be set via Linking.sendIntent().
+   * Samsung One UI may block the direct dialog and will fall back to the list screen.
+   */
+  async openBatteryOptimizationSettings(): Promise<void> {
+    if (!UsageStats) {
+      console.error('[UsageStatsModule] Native module "UsageStats" not found. Ensure FocusDayPackage is registered and an EAS build was used.');
+      return;
+    }
+    return UsageStats.openBatteryOptimizationSettings();
   },
 
   /**

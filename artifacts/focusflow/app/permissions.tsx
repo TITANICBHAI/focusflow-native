@@ -86,18 +86,12 @@ const PERMISSIONS: PermissionItem[] = [
       }
     },
     open: () => {
-      if (Platform.OS === 'android') {
-        Linking.sendIntent(
-          'android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
-          [{ key: 'android.provider.extra.APP_PACKAGE', value: 'com.tbtechs.focusflow' }]
-        ).catch(() =>
-          Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS').catch(
-            () => Linking.openSettings()
-          )
-        );
-      } else {
-        Linking.openSettings();
-      }
+      // Must go through Kotlin: ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS needs a
+      // "package:<name>" data URI which Linking.sendIntent() cannot set from JS.
+      // The Kotlin method also has the Samsung One UI fallback chain built in.
+      UsageStatsModule.openBatteryOptimizationSettings().catch(() =>
+        Linking.openSettings()
+      );
     },
   },
   {
