@@ -55,7 +55,7 @@ class BootReceiver : BroadcastReceiver() {
                 prefs.edit().putBoolean("focus_active", false).apply()
             }
             val idleIntent = Intent(context, ForegroundTaskService::class.java).apply {
-                action = ForegroundTaskService.ACTION_SET_IDLE
+                this.action = ForegroundTaskService.ACTION_SET_IDLE
             }
             startService(context, idleIntent)
         }
