@@ -11,6 +11,19 @@ const config = getDefaultConfig(projectRoot);
 // Watch all files within the monorepo root so Metro can find shared packages
 config.watchFolders = [workspaceRoot];
 
+// Exclude .local/ (Replit agent temp dirs) and any .old-deployment-* directories
+// from Metro's file-watching scope to prevent ENOENT crashes when those dirs
+// are created/removed mid-scan during Replit task operations.
+// Preserve any existing defaults (e.g. .expo/types, __tests__) set by getDefaultConfig.
+const existingBlockList = config.resolver.blockList
+  ? Array.from(config.resolver.blockList)
+  : [];
+config.resolver.blockList = [
+  ...existingBlockList,
+  /[/\\]\.local[/\\].*/,
+  /[/\\]\.old-deployment-[^/\\]+[/\\].*/,
+];
+
 // Tell Metro where to find packages — app-level first, then workspace root
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
