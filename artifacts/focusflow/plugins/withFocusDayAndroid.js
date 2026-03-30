@@ -208,6 +208,17 @@ function withFocusDayManifest(config) {
       });
     }
 
+    // ── <queries> block for Android 11+ package visibility ────────────────────
+    // Without this, PackageManager.getInstalledPackages() returns an empty list
+    // on API 30+ for user-installed apps (package visibility restrictions).
+    if (!manifest.manifest['queries']) {
+      manifest.manifest['queries'] = [{
+        'intent': [{
+          'action': [{ $: { 'android:name': 'android.intent.action.MAIN' } }],
+        }],
+      }];
+    }
+
     return cfg;
   });
 }
@@ -255,18 +266,44 @@ function withFocusDayKotlin(config) {
       if (fs.existsSync(mainAppPath)) {
         let src = fs.readFileSync(mainAppPath, 'utf8');
 
-        if (!src.includes('FocusDayPackage')) {
-          src = src.replace(
-            'import com.facebook.react.ReactApplication',
-            'import com.facebook.react.ReactApplication\nimport com.tbtechs.focusflow.modules.FocusDayPackage'
-          );
+        // Check specifically for add(FocusDayPackage()) to detect only successful
+        // registration, not just the presence of the class import or class name.
+        const alreadyRegistered = /add\(\s*FocusDayPackage\s*\(\s*\)\s*\)/.test(src);
 
-          src = src.replace(
-            /val packages = PackageList\(this\)\.packages/,
-            `val packages = PackageList(this).packages\n        packages.add(FocusDayPackage())`
-          );
+        if (!alreadyRegistered) {
+          // ── Inject import if not already present ─────────────────────────
+          if (!src.includes('com.tbtechs.focusflow.modules.FocusDayPackage')) {
+            src = src.replace(
+              'import com.facebook.react.ReactApplication',
+              'import com.facebook.react.ReactApplication\nimport com.tbtechs.focusflow.modules.FocusDayPackage'
+            );
+          }
+
+          // ── Strategy A: RN 0.76+ / Expo SDK 52+ expression-body format ──
+          // Matches:  PackageList(this).packages.apply {
+          // Injects:  add(FocusDayPackage()) as first line inside apply block
+          const modernRegex = /(PackageList\(this\)\.packages\.apply\s*\{)/;
+          if (modernRegex.test(src)) {
+            src = src.replace(modernRegex, '$1\n              add(FocusDayPackage())');
+            console.log('[withFocusDayAndroid] Patched MainApplication.kt (modern expression-body format).');
+          } else {
+            // ── Strategy B: Old block-body format (RN < 0.76) ─────────────
+            // Matches:  val packages = PackageList(this).packages
+            const legacyRegex = /(val packages = PackageList\(this\)\.packages)/;
+            if (legacyRegex.test(src)) {
+              src = src.replace(
+                legacyRegex,
+                `$1\n        packages.add(FocusDayPackage())`
+              );
+              console.log('[withFocusDayAndroid] Patched MainApplication.kt (legacy block-body format).');
+            } else {
+              console.warn('[withFocusDayAndroid] WARNING: Could not find a known getPackages() pattern in MainApplication.kt. FocusDayPackage was NOT registered. Check the generated file manually.');
+            }
+          }
 
           fs.writeFileSync(mainAppPath, src, 'utf8');
+        } else {
+          console.log('[withFocusDayAndroid] MainApplication.kt already registers FocusDayPackage — skipping patch.');
         }
       }
 

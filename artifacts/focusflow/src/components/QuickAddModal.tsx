@@ -206,7 +206,7 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
 
                 {/* Duration */}
                 <Field label={`Duration: ${isCustomDuration ? (parseInt(customDurationText, 10) > 0 ? formatDuration(parseInt(customDurationText, 10)) : 'Custom') : formatDuration(duration)}`}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                  <View style={styles.durationRow}>
                     {DURATION_OPTIONS.map((d) => (
                       <TouchableOpacity
                         key={d}
@@ -226,7 +226,7 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
                         Custom
                       </Text>
                     </TouchableOpacity>
-                  </ScrollView>
+                  </View>
                   {isCustomDuration && (
                     <View style={styles.customDurationRow}>
                       <TextInput
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   multiline: { height: 80, textAlignVertical: 'top', paddingTop: SPACING.sm },
   timePickerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   timePickerText: { fontSize: FONT.md, color: COLORS.text },
-  chipScroll: { flexGrow: 0 },
+  durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
   chip: {
     paddingHorizontal: SPACING.md,

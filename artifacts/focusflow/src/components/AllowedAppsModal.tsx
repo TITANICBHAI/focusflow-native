@@ -26,7 +26,7 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set(allowedPackages));
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loadingApps, setLoadingApps] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [manualPackages, setManualPackages] = useState<string[]>([]);
 
@@ -35,29 +35,38 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
     setSelected(new Set(allowedPackages));
     setSearch('');
     setManualInput('');
-    setManualPackages([]);
+
+    // Derive manual packages from existing allowed list before apps load
+    const existingManual = allowedPackages.filter(
+      (pkg) => !apps.some((a) => a.packageName === pkg)
+    );
+    setManualPackages(existingManual);
+
+    // Load apps asynchronously — modal is already visible immediately
     void loadApps();
   }, [visible]);
 
   const loadApps = async () => {
-    setLoading(true);
+    setLoadingApps(true);
     try {
       const result = await InstalledAppsModule.getInstalledApps();
       const sorted = result.slice().sort((a, b) =>
         a.appName.toLowerCase().localeCompare(b.appName.toLowerCase())
       );
       setApps(sorted);
-      // Derive manual packages: entries in allowedPackages not found in installed apps
-      const installedPkgs = new Set(sorted.map((a) => a.packageName));
-      const manual = allowedPackages.filter((pkg) => !installedPkgs.has(pkg));
-      setManualPackages(manual);
+      // Re-derive manual packages now that we have the installed list
+      setManualPackages((prev) => {
+        const installedPkgs = new Set(sorted.map((a) => a.packageName));
+        const fromCurrent = allowedPackages.filter((pkg) => !installedPkgs.has(pkg));
+        const union = new Set([...prev, ...fromCurrent]);
+        return Array.from(union);
+      });
     } catch (e) {
       console.warn('[AllowedAppsModal] Failed to load apps', e);
       setApps([]);
-      // If loading failed, treat all allowedPackages as manual entries
       setManualPackages([...allowedPackages]);
     } finally {
-      setLoading(false);
+      setLoadingApps(false);
     }
   };
 
@@ -158,60 +167,20 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
           </TouchableOpacity>
         </View>
 
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search apps…"
-            placeholderTextColor={COLORS.muted}
-            value={search}
-            onChangeText={setSearch}
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-          />
-        </View>
-
-        <Text style={styles.hint}>
-          {selected.size} app{selected.size !== 1 ? 's' : ''} allowed — these won't be blocked during Focus Mode
-        </Text>
-
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading installed apps…</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.packageName}
-            renderItem={renderItem}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            contentContainerStyle={styles.list}
-            keyboardShouldPersistTaps="handled"
-            ListHeaderComponent={
-              manualPackages.length > 0 ? (
-                <View style={styles.manualSection}>
-                  <Text style={styles.manualSectionLabel}>MANUALLY ADDED</Text>
-                  {manualPackages.map(renderManualPackage)}
-                  <View style={styles.separator} />
-                </View>
-              ) : null
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  {search ? 'No apps match your search.' : 'No user-installed apps found.'}
-                </Text>
-                <Text style={styles.emptyHint}>
-                  Use the field below to add apps by package name.
-                </Text>
-              </View>
-            }
-            ListFooterComponent={
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.packageName}
+          renderItem={renderItem}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <>
+              {/* Manual entry — always at the top as primary option */}
               <View style={styles.manualSection}>
                 <Text style={styles.manualSectionLabel}>ADD BY PACKAGE NAME</Text>
                 <Text style={styles.manualHint}>
-                  e.g. com.whatsapp, com.spotify
+                  Enter app name or package, e.g. com.instagram.android
                 </Text>
                 <View style={styles.manualInputRow}>
                   <TextInput
@@ -234,9 +203,54 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
                   </TouchableOpacity>
                 </View>
               </View>
-            }
-          />
-        )}
+
+              {/* Manually added packages */}
+              {manualPackages.length > 0 && (
+                <View style={styles.manualSection}>
+                  <Text style={styles.manualSectionLabel}>MANUALLY ADDED</Text>
+                  {manualPackages.map(renderManualPackage)}
+                </View>
+              )}
+
+              {/* Search bar and status for auto-detected list */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search installed apps…"
+                  placeholderTextColor={COLORS.muted}
+                  value={search}
+                  onChangeText={setSearch}
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                />
+              </View>
+
+              <Text style={styles.hint}>
+                {selected.size} app{selected.size !== 1 ? 's' : ''} allowed — these won't be blocked during Focus Mode
+              </Text>
+
+              {loadingApps && (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.loadingText}>Loading installed apps…</Text>
+                </View>
+              )}
+            </>
+          }
+          ListEmptyComponent={
+            !loadingApps ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>
+                  {search ? 'No apps match your search.' : 'No user-installed apps found.'}
+                </Text>
+                <Text style={styles.emptyHint}>
+                  Use the field above to add apps by package name.
+                </Text>
+              </View>
+            ) : null
+          }
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -275,12 +289,62 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     textAlign: 'right',
   },
+  list: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.xl,
+  },
+  manualSection: {
+    marginTop: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  manualSectionLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 0.8,
+    marginBottom: SPACING.xs,
+  },
+  manualHint: {
+    fontSize: FONT.xs,
+    color: COLORS.muted,
+  },
+  manualInputRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'center',
+  },
+  manualInput: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary + '66',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontSize: FONT.md,
+    color: COLORS.text,
+  },
+  addBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBtnDisabled: {
+    backgroundColor: COLORS.primaryLight,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FONT.sm,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.card,
-    marginHorizontal: SPACING.lg,
-    marginVertical: SPACING.sm,
+    marginTop: SPACING.lg,
     borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
@@ -298,12 +362,18 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: FONT.xs,
     color: COLORS.muted,
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.sm,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xs,
   },
-  list: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.xl,
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  loadingText: {
+    fontSize: FONT.sm,
+    color: COLORS.muted,
   },
   row: {
     flexDirection: 'row',
@@ -357,16 +427,6 @@ const styles = StyleSheet.create({
   separator: {
     height: SPACING.xs,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.md,
-  },
-  loadingText: {
-    fontSize: FONT.sm,
-    color: COLORS.muted,
-  },
   emptyContainer: {
     paddingTop: SPACING.xxl,
     alignItems: 'center',
@@ -381,52 +441,5 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: 'center',
     paddingHorizontal: SPACING.lg,
-  },
-  manualSection: {
-    marginTop: SPACING.lg,
-    gap: SPACING.sm,
-  },
-  manualSectionLabel: {
-    fontSize: FONT.xs,
-    fontWeight: '700',
-    color: COLORS.muted,
-    letterSpacing: 0.8,
-    marginBottom: SPACING.xs,
-  },
-  manualHint: {
-    fontSize: FONT.xs,
-    color: COLORS.muted,
-  },
-  manualInputRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    alignItems: 'center',
-  },
-  manualInput: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: COLORS.border,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    fontSize: FONT.md,
-    color: COLORS.text,
-  },
-  addBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnDisabled: {
-    backgroundColor: COLORS.primaryLight,
-  },
-  addBtnText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: FONT.sm,
   },
 });

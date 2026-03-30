@@ -34,8 +34,8 @@ interface Props {
  * Independent of any task — the block persists until the expiry, regardless
  * of whether a task focus session is running or not.
  *
- * When a standalone block and a task-based block are both active, both are
- * enforced simultaneously (union of blocked app lists).
+ * Renders immediately with a manual entry field at the top.
+ * The auto-detected installed apps list loads asynchronously in the background.
  */
 export function StandaloneBlockModal({
   visible,
@@ -47,10 +47,11 @@ export function StandaloneBlockModal({
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set(blockedPackages));
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loadingApps, setLoadingApps] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [manualPackages, setManualPackages] = useState<string[]>([]);
 
-  // Date/time state — default to tomorrow at the current time if nothing is set
   const defaultUntil = blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate();
   const [untilDate, setUntilDate] = useState<Date>(defaultUntil);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -60,22 +61,38 @@ export function StandaloneBlockModal({
     if (!visible) return;
     setSelected(new Set(blockedPackages));
     setSearch('');
+    setManualInput('');
     setUntilDate(blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate());
+
+    // Derive manual packages from existing blocked list before apps load
+    const existingManual = blockedPackages.filter(
+      (pkg) => !apps.some((a) => a.packageName === pkg)
+    );
+    setManualPackages(existingManual);
+
+    // Load apps asynchronously — modal is already visible
     void loadApps();
   }, [visible]);
 
   const loadApps = async () => {
-    setLoading(true);
+    setLoadingApps(true);
     try {
       const result = await InstalledAppsModule.getInstalledApps();
       const sorted = result.slice().sort((a, b) =>
         a.appName.toLowerCase().localeCompare(b.appName.toLowerCase())
       );
       setApps(sorted);
+      // Re-derive manual packages now that we have the installed list
+      setManualPackages((prev) => {
+        const installedPkgs = new Set(sorted.map((a) => a.packageName));
+        const fromCurrent = Array.from(selected).filter((pkg) => !installedPkgs.has(pkg));
+        const union = new Set([...prev, ...fromCurrent]);
+        return Array.from(union);
+      });
     } catch (e) {
       console.warn('[StandaloneBlockModal] Failed to load apps', e);
     } finally {
-      setLoading(false);
+      setLoadingApps(false);
     }
   };
 
@@ -99,6 +116,16 @@ export function StandaloneBlockModal({
       }
       return next;
     });
+  };
+
+  const handleAddManual = () => {
+    const pkg = manualInput.trim().toLowerCase();
+    if (!pkg || !pkg.includes('.')) return;
+    if (!manualPackages.includes(pkg)) {
+      setManualPackages((prev) => [...prev, pkg]);
+    }
+    setSelected((prev) => new Set([...prev, pkg]));
+    setManualInput('');
   };
 
   const handleSave = async () => {
@@ -154,7 +181,6 @@ export function StandaloneBlockModal({
   const onDateChange = (_: DateTimePickerEvent, date?: Date) => {
     setShowDatePicker(false);
     if (date) {
-      // Keep the current time, just update the date part
       const merged = dayjs(date)
         .hour(untilDate.getHours())
         .minute(untilDate.getMinutes())
@@ -167,7 +193,6 @@ export function StandaloneBlockModal({
   const onTimeChange = (_: DateTimePickerEvent, date?: Date) => {
     setShowTimePicker(false);
     if (date) {
-      // Keep the current date, just update the time part
       const merged = dayjs(untilDate)
         .hour(date.getHours())
         .minute(date.getMinutes())
@@ -194,6 +219,24 @@ export function StandaloneBlockModal({
         <View style={styles.appInfo}>
           <Text style={styles.appName} numberOfLines={1}>{item.appName}</Text>
           <Text style={styles.packageName} numberOfLines={1}>{item.packageName}</Text>
+        </View>
+        <View style={[styles.checkbox, blocked && styles.checkboxBlocked]}>
+          {blocked && <Ionicons name="ban" size={13} color="#fff" />}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderManualPackage = (pkg: string) => {
+    const blocked = selected.has(pkg);
+    return (
+      <TouchableOpacity key={pkg} style={styles.row} onPress={() => toggle(pkg)} activeOpacity={0.7}>
+        <View style={styles.iconPlaceholder}>
+          <Ionicons name="cube-outline" size={22} color={COLORS.muted} />
+        </View>
+        <View style={styles.appInfo}>
+          <Text style={styles.appName} numberOfLines={1}>Manual Entry</Text>
+          <Text style={styles.packageName} numberOfLines={1}>{pkg}</Text>
         </View>
         <View style={[styles.checkbox, blocked && styles.checkboxBlocked]}>
           {blocked && <Ionicons name="ban" size={13} color="#fff" />}
@@ -244,61 +287,102 @@ export function StandaloneBlockModal({
           <DateTimePicker
             value={untilDate}
             mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
             onChange={onTimeChange}
           />
         )}
 
-        {/* Search */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search apps…"
-            placeholderTextColor={COLORS.muted}
-            value={search}
-            onChangeText={setSearch}
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-          />
-        </View>
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.packageName}
+          renderItem={renderItem}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <>
+              {/* Manual entry — always shown at the top, primary option */}
+              <View style={styles.manualSection}>
+                <Text style={styles.manualSectionLabel}>ADD BY PACKAGE NAME</Text>
+                <Text style={styles.manualHint}>
+                  Enter app package name, e.g. com.instagram.android
+                </Text>
+                <View style={styles.manualInputRow}>
+                  <TextInput
+                    style={styles.manualInput}
+                    placeholder="com.example.app"
+                    placeholderTextColor={COLORS.muted}
+                    value={manualInput}
+                    onChangeText={setManualInput}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onSubmitEditing={handleAddManual}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.addBtn, !manualInput.trim().includes('.') && styles.addBtnDisabled]}
+                    onPress={handleAddManual}
+                    disabled={!manualInput.trim().includes('.')}
+                  >
+                    <Text style={styles.addBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-        <Text style={styles.hint}>
-          {selected.size > 0
-            ? `${selected.size} app${selected.size !== 1 ? 's' : ''} will be blocked — tap to toggle`
-            : 'Tap apps to block them — they cannot be opened until the expiry time'}
-        </Text>
+              {/* Manually added packages */}
+              {manualPackages.length > 0 && (
+                <View style={styles.manualSection}>
+                  <Text style={styles.manualSectionLabel}>MANUALLY ADDED</Text>
+                  {manualPackages.map(renderManualPackage)}
+                </View>
+              )}
 
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading installed apps…</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.packageName}
-            renderItem={renderItem}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            contentContainerStyle={styles.list}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
+              {/* Search and installed apps header */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search installed apps…"
+                  placeholderTextColor={COLORS.muted}
+                  value={search}
+                  onChangeText={setSearch}
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                />
+              </View>
+
+              <Text style={styles.hint}>
+                {selected.size > 0
+                  ? `${selected.size} app${selected.size !== 1 ? 's' : ''} will be blocked — tap to toggle`
+                  : 'Tap apps below to block them'}
+              </Text>
+
+              {loadingApps && (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={COLORS.primary} />
+                  <Text style={styles.loadingText}>Loading installed apps…</Text>
+                </View>
+              )}
+            </>
+          }
+          ListEmptyComponent={
+            !loadingApps ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>
                   {search ? 'No apps match your search.' : 'No user-installed apps found.'}
                 </Text>
               </View>
-            }
-            ListFooterComponent={
-              selected.size > 0 ? (
-                <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-                  <Ionicons name="trash-outline" size={16} color={COLORS.red} />
-                  <Text style={styles.clearBtnText}>Clear Block</Text>
-                </TouchableOpacity>
-              ) : null
-            }
-          />
-        )}
+            ) : null
+          }
+          ListFooterComponent={
+            selected.size > 0 ? (
+              <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
+                <Ionicons name="trash-outline" size={16} color={COLORS.red} />
+                <Text style={styles.clearBtnText}>Clear Block</Text>
+              </TouchableOpacity>
+            ) : null
+          }
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -370,12 +454,62 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.primary,
   },
+  list: {
+    paddingHorizontal: SPACING.lg,
+    paddingBottom: SPACING.xl,
+  },
+  manualSection: {
+    marginTop: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  manualSectionLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 0.8,
+    marginBottom: SPACING.xs,
+  },
+  manualHint: {
+    fontSize: FONT.xs,
+    color: COLORS.muted,
+  },
+  manualInputRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'center',
+  },
+  manualInput: {
+    flex: 1,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary + '66',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontSize: FONT.md,
+    color: COLORS.text,
+  },
+  addBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBtnDisabled: {
+    backgroundColor: COLORS.primaryLight,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FONT.sm,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.card,
-    marginHorizontal: SPACING.lg,
-    marginVertical: SPACING.sm,
+    marginTop: SPACING.lg,
     borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
@@ -393,12 +527,18 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: FONT.xs,
     color: COLORS.muted,
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.sm,
+    paddingTop: SPACING.sm,
+    paddingBottom: SPACING.xs,
   },
-  list: {
-    paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.xl,
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  loadingText: {
+    fontSize: FONT.sm,
+    color: COLORS.muted,
   },
   row: {
     flexDirection: 'row',
@@ -452,18 +592,8 @@ const styles = StyleSheet.create({
   separator: {
     height: SPACING.xs,
   },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.md,
-  },
-  loadingText: {
-    fontSize: FONT.sm,
-    color: COLORS.muted,
-  },
   emptyContainer: {
-    paddingTop: SPACING.xxl,
+    paddingTop: SPACING.xl,
     alignItems: 'center',
   },
   emptyText: {

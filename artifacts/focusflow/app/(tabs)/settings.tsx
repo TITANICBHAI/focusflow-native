@@ -7,15 +7,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
-import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { formatDuration } from '@/services/taskService';
 import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
@@ -74,22 +73,6 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleUsageAccess = async () => {
-    const has = await UsageStatsModule.hasPermission();
-    if (has) {
-      Alert.alert('Permission Granted', 'Usage Access is already enabled.');
-      return;
-    }
-    Alert.alert(
-      'Usage Access Required',
-      'To detect apps during Focus Mode, FocusFlow needs Usage Access. This opens your device settings.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => UsageStatsModule.openUsageAccessSettings() },
-      ],
-    );
-  };
-
   const handleClearAllTasks = () => {
     Alert.alert('Clear All Tasks', 'This will delete ALL tasks. Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
@@ -103,10 +86,6 @@ export default function SettingsScreen() {
         },
       },
     ]);
-  };
-
-  const openAppSettings = () => {
-    Linking.openSettings();
   };
 
   const handleSaveAllowedApps = async (packages: string[]) => {
@@ -179,12 +158,6 @@ export default function SettingsScreen() {
             description={`${settings.allowedInFocus.length} app${settings.allowedInFocus.length !== 1 ? 's' : ''} won't be blocked during Focus Mode`}
             onPress={() => setAppsModalVisible(true)}
           />
-          <SettingButton
-            icon="analytics-outline"
-            label="Grant Usage Access"
-            description="Required to detect and block apps during Focus Mode"
-            onPress={handleUsageAccess}
-          />
         </Section>
 
         {/* ── Block Schedule ── */}
@@ -239,7 +212,12 @@ export default function SettingsScreen() {
 
         {/* ── Permissions ── */}
         <Section title="Permissions">
-          <SettingButton icon="settings-outline" label="Open App Settings" onPress={openAppSettings} />
+          <SettingButton
+            icon="shield-checkmark-outline"
+            label="Manage Permissions"
+            description="Accessibility, Usage Access, Battery, Notifications"
+            onPress={() => router.push('/permissions' as never)}
+          />
         </Section>
 
         {/* ── Danger Zone ── */}

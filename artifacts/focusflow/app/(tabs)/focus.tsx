@@ -12,17 +12,27 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
 import { useTaskTimer } from '@/hooks/useTimer';
 import { formatTime } from '@/services/taskService';
 import { dbLogFocusOverride } from '@/data/database';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
+import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 
 export default function FocusScreen() {
-  const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime } = useApp();
+  const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime, setStandaloneBlock } = useApp();
   const isFocusing = state.focusSession !== null && state.focusSession.isActive;
   const [hasAccessibilityPermission, setHasAccessibilityPermission] = useState<boolean | null>(null);
+  const [blockModalVisible, setBlockModalVisible] = useState(false);
+
+  const { settings } = state;
+  const standaloneActive = (() => {
+    if (!settings.standaloneBlockUntil) return false;
+    if ((settings.standaloneBlockPackages ?? []).length === 0) return false;
+    return new Date(settings.standaloneBlockUntil).getTime() > Date.now();
+  })();
 
   const task = activeTask;
 
@@ -31,7 +41,7 @@ export default function FocusScreen() {
   useEffect(() => {
     const checkPermission = async () => {
       try {
-        const granted = await UsageStatsModule.hasPermission();
+        const granted = await UsageStatsModule.hasAccessibilityPermission();
         setHasAccessibilityPermission(granted);
       } catch {
         setHasAccessibilityPermission(null);
@@ -67,7 +77,39 @@ export default function FocusScreen() {
           <Text style={styles.emptySubtitle}>
             Start a task from the Schedule tab to activate Focus Mode
           </Text>
+
+          <TouchableOpacity
+            style={[styles.blockScheduleBtn, standaloneActive && styles.blockScheduleBtnActive]}
+            onPress={() => setBlockModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={standaloneActive ? 'ban' : 'ban-outline'}
+              size={18}
+              color={standaloneActive ? COLORS.red : COLORS.primary}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.blockScheduleBtnText, standaloneActive && { color: COLORS.red }]}>
+                {standaloneActive ? 'Block Schedule Active' : 'Set Block Schedule'}
+              </Text>
+              {standaloneActive && settings.standaloneBlockUntil && (
+                <Text style={styles.blockScheduleBtnDesc}>
+                  {(settings.standaloneBlockPackages ?? []).length} apps blocked until{' '}
+                  {dayjs(settings.standaloneBlockUntil).format('MMM D [at] h:mm A')}
+                </Text>
+              )}
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.border} />
+          </TouchableOpacity>
         </View>
+
+        <StandaloneBlockModal
+          visible={blockModalVisible}
+          blockedPackages={settings.standaloneBlockPackages ?? []}
+          blockUntil={settings.standaloneBlockUntil}
+          onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
+          onClose={() => setBlockModalVisible(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -242,6 +284,39 @@ export default function FocusScreen() {
           </Text>
         </View>
       )}
+
+      {/* Block Schedule card */}
+      <TouchableOpacity
+        style={[styles.blockScheduleBtn, standaloneActive && styles.blockScheduleBtnActive, { marginHorizontal: SPACING.lg, marginBottom: SPACING.md }]}
+        onPress={() => setBlockModalVisible(true)}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name={standaloneActive ? 'ban' : 'ban-outline'}
+          size={18}
+          color={standaloneActive ? COLORS.red : COLORS.primary}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.blockScheduleBtnText, standaloneActive && { color: COLORS.red }]}>
+            {standaloneActive ? 'Block Schedule Active' : 'Set Block Schedule'}
+          </Text>
+          {standaloneActive && settings.standaloneBlockUntil && (
+            <Text style={styles.blockScheduleBtnDesc}>
+              {(settings.standaloneBlockPackages ?? []).length} apps blocked until{' '}
+              {dayjs(settings.standaloneBlockUntil).format('MMM D [at] h:mm A')}
+            </Text>
+          )}
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={COLORS.border} />
+      </TouchableOpacity>
+
+      <StandaloneBlockModal
+        visible={blockModalVisible}
+        blockedPackages={settings.standaloneBlockPackages ?? []}
+        blockUntil={settings.standaloneBlockUntil}
+        onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
+        onClose={() => setBlockModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -294,6 +369,32 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: SPACING.xl, gap: SPACING.md },
   emptyTitle: { fontSize: FONT.xl, fontWeight: '700', color: COLORS.muted },
   emptySubtitle: { fontSize: FONT.md, color: COLORS.muted, textAlign: 'center', lineHeight: 22 },
+  blockScheduleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: SPACING.md,
+    width: '100%',
+  },
+  blockScheduleBtnActive: {
+    borderColor: COLORS.red + '44',
+    backgroundColor: COLORS.red + '08',
+  },
+  blockScheduleBtnText: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  blockScheduleBtnDesc: {
+    fontSize: FONT.xs,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',

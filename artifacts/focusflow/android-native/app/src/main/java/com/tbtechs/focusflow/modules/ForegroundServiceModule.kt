@@ -35,9 +35,12 @@ class ForegroundServiceModule(private val reactContext: ReactApplicationContext)
     @ReactMethod
     fun startIdleService(promise: Promise) {
         try {
-            val intent = Intent(reactContext, ForegroundTaskService::class.java).apply {
-                action = ForegroundTaskService.ACTION_SET_IDLE
-            }
+            // Send a plain intent with no action so the service starts in idle mode.
+            // The service's onCreate calls startForeground with the idle notification,
+            // and onStartCommand's else branch (no EXTRA_TASK_NAME present) falls
+            // through to goIdle() — routing through ACTION_SET_IDLE on first launch
+            // would cause a redundant second goIdle() call.
+            val intent = Intent(reactContext, ForegroundTaskService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 reactContext.startForegroundService(intent)
             } else {

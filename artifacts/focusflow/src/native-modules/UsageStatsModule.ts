@@ -7,10 +7,12 @@
  * ─── Kotlin Implementation ────────────────────────────────────────────────────
  * File: android-native/app/src/main/java/com/tbtechs/focusday/modules/UsageStatsModule.kt
  *
- * Exposes three methods to JS:
+ * Exposes these methods to JS:
  *   - getForegroundApp(): String? — returns package name of foreground app
- *   - hasPermission(): Boolean    — checks if PACKAGE_USAGE_STATS is granted
+ *   - hasPermission(): Boolean    — checks if PACKAGE_USAGE_STATS is granted (Usage Access)
  *   - openUsageAccessSettings()  — opens the Usage Access settings page
+ *   - hasAccessibilityPermission(): Boolean — checks if our AccessibilityService is enabled
+ *   - isIgnoringBatteryOptimizations(): Boolean — checks battery optimization exemption
  */
 
 import { NativeModules } from 'react-native';
@@ -34,5 +36,33 @@ export const UsageStatsModule = {
   async openUsageAccessSettings(): Promise<void> {
     if (!UsageStats) return;
     return UsageStats.openUsageAccessSettings();
+  },
+
+  /**
+   * Returns true if the AppBlockerAccessibilityService is enabled in system settings.
+   * Uses Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES to check the service ID.
+   */
+  async hasAccessibilityPermission(): Promise<boolean> {
+    if (!UsageStats) return false;
+    return UsageStats.hasAccessibilityPermission();
+  },
+
+  /**
+   * Returns true if the app is exempted from battery optimization.
+   * Uses PowerManager.isIgnoringBatteryOptimizations() on Android M+.
+   */
+  async isIgnoringBatteryOptimizations(): Promise<boolean> {
+    if (!UsageStats) return false;
+    return UsageStats.isIgnoringBatteryOptimizations();
+  },
+
+  /**
+   * Returns true if the app's Device Admin receiver component is active.
+   * Uses DevicePolicyManager.isAdminActive(). Returns false if the receiver
+   * component is not declared or not active.
+   */
+  async isDeviceAdminActive(): Promise<boolean> {
+    if (!UsageStats) return false;
+    return UsageStats.isDeviceAdminActive();
   },
 };
