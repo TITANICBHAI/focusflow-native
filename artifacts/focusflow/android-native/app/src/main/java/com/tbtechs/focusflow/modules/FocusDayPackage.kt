@@ -39,12 +39,12 @@ class FocusDayPackage : TurboReactPackage() {
 
     override fun getReactModuleInfoProvider(): ReactModuleInfoProvider = ReactModuleInfoProvider {
         mapOf(
-            UsageStatsModule.NAME        to ReactModuleInfo(UsageStatsModule.NAME,        UsageStatsModule::class.java.name,        false, false, true),
-            ForegroundServiceModule.NAME to ReactModuleInfo(ForegroundServiceModule.NAME, ForegroundServiceModule::class.java.name, false, false, true),
-            ForegroundLaunchModule.NAME  to ReactModuleInfo(ForegroundLaunchModule.NAME,  ForegroundLaunchModule::class.java.name,  false, false, true),
-            FocusDayBridgeModule.NAME    to ReactModuleInfo(FocusDayBridgeModule.NAME,    FocusDayBridgeModule::class.java.name,    false, false, true),
-            SharedPrefsModule.NAME       to ReactModuleInfo(SharedPrefsModule.NAME,       SharedPrefsModule::class.java.name,       false, false, true),
-            InstalledAppsModule.NAME     to ReactModuleInfo(InstalledAppsModule.NAME,     InstalledAppsModule::class.java.name,     false, false, true),
+            UsageStatsModule.NAME        to ReactModuleInfo(UsageStatsModule.NAME,        UsageStatsModule::class.java.name,        false, false, false, true),
+            ForegroundServiceModule.NAME to ReactModuleInfo(ForegroundServiceModule.NAME, ForegroundServiceModule::class.java.name, false, false, false, true),
+            ForegroundLaunchModule.NAME  to ReactModuleInfo(ForegroundLaunchModule.NAME,  ForegroundLaunchModule::class.java.name,  false, false, false, true),
+            FocusDayBridgeModule.NAME    to ReactModuleInfo(FocusDayBridgeModule.NAME,    FocusDayBridgeModule::class.java.name,    false, false, false, true),
+            SharedPrefsModule.NAME       to ReactModuleInfo(SharedPrefsModule.NAME,       SharedPrefsModule::class.java.name,       false, false, false, true),
+            InstalledAppsModule.NAME     to ReactModuleInfo(InstalledAppsModule.NAME,     InstalledAppsModule::class.java.name,     false, false, false, true),
         )
     }
 
