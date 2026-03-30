@@ -33,9 +33,9 @@ Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data as { type?: string };
     if (data?.type === 'focus-persistent') {
-      return { shouldShowAlert: false, shouldPlaySound: false, shouldSetBadge: false };
+      return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
     }
-    return { shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false };
+    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
   },
 });
 

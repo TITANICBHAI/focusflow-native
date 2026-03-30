@@ -61,11 +61,6 @@ export default function StatsScreen() {
     const completionRate = todayTasks.length > 0
       ? Math.round((completed.length / todayTasks.length) * 100) : 0;
 
-    // Record to DB for streak tracking
-    if (todayTasks.length > 0) {
-      void dbRecordDayCompletion(completed.length, todayTasks.length);
-    }
-
     return {
       total: todayTasks.length,
       completed: completed.length,
@@ -79,6 +74,13 @@ export default function StatsScreen() {
       topTags: getTopTags(todayTasks),
     };
   }, [tasks]);
+
+  // Record daily completion for streak tracking — in useEffect to avoid DB write inside useMemo
+  useEffect(() => {
+    if (stats.total > 0) {
+      void dbRecordDayCompletion(stats.completed, stats.total);
+    }
+  }, [stats.completed, stats.total]);
 
   const productivityColor =
     stats.completionRate >= 80 ? COLORS.green

@@ -11,6 +11,15 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   return db;
 }
 
+/**
+ * Reset the DB singleton — call after a recoverable open error so the next
+ * getDb() call re-opens the database instead of retrying on a null reference.
+ * (fixes NEW-018)
+ */
+export function resetDb(): void {
+  db = null;
+}
+
 async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;

@@ -189,15 +189,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ── Keep a ref to latest state so the tick interval never needs to re-create ─
+  // (fixes NEW-021: setInterval restarting on every task/settings change)
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
   // ── Tick: check active tasks every 30s ──────────────────────────────────────
+  // Only recreated when DB readiness changes — state is read via stateRef.
 
   useEffect(() => {
     if (!state.isDbReady) return;
     tickRef.current = setInterval(() => {
-      const active = getActiveTask(state.tasks);
-      if (active && state.settings.notificationsEnabled) {
-        void showPersistentTaskNotification(active);
-      }
+      const active = getActiveTask(stateRef.current.tasks);
+      // NOTE: The native ForegroundTaskService already shows a persistent
+      // notification while focus is active (NEW-011). No JS sticky needed here.
       if (!active && isFocusActive()) {
         void _stopFocusMode();
         dispatch({ type: 'SET_FOCUS_SESSION', payload: null });
@@ -206,7 +213,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [state.isDbReady, state.tasks, state.settings]);
+  }, [state.isDbReady]);
 
   // ── Native event subscriptions ───────────────────────────────────────────────
 

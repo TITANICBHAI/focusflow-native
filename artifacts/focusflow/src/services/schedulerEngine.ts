@@ -304,19 +304,19 @@ export function analyzeScheduleHealth(tasks: Task[]): ScheduleHealth {
   const totalScheduledMinutes = tasks.reduce((s, t) => s + t.durationMinutes, 0);
 
   // Check hour-by-hour overload — distribute only actual minutes per hour
+  // (fixes NEW-012: slot boundaries now anchored to task's calendar day, not task.startTime)
   const hourLoad: Record<number, number> = {};
   for (const task of tasks) {
     const taskStart = dayjs(task.startTime);
     const taskEnd = dayjs(task.endTime);
+    const dayBase = taskStart.startOf('day');
     const startHour = taskStart.hour();
     const endHour = taskEnd.hour();
     for (let h = startHour; h <= endHour; h++) {
-      const slotStart = taskStart.isAfter(dayjs(task.startTime).hour(h).minute(0).second(0))
-        ? taskStart
-        : dayjs(task.startTime).hour(h).minute(0).second(0);
-      const slotEnd = taskEnd.isBefore(dayjs(task.startTime).hour(h).minute(59).second(59))
-        ? taskEnd
-        : dayjs(task.startTime).hour(h).minute(59).second(59);
+      const hourStart = dayBase.hour(h).minute(0).second(0);
+      const hourEnd = dayBase.hour(h).minute(59).second(59);
+      const slotStart = taskStart.isAfter(hourStart) ? taskStart : hourStart;
+      const slotEnd = taskEnd.isBefore(hourEnd) ? taskEnd : hourEnd;
       const mins = Math.max(0, slotEnd.diff(slotStart, 'minute'));
       hourLoad[h] = (hourLoad[h] ?? 0) + mins;
     }

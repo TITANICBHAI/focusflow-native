@@ -130,18 +130,14 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Minimal JSON array parser — avoids a full JSON library dependency.
-     * Parses ["pkg1","pkg2"] → listOf("pkg1","pkg2")
+     * Parse a JSON array string using org.json.JSONArray for correctness.
+     * Replaces the hand-rolled parser that split on "," and failed on escaped
+     * or unusual characters. (fixes NEW-023)
      */
     private fun parseJsonArray(json: String): List<String> {
         return try {
-            json
-                .trim()
-                .removePrefix("[")
-                .removeSuffix("]")
-                .split(",")
-                .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotEmpty() }
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
         } catch (_: Exception) {
             emptyList()
         }

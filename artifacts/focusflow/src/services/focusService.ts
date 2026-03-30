@@ -33,6 +33,11 @@ export async function startFocusMode(
   allowedExtras: string[] = [],
   onViolation?: (appName: string) => void,
 ): Promise<void> {
+  // Always clean up any existing subscription unconditionally before re-entering
+  // (fixes NEW-019: subscription leaks when stopFocusMode short-circuits)
+  appStateSubscription?.remove();
+  appStateSubscription = null;
+
   if (focusActive) await stopFocusMode();
 
   focusActive = true;
