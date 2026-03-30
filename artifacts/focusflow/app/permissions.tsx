@@ -46,7 +46,7 @@ const PERMISSIONS: PermissionItem[] = [
       }
     },
     open: () => {
-      Linking.sendIntent('android.settings.ACCESSIBILITY_SETTINGS').catch(() =>
+      UsageStatsModule.openAccessibilitySettings().catch(() =>
         Linking.openSettings()
       );
     },
@@ -165,17 +165,27 @@ export default function PermissionsScreen() {
 
   useEffect(() => {
     void checkAll();
+    let t1: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
+
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') {
-        // Check immediately, then again after a short delay.
+        // Check immediately, then again after extended delays.
         // Android (especially Samsung One UI) may not have flushed the updated
         // permission state to AccessibilityManager by the time the app regains focus.
+        // Low-end Galaxy A-series devices can take up to 2-3 seconds to flush.
         void checkAll();
-        const t = setTimeout(() => void checkAll(), 800);
-        return () => clearTimeout(t);
+        if (t1) clearTimeout(t1);
+        if (t2) clearTimeout(t2);
+        t1 = setTimeout(() => void checkAll(), 2000);
+        t2 = setTimeout(() => void checkAll(), 4000);
       }
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+    };
   }, [checkAll]);
 
   return (

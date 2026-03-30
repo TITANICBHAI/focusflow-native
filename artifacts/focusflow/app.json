@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "focusflow",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -31,7 +31,8 @@
         "android.permission.WAKE_LOCK",
         "android.permission.BIND_ACCESSIBILITY_SERVICE",
         "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.USE_EXACT_ALARM"
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.QUERY_ALL_PACKAGES"
       ],
       "blockedPermissions": [
         "android.permission.ACCESS_COARSE_LOCATION",

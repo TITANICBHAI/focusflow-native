@@ -139,9 +139,14 @@ export default function OnboardingScreen() {
       }
       setStepStatus(step.id, 'manual');
       // Open the correct Android settings screen
-      if (Platform.OS === 'android' && step.intentAction) {
+      if (Platform.OS === 'android') {
         try {
-          await Linking.sendIntent(step.intentAction);
+          if (step.id === 'accessibility') {
+            // Use native module with OEM fallback chain instead of Linking.sendIntent
+            await UsageStatsModule.openAccessibilitySettings();
+          } else if (step.intentAction) {
+            await Linking.sendIntent(step.intentAction);
+          }
         } catch {
           // Fallback to app settings if intent not available
           try {

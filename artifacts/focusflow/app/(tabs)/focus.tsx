@@ -49,16 +49,26 @@ export default function FocusScreen() {
     };
     void checkPermission();
 
+    let t1: ReturnType<typeof setTimeout> | null = null;
+    let t2: ReturnType<typeof setTimeout> | null = null;
+
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'active') {
-        // Check immediately then retry — Samsung One UI may not have flushed
-        // the updated permission state by the time the app regains focus.
+        // Check immediately then retry — Samsung One UI and low-end devices may
+        // not have flushed the updated permission state to AccessibilityManager
+        // by the time the app regains focus. Galaxy A-series can take 2–3 seconds.
         void checkPermission();
-        const t = setTimeout(() => void checkPermission(), 800);
-        return () => clearTimeout(t);
+        if (t1) clearTimeout(t1);
+        if (t2) clearTimeout(t2);
+        t1 = setTimeout(() => void checkPermission(), 2000);
+        t2 = setTimeout(() => void checkPermission(), 4000);
       }
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+    };
   }, []);
 
   useEffect(() => {
@@ -129,7 +139,7 @@ export default function FocusScreen() {
           onPress={async () => {
             try {
               if (Platform.OS === 'android') {
-                await Linking.sendIntent('android.settings.ACCESSIBILITY_SETTINGS');
+                await UsageStatsModule.openAccessibilitySettings();
               } else {
                 await Linking.openSettings();
               }

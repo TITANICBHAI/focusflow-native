@@ -98,6 +98,18 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
                 promise.resolve(!stats.isNullOrEmpty())
                 return
             }
+            // Huawei EMUI uses non-standard AppOps mode values outside the standard range.
+            // If the mode is not MODE_IGNORED or MODE_ERRORED, attempt a live query as a
+            // final fallback before resolving false.
+            if (mode != AppOpsManager.MODE_IGNORED && mode != AppOpsManager.MODE_ERRORED) {
+                val usm = reactContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+                val now = System.currentTimeMillis()
+                val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60_000, now)
+                if (!stats.isNullOrEmpty()) {
+                    promise.resolve(true)
+                    return
+                }
+            }
             promise.resolve(false)
         } catch (e: Exception) {
             promise.resolve(false)
@@ -130,6 +142,43 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             promise.reject("SETTINGS_ERROR", e.message, e)
         }
+    }
+
+    /**
+     * Opens the Accessibility Settings screen with an OEM fallback chain.
+     *
+     * Mirrors the pattern from openBatteryOptimizationSettings():
+     *   1. Try ACTION_ACCESSIBILITY_SETTINGS via currentActivity (reliable on API 34+)
+     *   2. Fall back to general Settings.ACTION_SETTINGS
+     *
+     * This is safer than Linking.sendIntent() from JS which has no fallback chain
+     * and silently fails on some MDM-managed company phones.
+     */
+    @ReactMethod
+    fun openAccessibilitySettings(promise: Promise) {
+        val activity = reactContext.currentActivity
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val launched = if (activity != null && !activity.isFinishing) {
+            try { activity.startActivity(intent); true } catch (_: Exception) { false }
+        } else {
+            try { reactContext.startActivity(intent); true } catch (_: Exception) { false }
+        }
+
+        if (launched) {
+            promise.resolve(null)
+            return
+        }
+
+        // Fallback: open general settings
+        try {
+            val fallback = Intent(Settings.ACTION_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            reactContext.startActivity(fallback)
+        } catch (_: Exception) {}
+        promise.resolve(null)
     }
 
     /**

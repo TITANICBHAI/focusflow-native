@@ -106,7 +106,7 @@ class FocusDayBridgeModule(private val reactContext: ReactApplicationContext) :
         if (!reactContext.hasActiveReactInstance()) return
         val params = Arguments.createMap().apply {
             putString("type", type)
-            if (payload != null) putString("payload", payload) else putNull("payload")
+            if (payload != null) putString("blockedApp", payload) else putNull("blockedApp")
         }
         reactContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)

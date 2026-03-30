@@ -23,7 +23,7 @@
 
     <!-- Foreground countdown service -->
     <service
-        android:name="com.tbtechs.focusday.services.ForegroundTaskService"
+        android:name="com.tbtechs.focusflow.services.ForegroundTaskService"
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="specialUse">
@@ -34,10 +34,10 @@
 
     <!-- Accessibility service for app blocking (more reliable than UsageStats) -->
     <service
-        android:name="com.tbtechs.focusday.services.AppBlockerAccessibilityService"
+        android:name="com.tbtechs.focusflow.services.AppBlockerAccessibilityService"
         android:enabled="true"
         android:exported="true"
-        android:label="FocusDay Focus Mode"
+        android:label="FocusFlow Focus Mode"
         android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
         <intent-filter>
             <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -49,7 +49,7 @@
 
     <!-- Boot receiver: restarts the foreground service after device reboot -->
     <receiver
-        android:name="com.tbtechs.focusday.services.BootReceiver"
+        android:name="com.tbtechs.focusflow.services.BootReceiver"
         android:enabled="true"
         android:exported="true">
         <intent-filter>
@@ -63,15 +63,15 @@
      Add inside <resources>:
 
     <string name="accessibility_service_description">
-        FocusDay uses Accessibility to detect and block distracting apps during your scheduled focus sessions.
+        FocusFlow uses Accessibility to detect and block distracting apps during your scheduled focus sessions.
         No personal data, messages, or browsing history are read or stored.
     </string>
 
   4. Register FocusDayPackage in MainApplication.kt
-     Open: android/app/src/main/java/com/tbtechs/focusday/MainApplication.kt
+     Open: android/app/src/main/java/com/tbtechs/focusflow/MainApplication.kt
      Add the import at the top:
 
-    import com.tbtechs.focusday.modules.FocusDayPackage
+    import com.tbtechs.focusflow.modules.FocusDayPackage
 
      Then inside getPackages():
 

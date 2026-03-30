@@ -25,6 +25,7 @@ interface UsageStatsSpec extends TurboModule {
   hasPermission(): Promise<boolean>;
   openUsageAccessSettings(): Promise<void>;
   hasAccessibilityPermission(): Promise<boolean>;
+  openAccessibilitySettings(): Promise<void>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
   openBatteryOptimizationSettings(): Promise<void>;
   isDeviceAdminActive(): Promise<boolean>;
@@ -69,6 +70,19 @@ export const UsageStatsModule = {
       return false;
     }
     return UsageStats.hasAccessibilityPermission();
+  },
+
+  /**
+   * Opens the Accessibility Settings screen using a native Kotlin method with OEM
+   * fallback chain. Preferred over Linking.sendIntent() which lacks fallbacks for
+   * MDM-managed / company phones.
+   */
+  async openAccessibilitySettings(): Promise<void> {
+    if (!UsageStats) {
+      console.error('[UsageStatsModule] Native module "UsageStats" not found. Ensure FocusDayPackage is registered and an EAS build was used.');
+      return;
+    }
+    return UsageStats.openAccessibilitySettings();
   },
 
   /**

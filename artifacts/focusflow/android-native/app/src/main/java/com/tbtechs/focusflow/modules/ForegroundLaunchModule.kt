@@ -59,7 +59,12 @@ class ForegroundLaunchModule(private val reactContext: ReactApplicationContext) 
                 addCategory(Intent.CATEGORY_HOME)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            reactContext.startActivity(homeIntent)
+            val activity = reactContext.currentActivity
+            if (activity != null && !activity.isFinishing) {
+                activity.startActivity(homeIntent)
+            } else {
+                reactContext.startActivity(homeIntent)
+            }
             promise.resolve(null)
         } catch (e: Exception) {
             promise.reject("HOME_ERROR", e.message, e)

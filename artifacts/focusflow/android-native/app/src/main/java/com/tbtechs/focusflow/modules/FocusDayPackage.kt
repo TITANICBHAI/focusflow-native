@@ -12,9 +12,10 @@ import com.facebook.react.uimanager.ViewManager
  *
  * Registers all FocusDay native modules with the React Native bridge.
  *
- * Extends TurboReactPackage (instead of ReactPackage) so that the New Architecture
- * interop layer can discover modules via getReactModuleInfoProvider() before
- * instantiating them. This is required when newArchEnabled=true (Expo SDK 54 / RN 0.76+).
+ * Extends TurboReactPackage (instead of ReactPackage) to provide
+ * getReactModuleInfoProvider() for lazy module instantiation. Compatible with
+ * Old Architecture (newArchEnabled=false) via the bridge interop layer.
+ * All six modules use the standard ReactContextBaseJavaModule + @ReactMethod pattern.
  *
  * How to wire into MainApplication.kt (after expo prebuild generates it):
  *
