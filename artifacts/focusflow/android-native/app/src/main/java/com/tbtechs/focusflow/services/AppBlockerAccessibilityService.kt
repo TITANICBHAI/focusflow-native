@@ -40,13 +40,14 @@ class AppBlockerAccessibilityService : AccessibilityService() {
          * Package installers / uninstall UIs that are ALWAYS blocked during a focus
          * session, regardless of what JS writes to SharedPreferences.
          * JS settings cannot override this set.
+         * NOTE: com.android.vending (Play Store) is intentionally excluded — it is
+         * only blocked if the user explicitly adds it to the blocked list.
          */
         val ALWAYS_BLOCKED: Set<String> = setOf(
             "com.android.packageinstaller",
             "com.google.android.packageinstaller",
             "com.samsung.android.packageinstaller",
-            "com.miui.packageinstaller",
-            "com.android.vending"
+            "com.miui.packageinstaller"
         )
     }
 
