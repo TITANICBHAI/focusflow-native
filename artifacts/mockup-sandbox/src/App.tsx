@@ -93,10 +93,18 @@ function getBasePath(): string {
 
 function getPreviewExamplePath(): string {
   const basePath = getBasePath();
-  return `${basePath}/preview/FocusFlowPromo`;
+  return `${basePath}/preview/Screenshot1Home`;
 }
 
 function Gallery() {
+  const basePath = getBasePath();
+  const mockups = [
+    "Screenshot1Home",
+    "Screenshot2Focus",
+    "Screenshot3Blocked",
+    "Screenshot4Stats",
+    "Screenshot5Permissions"
+  ];
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
       <div className="text-center max-w-md">
@@ -106,12 +114,20 @@ function Gallery() {
         <p className="text-gray-500 mb-4">
           This server renders individual components for the workspace canvas.
         </p>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-gray-400 mb-4">
           Access component previews at{" "}
           <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
             {getPreviewExamplePath()}
           </code>
         </p>
+        <div className="flex flex-col gap-2 mt-6 text-left">
+          <h2 className="font-medium text-gray-700">Available mockups:</h2>
+          {mockups.map(m => (
+            <a key={m} href={`${basePath}/preview/${m}`} className="text-blue-600 hover:underline">
+              {m}
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   );
