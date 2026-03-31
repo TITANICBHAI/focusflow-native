@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.SharedPreferences
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import com.tbtechs.focusflow.modules.FocusDayBridgeModule
 
 /**
@@ -231,6 +232,45 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         lastBlockedPkg = null
+    }
+
+    // ─── Uninstall dialog detection ───────────────────────────────────────────
+
+    /**
+     * Returns true if the accessibility event represents a system uninstall
+     * confirmation dialog (triggered via long-press on launcher or via Settings).
+     * Checks event text fields first (fast path), then walks the node tree.
+     */
+    private fun isUninstallDialog(event: AccessibilityEvent): Boolean {
+        val keywords = listOf("uninstall", "remove app", "delete app")
+
+        // Fast path: check event text / content description.
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it) }
+        }.lowercase()
+        if (keywords.any { it in eventText }) return true
+
+        // Deep path: walk the accessibility node tree for dialog title/body text.
+        val root = event.source ?: return false
+        return try {
+            val nodeText = buildString {
+                fun walk(node: AccessibilityNodeInfo) {
+                    node.text?.let { append(it); append(' ') }
+                    node.contentDescription?.let { append(it); append(' ') }
+                    for (i in 0 until node.childCount) {
+                        node.getChild(i)?.let { child ->
+                            walk(child)
+                            child.recycle()
+                        }
+                    }
+                }
+                walk(root)
+            }.lowercase()
+            keywords.any { it in nodeText }
+        } finally {
+            root.recycle()
+        }
     }
 
     // ─── Block determination ──────────────────────────────────────────────────

@@ -160,7 +160,7 @@ export default function ScheduleScreen() {
       {viewMode === 'list' ? (
         <ScrollView
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {todayTasks.length === 0 && (

@@ -8,7 +8,7 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import dayjs from 'dayjs';
@@ -23,6 +23,7 @@ import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 const DURATION_OPTIONS = [30, 45, 60, 90, 120];
 
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
   const { state, updateSettings, setStandaloneBlock, refreshTasks } = useApp();
   const { settings } = state;
   const [appsModalVisible, setAppsModalVisible] = useState(false);
@@ -101,7 +102,7 @@ export default function SettingsScreen() {
         <Text style={styles.title}>Settings</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}>
 
         {/* ── Notifications ── */}
         <Section title="Notifications">

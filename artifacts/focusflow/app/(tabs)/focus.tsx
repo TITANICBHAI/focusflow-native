@@ -10,7 +10,7 @@ import {
   Platform,
   AppState,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
@@ -23,6 +23,7 @@ import ExtendModal from '@/components/ExtendModal';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 
 export default function FocusScreen() {
+  const insets = useSafeAreaInsets();
   const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime, setStandaloneBlock } = useApp();
   const isFocusing = state.focusSession !== null && state.focusSession.isActive;
   const [hasAccessibilityPermission, setHasAccessibilityPermission] = useState<boolean | null>(null);
@@ -128,6 +129,7 @@ export default function FocusScreen() {
           onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
           onClose={() => setBlockModalVisible(false)}
         />
+        <View style={{ height: 80 }} />
       </SafeAreaView>
     );
   }
@@ -352,6 +354,7 @@ export default function FocusScreen() {
           }}
         />
       )}
+      <View style={{ height: 80 }} />
     </SafeAreaView>
   );
 }

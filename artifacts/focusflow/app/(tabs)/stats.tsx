@@ -5,7 +5,7 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
@@ -19,6 +19,7 @@ import {
 import type { Task } from '@/data/types';
 
 export default function StatsScreen() {
+  const insets = useSafeAreaInsets();
   const { state } = useApp();
   const { tasks } = state;
 
@@ -94,7 +95,7 @@ export default function StatsScreen() {
         <Text style={styles.date}>{dayjs().format('MMMM D, YYYY')}</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}>
 
         {/* Streak banner */}
         {streak > 0 && (
