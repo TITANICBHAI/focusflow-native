@@ -235,17 +235,120 @@ focus mode, digital wellbeing, screen time, anti-distraction
 ## MESSAGE FOR APTOIDE REVIEWER
 
 ```
-FocusFlow uses Android's Accessibility Service exclusively to detect which app 
-is in the foreground and block access to non-allowed apps during user-initiated 
-focus sessions. The app does not read screen content, capture user input, or 
-collect any personal data. The Accessibility Service is the only technically 
-viable method for real-time foreground app detection on Android without root access.
+FocusFlow uses Android's Accessibility Service exclusively to detect foreground 
+app changes and block non-allowed apps during user-initiated focus sessions. 
 
-Usage Stats permission is used solely to show the user their own distraction 
-history within the app. No data leaves the device.
+The service only listens to TYPE_WINDOW_STATE_CHANGED and 
+TYPE_WINDOW_CONTENT_CHANGED events to read the package name of the currently 
+active app window. It does NOT read any on-screen text, log keystrokes, 
+capture user input, intercept passwords, or observe any content within apps.
 
-This app is open source: https://github.com/TITANICBHAI/focusflow-android
+When a blocked app is detected, FocusFlow displays a full-screen overlay 
+(via SYSTEM_ALERT_WINDOW) redirecting the user back to FocusFlow. The session 
+is always user-initiated and user-controlled. An emergency override is available 
+at any time.
+
+PACKAGE_USAGE_STATS is used only to display the user's own focus violation 
+history locally inside the app. QUERY_ALL_PACKAGES is used only to let the 
+user build their own allowed-app whitelist. No data ever leaves the device. 
+No analytics, no tracking, no network transmission of any kind.
+
+The app is fully open source for inspection:
+https://github.com/TITANICBHAI/focusflow-android
+
+Relevant source files:
+- AppBlockerAccessibilityService.kt (the accessibility service implementation)
+- ForegroundTaskService.kt (background enforcement)
 ```
+
+---
+
+## GOOGLE PLAY CONSOLE — ACCESSIBILITY DECLARATION
+*(Fill this in under App content → Sensitive app permissions → Accessibility)*
+
+### Question: Does your app use the Android Accessibility API?
+**Answer: Yes**
+
+### Question: Which features in your app require the Android Accessibility API?
+
+```
+FocusFlow's core feature — real-time app blocking during focus sessions — 
+requires the Accessibility API. Specifically:
+
+The app uses AccessibilityService to listen for TYPE_WINDOW_STATE_CHANGED 
+events, which fire when the user switches to a different app. This allows 
+FocusFlow to detect the package name of the newly opened app and immediately 
+display a blocking overlay if that app is not on the user's allowed list.
+
+This is the ONLY technically viable method to achieve real-time foreground 
+app detection on Android without requiring root access. No alternative API 
+(UsageStatsManager, ActivityManager) provides real-time window change events — 
+they are polling-based and introduce delays that would allow a user to use a 
+blocked app before the block is enforced.
+
+Without the Accessibility API, the core focus enforcement feature of the app 
+cannot function.
+```
+
+### Question: Does your app collect or share any data enabled by the Accessibility API?
+
+```
+No. FocusFlow does not collect, store, or transmit any data obtained via the 
+Accessibility API. The only information read from the accessibility events is 
+the package name of the foreground app (e.g., "com.instagram.android"). This 
+package name is:
+
+1. Compared locally against the user's allowed-app list (stored in SQLite on-device)
+2. Logged locally to an on-device SQLite database if the app is blocked (so 
+   the user can review their own focus violations)
+3. Never transmitted off-device under any circumstances
+4. Never shared with any third party
+
+The app has no analytics SDK, no crash reporting SDK, no advertising SDK, and 
+makes zero network requests related to accessibility data.
+```
+
+### Question: Is the Accessibility Service description clearly shown to users?
+
+```
+Yes. During onboarding, FocusFlow presents a dedicated permissions screen that:
+1. Explains in plain language what the Accessibility Service does ("detects 
+   which app you open so it can block distractions during your focus sessions")
+2. Explains what it does NOT do ("it cannot read your messages, passwords, or 
+   anything on your screen")
+3. Requires the user to manually enable the service in Android Settings — 
+   FocusFlow never auto-enables it
+4. Allows the user to disable the service at any time from Android Settings
+
+The service label and description in the manifest are human-readable and 
+accurately describe the service's purpose.
+```
+
+### Google Play — Sensitive Permissions Summary Table
+
+| Permission | Why It's Needed | Data Collected | Data Transmitted |
+|---|---|---|---|
+| `BIND_ACCESSIBILITY_SERVICE` | Detect foreground app changes in real time to enforce focus blocking | Package name of active app only | Never |
+| `PACKAGE_USAGE_STATS` | Show user their own app-usage history and violation log | Local usage events | Never |
+| `SYSTEM_ALERT_WINDOW` | Display the "App Blocked" overlay over the blocked app | None | Never |
+| `QUERY_ALL_PACKAGES` | Let user build their allowed-app whitelist | None | Never |
+| `FOREGROUND_SERVICE` | Keep focus timer running when app is minimised | None | Never |
+| `SCHEDULE_EXACT_ALARM` | Fire task reminders at the exact scheduled time | None | Never |
+
+### Google Play — App Content Declaration (Data Safety form)
+
+When filling the Data Safety section in Play Console, answer as follows:
+
+**Does your app collect or share any of the required user data types?**  
+→ Select **No** for all categories EXCEPT:
+
+**App activity → App interactions:**  
+→ Select YES, then:
+- Data collected: "Which apps are opened while a focus session is active (package names only)"  
+- Shared with third parties: **No**
+- Data can be deleted by user: **Yes** (clear app data)
+- Data is encrypted in transit: **N/A** (stays on device, never transmitted)
+- Processing purpose: **App functionality** (enforcing the user's own focus session rules)
 
 ---
 
