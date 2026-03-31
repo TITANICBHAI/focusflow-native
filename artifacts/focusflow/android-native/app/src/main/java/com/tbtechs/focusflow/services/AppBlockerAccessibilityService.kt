@@ -174,9 +174,23 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
         val pkg = event.packageName?.toString() ?: return
 
-        // Never block our own app or any always-allowed system package.
+        // Never block our own app.
         if (pkg == packageName) return
-        if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) return
+
+        // ALWAYS_ALLOWED packages (launchers, settings) are normally passed through,
+        // BUT they can host system uninstall confirmation dialogs.
+        // On Samsung One UI, long-pressing an app icon → Uninstall fires a
+        // TYPE_WINDOW_STATE_CHANGED event with packageName = com.sec.android.app.launcher.
+        // On stock Android, Settings → App Info → Uninstall fires with
+        // packageName = com.android.settings.
+        // Both are ALWAYS_ALLOWED, so we must intercept them here based on dialog
+        // content rather than package name.
+        if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) {
+            if ((focusActive || saActive) && isUninstallDialog(event)) {
+                performGlobalAction(GLOBAL_ACTION_BACK)
+            }
+            return
+        }
 
         // ALWAYS_BLOCKED is now empty — this block is a no-op but kept for safety.
         // Previously used to permanently block package installers; user now controls this.
