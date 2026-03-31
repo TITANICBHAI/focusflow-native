@@ -89,6 +89,46 @@ class AppBlockerAccessibilityService : AccessibilityService() {
          * Kept as an empty set so callers don't need updating.
          */
         val ALWAYS_BLOCKED: Set<String> = emptySet()
+
+        /**
+         * Package names for Android system package installers and uninstallers across OEMs.
+         *
+         * When any blocking session is active (task focus OR standalone block), opening any
+         * of these packages is intercepted and dismissed with BACK (not just HOME) so that
+         * the install/uninstall confirmation dialog is dismissed rather than left pending.
+         *
+         * Why BACK and not HOME?
+         *   HOME sends the user to the launcher but leaves the installer dialog in the back
+         *   stack. On some devices the user can resume it. BACK dismisses the dialog
+         *   cleanly, ensuring the install/uninstall action never completes.
+         *
+         * Note: Silent Play Store background installs cannot be blocked via Accessibility —
+         * they produce no visible window event. The user should also block com.android.vending
+         * in their allowed-apps / block schedule list if they want to prevent manual triggers.
+         */
+        val INSTALLER_PACKAGES: Set<String> = setOf(
+            // AOSP package installer (sideload APKs)
+            "com.android.packageinstaller",
+            // Google's variant (Pixel, stock Android 8+)
+            "com.google.android.packageinstaller",
+            // Samsung One UI
+            "com.samsung.android.packageinstaller",
+            // MIUI (Xiaomi)
+            "com.miui.packageinstaller",
+            // ColorOS (OPPO / Realme)
+            "com.coloros.packageinstaller",
+            "com.oppo.packageinstaller",
+            // OnePlus OxygenOS
+            "com.oneplus.packageinstaller",
+            // Huawei EMUI / HarmonyOS
+            "com.huawei.appmarket",
+            "com.huawei.packageinstaller",
+            // Vivo FuntouchOS
+            "com.bbk.packageinstaller",
+            "com.vivo.packageinstaller",
+            // System uninstall dialog (Android 10+ routes uninstalls through this)
+            "com.android.uninstaller",
+        )
     }
 
     private lateinit var prefs: SharedPreferences
@@ -182,13 +222,23 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // ─── Block determination ──────────────────────────────────────────────────
 
     private fun isPackageBlocked(pkg: String, focusActive: Boolean, saActive: Boolean): Boolean {
-        // 1. ALWAYS_BLOCKED is empty — this is a no-op. Previously blocked package installers
-        // permanently; now users control this via allowed apps / block schedule.
+        // 1. ALWAYS_BLOCKED is empty — no-op, kept for API stability.
         if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) {
             return true
         }
 
-        // 2. Task-based block: block any app NOT in the allowed list
+        // 2. Installer/uninstaller packages — blocked whenever ANY session is active.
+        //    DISALLOW_INSTALL_APPS / DISALLOW_UNINSTALL_APPS via Device Admin requires
+        //    Device Owner (unachievable for a sideloaded app), so Accessibility is the
+        //    only reliable enforcement layer. We intercept the installer window before
+        //    the user can tap "Install" or "Uninstall" and dismiss it with BACK.
+        if (focusActive || saActive) {
+            if (INSTALLER_PACKAGES.any { pkg.equals(it, ignoreCase = true) }) {
+                return true
+            }
+        }
+
+        // 3. Task-based block: block any app NOT in the allowed list
         if (focusActive) {
             val allowedJson = prefs.getString(PREF_ALLOWED_PKG, "[]") ?: "[]"
             val allowedList = parseJsonArray(allowedJson)
@@ -196,7 +246,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             if (!isAllowed) return true
         }
 
-        // 3. Standalone block: block any app explicitly listed
+        // 4. Standalone block: block any app explicitly listed
         if (saActive) {
             val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
             val saList = parseJsonArray(saJson)
@@ -217,15 +267,23 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
         sendBroadcast(broadcast)
 
-        // 2. Press HOME to immediately exit the blocked app.
-        //    performGlobalAction is the correct and reliable API for this — it works
-        //    on all Android versions including Samsung One UI.
+        // 2. Choose the dismissal action based on the blocked package.
         //
-        //    Note: Do NOT call startActivity() here to open FocusFlow after pressing home.
-        //    Android 10+ blocks background activity starts from services (including
-        //    Accessibility Services). The call would fail silently and on older Android
-        //    it would confusingly pull FocusFlow over the home screen.
-        performGlobalAction(GLOBAL_ACTION_HOME)
+        //    Installer/uninstaller packages show a confirmation dialog (a new Activity
+        //    on the back stack). If we press HOME the dialog stays in the back stack
+        //    and the user can resume it from Recents. Pressing BACK dismisses the dialog
+        //    cleanly so the install/uninstall never completes.
+        //
+        //    For all other blocked apps HOME is correct — pressing BACK could close
+        //    FocusFlow's own task if it was previously in the back stack.
+        //
+        //    Note: Do NOT call startActivity() here. Android 10+ blocks background
+        //    activity starts from Accessibility Services.
+        if (INSTALLER_PACKAGES.any { blockedPackage.equals(it, ignoreCase = true) }) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        } else {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
     }
 
     // ─── JSON helper ──────────────────────────────────────────────────────────

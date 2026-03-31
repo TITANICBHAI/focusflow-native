@@ -217,16 +217,36 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
             return
         }
 
-        // Fallback chain for Samsung One UI and other OEMs
-        val fallbacks = listOf(
+        // Fallback chain — class-name intents for OEMs that block ACTION_ADD_DEVICE_ADMIN
+        // Note: class names must be set via setClassName(), NOT passed to the Intent()
+        // constructor (which treats them as action strings and fails to resolve on all devices).
+        val activity2 = reactContext.currentActivity
+        val fallbackIntents = listOf(
+            // AOSP / most stock Android: Device Admin list screen
+            Intent().apply {
+                setClassName("com.android.settings", "com.android.settings.DeviceAdminSettings")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            },
             // Samsung One UI 5+: Biometrics & Security → Device admin apps
-            "com.android.settings.DeviceAdminSettings",
-            Settings.ACTION_SECURITY_SETTINGS
+            Intent().apply {
+                setClassName(
+                    "com.samsung.android.settings",
+                    "com.samsung.android.settings.deviceadmin.DeviceAdminSettings"
+                )
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            },
+            // Generic security settings as last resort
+            Intent(Settings.ACTION_SECURITY_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
         )
-        for (fb in fallbacks) {
+        for (fb in fallbackIntents) {
             try {
-                val fbIntent = Intent(fb).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
-                reactContext.startActivity(fbIntent)
+                if (activity2 != null && !activity2.isFinishing) {
+                    activity2.startActivity(fb)
+                } else {
+                    reactContext.startActivity(fb)
+                }
                 promise.resolve(null)
                 return
             } catch (_: Exception) { /* try next */ }
