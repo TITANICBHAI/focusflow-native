@@ -83,15 +83,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         )
 
         /**
-         * Package installers always blocked during a task focus session.
-         * Prevents the user from sideloading or uninstalling apps to bypass blocking.
+         * Previously used to permanently block package installers.
+         * Removed — the user now has full control over whether to block the installer
+         * via the Allowed Apps list (focus mode) or Block Schedule (standalone).
+         * Kept as an empty set so callers don't need updating.
          */
-        val ALWAYS_BLOCKED: Set<String> = setOf(
-            "com.android.packageinstaller",
-            "com.google.android.packageinstaller",
-            "com.samsung.android.packageinstaller",
-            "com.miui.packageinstaller"
-        )
+        val ALWAYS_BLOCKED: Set<String> = emptySet()
     }
 
     private lateinit var prefs: SharedPreferences

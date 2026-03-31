@@ -212,6 +212,20 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
                 </View>
               )}
 
+              {/* Package installer info — allowed by default */}
+              <View style={styles.manualSection}>
+                <Text style={styles.manualSectionLabel}>ALLOWED BY DEFAULT</Text>
+                <View style={styles.infoCard}>
+                  <Ionicons name="information-circle-outline" size={18} color={COLORS.primary} style={{ marginTop: 1 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.infoTitle}>Android Package Installer / Uninstaller</Text>
+                    <Text style={styles.infoBody}>
+                      The system app that installs and uninstalls apps on your device. It is allowed during Focus Mode by default — if you want to block it, remove it from this list using the manual entry field above (e.g. com.android.packageinstaller).
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
               {/* Search bar and status for auto-detected list */}
               <View style={styles.searchContainer}>
                 <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
@@ -441,5 +455,25 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: 'center',
     paddingHorizontal: SPACING.lg,
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+  },
+  infoTitle: {
+    fontSize: FONT.sm,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginBottom: 3,
+  },
+  infoBody: {
+    fontSize: FONT.xs,
+    color: COLORS.primary,
+    lineHeight: 17,
+    opacity: 0.85,
   },
 });

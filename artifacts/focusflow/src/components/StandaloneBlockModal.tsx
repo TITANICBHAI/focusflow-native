@@ -334,6 +334,13 @@ export function StandaloneBlockModal({
                 <Text style={styles.manualHint}>
                   Enter app package name, e.g. com.instagram.android
                 </Text>
+                <View style={styles.installerTip}>
+                  <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
+                  <Text style={styles.installerTipText}>
+                    To block the Android Package Installer / Uninstaller, add it manually:{' '}
+                    <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
+                  </Text>
+                </View>
                 <View style={styles.manualInputRow}>
                   <TextInput
                     style={styles.manualInput}
@@ -521,6 +528,24 @@ const styles = StyleSheet.create({
   manualHint: {
     fontSize: FONT.xs,
     color: COLORS.muted,
+  },
+  installerTip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+  },
+  installerTipText: {
+    flex: 1,
+    fontSize: FONT.xs,
+    color: COLORS.muted,
+    lineHeight: 16,
+  },
+  installerTipCode: {
+    fontFamily: 'monospace',
+    color: COLORS.text,
   },
   manualInputRow: {
     flexDirection: 'row',
