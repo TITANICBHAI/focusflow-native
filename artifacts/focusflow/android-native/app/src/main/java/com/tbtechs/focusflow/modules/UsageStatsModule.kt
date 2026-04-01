@@ -202,12 +202,17 @@ class UsageStatsModule(private val reactContext: ReactApplicationContext) :
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
                 "Prevents aggressive battery killers from stopping FocusFlow's blocking service."
             )
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            // Do NOT set FLAG_ACTIVITY_NEW_TASK here — it conflicts with
+            // startActivityForResult() and can prevent the dialog from appearing.
         }
 
+        // ACTION_ADD_DEVICE_ADMIN requires startActivityForResult() to display the
+        // system activation dialog. Plain startActivity() is silently accepted by
+        // Android but never shows the dialog — the request code (1001) is arbitrary
+        // since we don't need the result callback in this native module.
         val activity = reactContext.currentActivity
         val launched = if (activity != null && !activity.isFinishing) {
-            try { activity.startActivity(adminIntent); true } catch (_: Exception) { false }
+            try { activity.startActivityForResult(adminIntent, 1001); true } catch (_: Exception) { false }
         } else {
             try { reactContext.startActivity(adminIntent); true } catch (_: Exception) { false }
         }
