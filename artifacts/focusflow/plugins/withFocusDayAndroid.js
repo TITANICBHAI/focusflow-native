@@ -7,8 +7,12 @@
  *   3. Declares ForegroundTaskService
  *   4. Declares AppBlockerAccessibilityService
  *   5. Declares BootReceiver
- *   6. Registers FocusDayPackage via withMainApplication (reliable for RN 0.76+)
- *   7. Copies all Kotlin source files from android-native/ into the project
+ *   6. Declares DeviceAdminReceiver (FocusDayDeviceAdminReceiver)
+ *   7. Declares NotificationActionReceiver with COMPLETE / EXTEND / SKIP intent-filters
+ *   8. Declares FocusFlowWidget (AppWidgetProvider) with APPWIDGET_UPDATE intent-filter
+ *   9. Adds <queries> block for Android 11+ package visibility
+ *  10. Registers FocusDayPackage via withMainApplication (reliable for RN 0.76+)
+ *  11. Copies all Kotlin source files from android-native/ into the project
  *
  * Applied automatically during `npx expo prebuild --platform android`.
  * No manual XML or Kotlin editing required.
@@ -260,6 +264,46 @@ function withFocusDayManifest(config) {
           'android:enabled':  'true',
           'android:exported': 'false',
         },
+        // Intent-filters are required even for exported=false receivers when the
+        // PendingIntent is created with setPackage() rather than setComponent().
+        // Without these, Android cannot match the broadcast action to the receiver
+        // and the broadcast is silently dropped — notification buttons stop working.
+        'intent-filter': [{
+          action: [
+            { $: { 'android:name': 'com.tbtechs.focusflow.notif.COMPLETE' } },
+            { $: { 'android:name': 'com.tbtechs.focusflow.notif.EXTEND'  } },
+            { $: { 'android:name': 'com.tbtechs.focusflow.notif.SKIP'    } },
+          ],
+        }],
+      });
+    }
+
+    // ── FocusFlow Home Screen Widget ──────────────────────────────────────────
+    // AppWidgetProvider subclass that shows the active focus session and time
+    // remaining on the home screen.
+    // Must be declared in the manifest with APPWIDGET_UPDATE intent-filter and
+    // the appwidget.provider meta-data pointing to res/xml/widget_info.xml.
+    const widgetExists = (app.receiver || []).some(
+      (r) => r.$['android:name'] === 'com.tbtechs.focusflow.widget.FocusFlowWidget'
+    );
+    if (!widgetExists) {
+      if (!app.receiver) app.receiver = [];
+      app.receiver.push({
+        $: {
+          'android:name':     'com.tbtechs.focusflow.widget.FocusFlowWidget',
+          'android:exported': 'true',
+        },
+        'intent-filter': [{
+          action: [
+            { $: { 'android:name': 'android.appwidget.action.APPWIDGET_UPDATE' } },
+          ],
+        }],
+        'meta-data': [{
+          $: {
+            'android:name':     'android.appwidget.provider',
+            'android:resource': '@xml/widget_info',
+          },
+        }],
       });
     }
 
