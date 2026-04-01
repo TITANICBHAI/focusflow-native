@@ -107,7 +107,7 @@ export default function SettingsScreen() {
         <Text style={[styles.title, { color: theme.text }]}>Settings</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom + 20 }]}>
 
         {/* ── Notifications ── */}
         <Section title="Notifications">

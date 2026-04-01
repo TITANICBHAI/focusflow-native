@@ -162,7 +162,7 @@ export default function ScheduleScreen() {
       {viewMode === 'list' ? (
         <ScrollView
           style={styles.list}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 60 + insets.bottom + 80 }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
           {todayTasks.length === 0 && (
@@ -191,7 +191,7 @@ export default function ScheduleScreen() {
       )}
 
       {/* FAB */}
-      <TouchableOpacity style={[styles.fab, { bottom: 16 + insets.bottom }]} onPress={() => setShowAddModal(true)}>
+      <TouchableOpacity style={[styles.fab, { bottom: 60 + insets.bottom + 12 }]} onPress={() => setShowAddModal(true)}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
 
@@ -315,7 +315,6 @@ const styles = StyleSheet.create({
   emptySubtext: { fontSize: FONT.sm, color: COLORS.border },
   fab: {
     position: 'absolute',
-    bottom: 30,
     right: SPACING.lg,
     width: 56,
     height: 56,

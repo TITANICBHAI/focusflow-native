@@ -32,8 +32,8 @@ export default function TabLayout() {
             borderTopWidth: isWeb || isDark ? 1 : 0,
             borderTopColor: theme.tabBarBorder,
             elevation: 8,
-            height: isWeb ? 84 : 80,
-            paddingBottom: isWeb ? 34 : 16,
+            height: isWeb ? 84 : 60 + insets.bottom,
+            paddingBottom: isWeb ? 34 : insets.bottom + 6,
             paddingTop: 8,
           },
           tabBarLabelStyle: {

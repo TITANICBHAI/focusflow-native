@@ -97,7 +97,7 @@ export default function StatsScreen() {
         <Text style={[styles.date, { color: theme.textSecondary }]}>{dayjs().format('MMMM D, YYYY')}</Text>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom + 20 }]}>
 
         {/* Streak banner */}
         {streak > 0 && (

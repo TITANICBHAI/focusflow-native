@@ -12,6 +12,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
@@ -40,6 +41,7 @@ function initialDate(hhmm?: string): Date {
 }
 
 export default function QuickAddModal({ visible, onClose, onSave, initialStartTime }: Props) {
+  const insets = useSafeAreaInsets();
   const { state, updateSettings } = useApp();
   const presets: AllowedAppPreset[] = state.settings.allowedAppPresets ?? [];
 
@@ -149,7 +151,7 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <View style={styles.container}>
+          <View style={[styles.container, { paddingTop: insets.top }]}>
             {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity onPress={handleClose}>
@@ -161,7 +163,11 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+              keyboardShouldPersistTaps="handled"
+            >
 
               {/* Quick input */}
               {!isAdvanced && (

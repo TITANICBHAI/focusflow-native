@@ -135,7 +135,7 @@ export default function FocusScreen() {
           onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
           onClose={() => setBlockModalVisible(false)}
         />
-        <View style={{ height: 80 }} />
+        <View style={{ height: 60 + insets.bottom + 20 }} />
       </SafeAreaView>
     );
   }
@@ -376,7 +376,7 @@ export default function FocusScreen() {
         <Ionicons name="chevron-forward" size={16} color={COLORS.border} />
       </TouchableOpacity>
 
-        <View style={{ height: 80 }} />
+        <View style={{ height: 60 + insets.bottom + 20 }} />
       </ScrollView>
 
       <StandaloneBlockModal
