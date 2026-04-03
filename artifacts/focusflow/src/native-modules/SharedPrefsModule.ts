@@ -37,4 +37,14 @@ export const SharedPrefsModule = {
     if (!SharedPrefs) return;
     return SharedPrefs.setStandaloneBlock(active, packages, untilMs);
   },
+
+  async setDailyAllowancePackages(packages: string[]): Promise<void> {
+    if (!SharedPrefs) return;
+    return SharedPrefs.setDailyAllowancePackages(packages);
+  },
+
+  async resetDailyAllowanceUsage(packageName: string | null): Promise<void> {
+    if (!SharedPrefs) return;
+    return SharedPrefs.resetDailyAllowanceUsage(packageName ?? null);
+  },
 };

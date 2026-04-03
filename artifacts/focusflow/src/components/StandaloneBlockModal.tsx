@@ -18,13 +18,16 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { InstalledAppsModule, InstalledApp } from '@/native-modules/InstalledAppsModule';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
+import { useTheme } from '@/hooks/useTheme';
 
 interface Props {
   visible: boolean;
   blockedPackages: string[];
   blockUntil: string | null;
   locked?: boolean;
+  dailyAllowancePackages?: string[];
   onSave: (packages: string[], untilMs: number | null) => void | Promise<void>;
+  onSaveDailyAllowance?: (packages: string[]) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -43,11 +46,15 @@ export function StandaloneBlockModal({
   blockedPackages,
   blockUntil,
   locked = false,
+  dailyAllowancePackages = [],
   onSave,
+  onSaveDailyAllowance,
   onClose,
 }: Props) {
+  const { theme } = useTheme();
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set(blockedPackages));
+  const [dailyAllowed, setDailyAllowed] = useState<Set<string>>(new Set(dailyAllowancePackages));
   const [search, setSearch] = useState('');
   const [loadingApps, setLoadingApps] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -62,6 +69,7 @@ export function StandaloneBlockModal({
   useEffect(() => {
     if (!visible) return;
     setSelected(new Set(blockedPackages));
+    setDailyAllowed(new Set(dailyAllowancePackages));
     setSearch('');
     setManualInput('');
     setUntilDate(blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate());
@@ -123,6 +131,18 @@ export function StandaloneBlockModal({
     });
   };
 
+  const toggleDailyAllowed = (packageName: string) => {
+    setDailyAllowed((prev) => {
+      const next = new Set(prev);
+      if (next.has(packageName)) {
+        next.delete(packageName);
+      } else {
+        next.add(packageName);
+      }
+      return next;
+    });
+  };
+
   const handleAddManual = () => {
     const pkg = manualInput.trim().toLowerCase();
     if (!pkg || !pkg.includes('.')) return;
@@ -153,6 +173,9 @@ export function StandaloneBlockModal({
     setSaving(true);
     try {
       await onSave(Array.from(selected), untilDate.getTime());
+      if (onSaveDailyAllowance) {
+        await onSaveDailyAllowance(Array.from(dailyAllowed));
+      }
       onClose();
     } catch (e) {
       console.error('[StandaloneBlockModal] Failed to save', e);
@@ -209,56 +232,87 @@ export function StandaloneBlockModal({
 
   const renderItem = ({ item }: { item: InstalledApp }) => {
     const blocked = selected.has(item.packageName);
+    const isDaily = dailyAllowed.has(item.packageName);
     return (
-      <TouchableOpacity style={styles.row} onPress={() => toggle(item.packageName)} activeOpacity={0.7}>
-        {item.iconBase64 ? (
-          <Image
-            source={{ uri: `data:image/png;base64,${item.iconBase64}` }}
-            style={styles.icon}
-          />
-        ) : (
-          <View style={styles.iconPlaceholder}>
-            <Ionicons name="apps-outline" size={22} color={COLORS.muted} />
+      <View style={styles.rowWrap}>
+        <TouchableOpacity style={[styles.row, { backgroundColor: theme.card }]} onPress={() => toggle(item.packageName)} activeOpacity={0.7}>
+          {item.iconBase64 ? (
+            <Image
+              source={{ uri: `data:image/png;base64,${item.iconBase64}` }}
+              style={styles.icon}
+            />
+          ) : (
+            <View style={styles.iconPlaceholder}>
+              <Ionicons name="apps-outline" size={22} color={COLORS.muted} />
+            </View>
+          )}
+          <View style={styles.appInfo}>
+            <Text style={[styles.appName, { color: theme.text }]} numberOfLines={1}>{item.appName}</Text>
+            <Text style={[styles.packageName, { color: theme.muted }]} numberOfLines={1}>{item.packageName}</Text>
           </View>
-        )}
-        <View style={styles.appInfo}>
-          <Text style={styles.appName} numberOfLines={1}>{item.appName}</Text>
-          <Text style={styles.packageName} numberOfLines={1}>{item.packageName}</Text>
-        </View>
-        <View style={[styles.checkbox, blocked && styles.checkboxBlocked]}>
-          {blocked && <Ionicons name="ban" size={13} color="#fff" />}
-        </View>
-      </TouchableOpacity>
+          <View style={[styles.checkbox, { borderColor: theme.border }, blocked && styles.checkboxBlocked]}>
+            {blocked && <Ionicons name="ban" size={13} color="#fff" />}
+          </View>
+        </TouchableOpacity>
+        {/* Daily allowance toggle — shown below the block row */}
+        <TouchableOpacity
+          style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}
+          onPress={() => toggleDailyAllowed(item.packageName)}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name={isDaily ? 'sunny' : 'sunny-outline'}
+            size={13}
+            color={isDaily ? COLORS.orange : COLORS.muted}
+          />
+          <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
+            {isDaily ? 'Allowed once today' : 'Once per day allowance'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
   const renderManualPackage = (pkg: string) => {
     const blocked = selected.has(pkg);
+    const isDaily = dailyAllowed.has(pkg);
     return (
-      <TouchableOpacity key={pkg} style={styles.row} onPress={() => toggle(pkg)} activeOpacity={0.7}>
-        <View style={styles.iconPlaceholder}>
-          <Ionicons name="cube-outline" size={22} color={COLORS.muted} />
-        </View>
-        <View style={styles.appInfo}>
-          <Text style={styles.appName} numberOfLines={1}>Manual Entry</Text>
-          <Text style={styles.packageName} numberOfLines={1}>{pkg}</Text>
-        </View>
-        <View style={[styles.checkbox, blocked && styles.checkboxBlocked]}>
-          {blocked && <Ionicons name="ban" size={13} color="#fff" />}
-        </View>
-      </TouchableOpacity>
+      <View key={pkg} style={styles.rowWrap}>
+        <TouchableOpacity style={[styles.row, { backgroundColor: theme.card }]} onPress={() => toggle(pkg)} activeOpacity={0.7}>
+          <View style={styles.iconPlaceholder}>
+            <Ionicons name="cube-outline" size={22} color={COLORS.muted} />
+          </View>
+          <View style={styles.appInfo}>
+            <Text style={[styles.appName, { color: theme.text }]} numberOfLines={1}>Manual Entry</Text>
+            <Text style={[styles.packageName, { color: theme.muted }]} numberOfLines={1}>{pkg}</Text>
+          </View>
+          <View style={[styles.checkbox, { borderColor: theme.border }, blocked && styles.checkboxBlocked]}>
+            {blocked && <Ionicons name="ban" size={13} color="#fff" />}
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}
+          onPress={() => toggleDailyAllowed(pkg)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name={isDaily ? 'sunny' : 'sunny-outline'} size={13} color={isDaily ? COLORS.orange : COLORS.muted} />
+          <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
+            {isDaily ? 'Allowed once today' : 'Once per day allowance'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>{locked ? '🔒 Block Active' : 'Block Schedule'}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{locked ? '🔒 Block Active' : 'Block Schedule'}</Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={saving}>
             <Text style={[styles.saveText, saving && { opacity: 0.5 }]}>Save</Text>
           </TouchableOpacity>
@@ -275,8 +329,8 @@ export function StandaloneBlockModal({
         )}
 
         {/* Expiry date/time pickers */}
-        <View style={[styles.expirySection, locked && styles.expirySectionLocked]}>
-          <Text style={styles.expirySectionLabel}>Block until</Text>
+        <View style={[styles.expirySection, { backgroundColor: theme.card, borderColor: theme.border }, locked && styles.expirySectionLocked]}>
+          <Text style={[styles.expirySectionLabel, { color: theme.textSecondary }]}>Block until</Text>
           <View style={styles.expiryRow}>
             <TouchableOpacity
               style={[styles.expiryBtn, locked && styles.expiryBtnLocked]}
@@ -329,21 +383,21 @@ export function StandaloneBlockModal({
           ListHeaderComponent={
             <>
               {/* Manual entry — always shown at the top, primary option */}
-              <View style={styles.manualSection}>
-                <Text style={styles.manualSectionLabel}>ADD BY PACKAGE NAME</Text>
-                <Text style={styles.manualHint}>
+              <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>ADD BY PACKAGE NAME</Text>
+                <Text style={[styles.manualHint, { color: theme.textSecondary }]}>
                   Enter app package name, e.g. com.instagram.android
                 </Text>
-                <View style={styles.installerTip}>
+                <View style={[styles.installerTip, { backgroundColor: theme.surface }]}>
                   <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
-                  <Text style={styles.installerTipText}>
+                  <Text style={[styles.installerTipText, { color: theme.textSecondary }]}>
                     To block the Android Package Installer / Uninstaller, add it manually:{' '}
                     <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
                   </Text>
                 </View>
                 <View style={styles.manualInputRow}>
                   <TextInput
-                    style={styles.manualInput}
+                    style={[styles.manualInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
                     placeholder="com.example.app"
                     placeholderTextColor={COLORS.muted}
                     value={manualInput}
@@ -365,17 +419,17 @@ export function StandaloneBlockModal({
 
               {/* Manually added packages */}
               {manualPackages.length > 0 && (
-                <View style={styles.manualSection}>
-                  <Text style={styles.manualSectionLabel}>MANUALLY ADDED</Text>
+                <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>MANUALLY ADDED</Text>
                   {manualPackages.map(renderManualPackage)}
                 </View>
               )}
 
               {/* Search and installed apps header */}
-              <View style={styles.searchContainer}>
+              <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Ionicons name="search" size={16} color={COLORS.muted} style={styles.searchIcon} />
                 <TextInput
-                  style={styles.searchInput}
+                  style={[styles.searchInput, { color: theme.text }]}
                   placeholder="Search installed apps…"
                   placeholderTextColor={COLORS.muted}
                   value={search}
@@ -385,7 +439,7 @@ export function StandaloneBlockModal({
                 />
               </View>
 
-              <Text style={styles.hint}>
+              <Text style={[styles.hint, { color: theme.textSecondary }]}>
                 {selected.size > 0
                   ? `${selected.size} app${selected.size !== 1 ? 's' : ''} will be blocked — tap to toggle`
                   : 'Tap apps below to block them'}
@@ -394,7 +448,7 @@ export function StandaloneBlockModal({
               {loadingApps && (
                 <View style={styles.loadingRow}>
                   <ActivityIndicator size="small" color={COLORS.primary} />
-                  <Text style={styles.loadingText}>Loading installed apps…</Text>
+                  <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading installed apps…</Text>
                 </View>
               )}
             </>
@@ -667,6 +721,34 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: SPACING.xs,
+  },
+  rowWrap: {
+    gap: 0,
+  },
+  dailyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 5,
+    marginTop: -2,
+    backgroundColor: COLORS.surface,
+    borderBottomLeftRadius: RADIUS.md,
+    borderBottomRightRadius: RADIUS.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
+  },
+  dailyRowActive: {
+    backgroundColor: COLORS.orange + '15',
+    borderTopColor: COLORS.orange + '33',
+  },
+  dailyText: {
+    fontSize: FONT.xs,
+    color: COLORS.muted,
+  },
+  dailyTextActive: {
+    color: COLORS.orange,
+    fontWeight: '600',
   },
   emptyContainer: {
     paddingTop: SPACING.xl,

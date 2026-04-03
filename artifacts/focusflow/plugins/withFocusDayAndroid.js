@@ -212,6 +212,14 @@ function withFocusDayManifest(config) {
           action: [
             { $: { 'android:name': 'android.intent.action.BOOT_COMPLETED' } },
             { $: { 'android:name': 'android.intent.action.QUICKBOOT_POWERON' } },
+            // USER_UNLOCKED is required on FBE (file-based encryption) devices — which is
+            // virtually all modern Android phones. BOOT_COMPLETED fires before user data is
+            // decrypted on these devices, so SharedPreferences cannot be read. USER_UNLOCKED
+            // fires after the user enters their PIN/pattern and data is accessible.
+            { $: { 'android:name': 'android.intent.action.USER_UNLOCKED' } },
+            // MY_PACKAGE_REPLACED fires when the app is updated — ensures the service
+            // restarts with the new binary after an OTA update without requiring a reboot.
+            { $: { 'android:name': 'android.intent.action.MY_PACKAGE_REPLACED' } },
           ],
         }],
       });

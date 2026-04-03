@@ -136,8 +136,16 @@ class ForegroundTaskService : Service() {
 
                     handler.removeCallbacks(tickRunnable)
                     handler.post(tickRunnable)
+
+                    // Push widget update immediately — don't wait for the 30s tick
+                    FocusFlowWidget.pushWidgetUpdate(applicationContext)
                 } else {
-                    goIdle()
+                    // Only go idle if we are not already running an active focus session.
+                    // Without this guard, calling startIdleService() while focus is active
+                    // (e.g. on app open) would destroy the active notification and block state.
+                    if (!isActiveMode) {
+                        goIdle()
+                    }
                 }
             }
         }

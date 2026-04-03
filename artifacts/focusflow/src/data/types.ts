@@ -56,4 +56,8 @@ export interface AppSettings {
   standaloneBlockPackages: string[]; // packages to always block regardless of task state
   standaloneBlockUntil: string | null; // ISO timestamp when the standalone block expires
   allowedAppPresets: AllowedAppPreset[]; // saved preset allow-lists
+  // Once-per-day allowance: these apps are allowed through ONE TIME per calendar day during
+  // any blocking session (task focus or standalone block). After the first open, they are
+  // blocked for the rest of the day. The counter resets at midnight.
+  dailyAllowancePackages: string[];
 }

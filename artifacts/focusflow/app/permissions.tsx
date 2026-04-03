@@ -17,6 +17,8 @@ import * as Notifications from 'expo-notifications';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { TroubleshootModal } from '@/components/TroubleshootModal';
+import { useApp } from '@/context/AppContext';
+import { useTheme } from '@/hooks/useTheme';
 
 type PermStatus = 'granted' | 'denied' | 'unknown';
 type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin';
@@ -185,6 +187,9 @@ const PERMISSIONS: PermissionItem[] = [
 ];
 
 export default function PermissionsScreen() {
+  const { state } = useApp();
+  const { theme } = useTheme();
+  const isFocusing = state.focusSession !== null && state.focusSession.isActive;
   const [statuses, setStatuses] = useState<Record<string, PermStatus>>({});
   const [checking, setChecking] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -230,13 +235,31 @@ export default function PermissionsScreen() {
   const allGranted = grantedCount === requiredCount;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top']}>
+      {/* Focus-active locked banner — settings access is blocked by the AccessibilityService
+          when a focus session is running; this banner explains why and provides a clear CTA. */}
+      {isFocusing && (
+        <View style={styles.focusLockedBanner}>
+          <Ionicons name="lock-closed" size={16} color={COLORS.orange} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.focusLockedTitle}>Focus Session Active — Locked</Text>
+            <Text style={styles.focusLockedDesc}>
+              Permission changes are blocked during a focus session to prevent bypassing app blocking.
+              Stop focus mode first to make changes.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => router.back()} style={styles.focusLockedBack}>
+            <Text style={styles.focusLockedBackText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Permissions</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Permissions</Text>
         <TouchableOpacity onPress={checkAll} style={styles.refreshBtn} disabled={checking}>
           {checking ? (
             <ActivityIndicator size="small" color={COLORS.primary} />
@@ -249,13 +272,13 @@ export default function PermissionsScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
 
         {/* Tutorial Banner */}
-        <View style={styles.tutorialBanner}>
+        <View style={[styles.tutorialBanner, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.tutorialIconWrap}>
             <Ionicons name="shield-checkmark" size={28} color={COLORS.primary} />
           </View>
           <View style={styles.tutorialTextWrap}>
-            <Text style={styles.tutorialTitle}>Why these permissions?</Text>
-            <Text style={styles.tutorialBody}>
+            <Text style={[styles.tutorialTitle, { color: theme.text }]}>Why these permissions?</Text>
+            <Text style={[styles.tutorialBody, { color: theme.textSecondary }]}>
               FocusFlow enforces focus at the system level — not just reminders.
               To actually block apps and keep your session running, Android requires
               special access that regular apps don't need.
@@ -264,10 +287,10 @@ export default function PermissionsScreen() {
         </View>
 
         {/* Progress bar */}
-        <View style={styles.progressSection}>
+        <View style={[styles.progressSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View style={styles.progressLabelRow}>
-            <Text style={styles.progressLabel}>Required permissions granted</Text>
-            <Text style={[styles.progressCount, allGranted && styles.progressCountDone]}>
+            <Text style={[styles.progressLabel, { color: theme.textSecondary }]}>Required permissions granted</Text>
+            <Text style={[styles.progressCount, { color: theme.text }, allGranted && styles.progressCountDone]}>
               {grantedCount} / {requiredCount}
             </Text>
           </View>
@@ -295,7 +318,7 @@ export default function PermissionsScreen() {
           const isExpanded = expandedId === perm.id;
 
           return (
-            <View key={perm.id} style={[styles.card, status === 'granted' && styles.cardGranted]}>
+            <View key={perm.id} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, status === 'granted' && styles.cardGranted]}>
               {/* Main row — tap to expand */}
               <TouchableOpacity
                 style={styles.cardMain}
@@ -307,7 +330,7 @@ export default function PermissionsScreen() {
                 </View>
                 <View style={styles.cardBody}>
                   <View style={styles.cardTitleRow}>
-                    <Text style={styles.cardTitle}>{perm.title}</Text>
+                    <Text style={[styles.cardTitle, { color: theme.text }]}>{perm.title}</Text>
                     {perm.optional && (
                       <View style={styles.optionalBadge}>
                         <Text style={styles.optionalText}>optional</Text>
@@ -315,7 +338,7 @@ export default function PermissionsScreen() {
                     )}
                     <StatusBadge status={status} />
                   </View>
-                  <Text style={styles.cardDesc} numberOfLines={isExpanded ? undefined : 2}>
+                  <Text style={[styles.cardDesc, { color: theme.textSecondary }]} numberOfLines={isExpanded ? undefined : 2}>
                     {perm.description}
                   </Text>
                 </View>
@@ -328,21 +351,21 @@ export default function PermissionsScreen() {
 
               {/* Expanded detail */}
               {isExpanded && (
-                <View style={styles.expandedSection}>
+                <View style={[styles.expandedSection, { borderTopColor: theme.border }]}>
                   {/* Why needed */}
-                  <View style={styles.whyBox}>
+                  <View style={[styles.whyBox, { backgroundColor: theme.surface }]}>
                     <Ionicons name="bulb-outline" size={14} color={COLORS.orange} />
-                    <Text style={styles.whyText}>{perm.whyNeeded}</Text>
+                    <Text style={[styles.whyText, { color: theme.textSecondary }]}>{perm.whyNeeded}</Text>
                   </View>
 
                   {/* What breaks */}
                   {status !== 'granted' && (
-                    <View style={styles.brokenSection}>
-                      <Text style={styles.brokenTitle}>Without this permission:</Text>
+                    <View style={[styles.brokenSection, { backgroundColor: theme.surface }]}>
+                      <Text style={[styles.brokenTitle, { color: theme.text }]}>Without this permission:</Text>
                       {perm.brokenWithout.map((item, i) => (
                         <View key={i} style={styles.brokenRow}>
                           <Ionicons name="close-circle" size={14} color={COLORS.red} />
-                          <Text style={styles.brokenText}>{item}</Text>
+                          <Text style={[styles.brokenText, { color: theme.textSecondary }]}>{item}</Text>
                         </View>
                       ))}
                     </View>
@@ -582,5 +605,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     marginTop: SPACING.sm,
+  },
+
+  // Focus-active locked banner
+  focusLockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.orange + '18',
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.orange + '66',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+  },
+  focusLockedTitle: {
+    fontSize: FONT.sm,
+    fontWeight: '800',
+    color: COLORS.orange,
+    marginBottom: 2,
+  },
+  focusLockedDesc: {
+    fontSize: FONT.xs,
+    color: COLORS.orange + 'cc',
+    lineHeight: 16,
+  },
+  focusLockedBack: {
+    backgroundColor: COLORS.orange,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    alignSelf: 'flex-start',
+  },
+  focusLockedBackText: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    color: '#fff',
   },
 });

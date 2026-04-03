@@ -98,4 +98,50 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
             .apply()
         promise.resolve(null)
     }
+
+    /**
+     * Sets the list of packages that have a "once per day" allowance during blocking sessions.
+     *
+     * When a package appears in this list and has not been opened today, the first open is
+     * allowed through (and the usage is recorded). Subsequent opens on the same calendar day
+     * are blocked as normal. The counter resets at midnight automatically (compared by date string).
+     *
+     * Pass an empty array to disable the daily allowance feature entirely.
+     *
+     * @param packages  ReadableArray of package names with daily allowance
+     */
+    @ReactMethod
+    fun setDailyAllowancePackages(packages: ReadableArray, promise: Promise) {
+        val list = (0 until packages.size()).map { "\"${packages.getString(it)}\"" }
+        val json = "[${list.joinToString(",")}]"
+        prefs().edit()
+            .putString(AppBlockerAccessibilityService.PREF_DAILY_ALLOWANCE_PKGS, json)
+            .apply()
+        promise.resolve(null)
+    }
+
+    /**
+     * Resets the daily allowance usage tracking for all packages (or a specific one).
+     * Call with null to reset all packages, or a specific package name to reset just that one.
+     *
+     * @param packageName  Specific package to reset, or null to reset all
+     */
+    @ReactMethod
+    fun resetDailyAllowanceUsage(packageName: String?, promise: Promise) {
+        val editor = prefs().edit()
+        if (packageName == null) {
+            editor.putString(AppBlockerAccessibilityService.PREF_DAILY_ALLOWANCE_USED, "{}")
+        } else {
+            val usedJson = prefs().getString(AppBlockerAccessibilityService.PREF_DAILY_ALLOWANCE_USED, "{}") ?: "{}"
+            try {
+                val obj = org.json.JSONObject(usedJson)
+                obj.remove(packageName)
+                editor.putString(AppBlockerAccessibilityService.PREF_DAILY_ALLOWANCE_USED, obj.toString())
+            } catch (_: Exception) {
+                editor.putString(AppBlockerAccessibilityService.PREF_DAILY_ALLOWANCE_USED, "{}")
+            }
+        }
+        editor.apply()
+        promise.resolve(null)
+    }
 }

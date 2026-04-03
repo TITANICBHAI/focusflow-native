@@ -30,7 +30,7 @@ export default function FocusScreen() {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const ringSize = Math.min(Math.floor(windowWidth * 0.65), 260);
-  const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime, setStandaloneBlock } = useApp();
+  const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime, setStandaloneBlock, setDailyAllowancePackages } = useApp();
   const isFocusing = state.focusSession !== null && state.focusSession.isActive;
   const [hasAccessibilityPermission, setHasAccessibilityPermission] = useState<boolean | null>(null);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
@@ -104,7 +104,7 @@ export default function FocusScreen() {
           </Text>
 
           <TouchableOpacity
-            style={[styles.blockScheduleBtn, standaloneActive && styles.blockScheduleBtnActive]}
+            style={[styles.blockScheduleBtn, { backgroundColor: theme.card, borderColor: theme.border }, standaloneActive && styles.blockScheduleBtnActive]}
             onPress={() => setBlockModalVisible(true)}
             activeOpacity={0.8}
           >
@@ -114,11 +114,11 @@ export default function FocusScreen() {
               color={standaloneActive ? COLORS.red : COLORS.primary}
             />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.blockScheduleBtnText, standaloneActive && { color: COLORS.red }]}>
+              <Text style={[styles.blockScheduleBtnText, { color: theme.text }, standaloneActive && { color: COLORS.red }]}>
                 {standaloneActive ? 'Block Schedule Active' : 'Set Block Schedule'}
               </Text>
               {standaloneActive && settings.standaloneBlockUntil && (
-                <Text style={styles.blockScheduleBtnDesc}>
+                <Text style={[styles.blockScheduleBtnDesc, { color: theme.textSecondary }]}>
                   {(settings.standaloneBlockPackages ?? []).length} apps blocked until{' '}
                   {dayjs(settings.standaloneBlockUntil).format('MMM D [at] h:mm A')}
                 </Text>
@@ -132,7 +132,9 @@ export default function FocusScreen() {
           visible={blockModalVisible}
           blockedPackages={settings.standaloneBlockPackages ?? []}
           blockUntil={settings.standaloneBlockUntil}
+          dailyAllowancePackages={settings.dailyAllowancePackages ?? []}
           onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
+          onSaveDailyAllowance={async (packages) => { await setDailyAllowancePackages(packages); }}
           onClose={() => setBlockModalVisible(false)}
         />
         <View style={{ height: 60 + insets.bottom + 20 }} />
@@ -145,8 +147,10 @@ export default function FocusScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: task.color + '18' }]}>
-      {/* Accessibility permission warning banner — pinned above scroll */}
-      {hasAccessibilityPermission === false && (
+      {/* Accessibility permission warning banner — pinned above scroll.
+          Suppressed during active focus to avoid false "permission revoked" flashes
+          on Samsung One UI and other OEMs that delay AccessibilityManager updates. */}
+      {hasAccessibilityPermission === false && !isFocusing && (
         <TouchableOpacity
           style={styles.permissionBanner}
           onPress={async () => {
@@ -383,7 +387,9 @@ export default function FocusScreen() {
         visible={blockModalVisible}
         blockedPackages={settings.standaloneBlockPackages ?? []}
         blockUntil={settings.standaloneBlockUntil}
+        dailyAllowancePackages={settings.dailyAllowancePackages ?? []}
         onSave={async (packages, untilMs) => { await setStandaloneBlock(packages, untilMs); }}
+        onSaveDailyAllowance={async (packages) => { await setDailyAllowancePackages(packages); }}
         onClose={() => setBlockModalVisible(false)}
       />
 

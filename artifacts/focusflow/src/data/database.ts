@@ -186,6 +186,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: true,
   standaloneBlockPackages: [],
   standaloneBlockUntil: null,
+  dailyAllowancePackages: [],
   onboardingComplete: false,
 };
 

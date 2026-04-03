@@ -3,6 +3,8 @@ package com.tbtechs.focusflow.services
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.tbtechs.focusflow.modules.FocusDayBridgeModule
@@ -14,7 +16,9 @@ import com.tbtechs.focusflow.modules.FocusDayBridgeModule
  *
  *   1. TASK-BASED BLOCK (focus_active = true)
  *      - Blocks any app NOT in the "allowed_packages" list.
- *      - System UI, launchers, phone/dialer, and settings are ALWAYS allowed (see ALWAYS_ALLOWED).
+ *      - System UI, launchers, phone/dialer are ALWAYS allowed (see ALWAYS_ALLOWED).
+ *      - Settings is ALWAYS_ALLOWED but specific sub-pages (accessibility settings,
+ *        clear data dialogs, date/time) are intercepted and dismissed during focus.
  *      - Cleared automatically when task_end_ms is passed (native time authority).
  *
  *   2. STANDALONE BLOCK (standalone_block_active = true)
@@ -22,17 +26,26 @@ import com.tbtechs.focusflow.modules.FocusDayBridgeModule
  *      - Independent of any task — stays active until standalone_block_until_ms.
  *      - Cleared automatically when the expiry timestamp is passed.
  *
- * When BOTH are active at the same time, enforcement is additive (union):
- *   - Task-blocked apps AND standalone-blocked apps are both enforced.
+ *   3. DAILY ALLOWANCE (daily_allowance_packages JSON array)
+ *      - Apps listed here are allowed ONCE per calendar day during any blocking session.
+ *      - After the first open each day, subsequent opens are blocked.
+ *      - The usage counter resets at midnight automatically.
+ *
+ * When BOTH task + standalone are active, enforcement is additive (union).
+ *
+ * Retry mechanism: when a blocked app is detected, up to 5 re-checks are scheduled
+ * at 300 ms intervals to catch apps that relaunch themselves after being dismissed.
  *
  * SharedPreferences file: "focusday_prefs"
  * Keys:
- *   focus_active                 Boolean — task focus is running
- *   allowed_packages             String  — JSON array of packages allowed during task focus
- *   task_end_ms                  Long    — task session end epoch ms
- *   standalone_block_active      Boolean — standalone block is enabled
- *   standalone_blocked_packages  String  — JSON array of packages to always block
- *   standalone_block_until_ms    Long    — standalone block expiry epoch ms
+ *   focus_active                 Boolean  — task focus is running
+ *   allowed_packages             String   — JSON array of packages allowed during task focus
+ *   task_end_ms                  Long     — task session end epoch ms
+ *   standalone_block_active      Boolean  — standalone block is enabled
+ *   standalone_blocked_packages  String   — JSON array of packages to always block
+ *   standalone_block_until_ms    Long     — standalone block expiry epoch ms
+ *   daily_allowance_packages     String   — JSON array of packages with once-per-day allowance
+ *   daily_allowance_used         String   — JSON object {pkg: "YYYY-MM-DD"} last-used dates
  */
 class AppBlockerAccessibilityService : AccessibilityService() {
 
@@ -45,6 +58,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         const val PREF_SA_PKGS     = "standalone_blocked_packages"
         const val PREF_SA_UNTIL    = "standalone_block_until_ms"
 
+        const val PREF_DAILY_ALLOWANCE_PKGS  = "daily_allowance_packages"
+        const val PREF_DAILY_ALLOWANCE_USED  = "daily_allowance_used"
+
         /**
          * Packages that are NEVER blocked regardless of focus or standalone settings.
          *
@@ -52,6 +68,8 @@ class AppBlockerAccessibilityService : AccessibilityService() {
          * packages. Without this, pressing HOME sends the user to the launcher which
          * then fires a TYPE_WINDOW_STATE_CHANGED event — the service would immediately
          * block the launcher too, causing an infinite HOME-press loop.
+         *
+         * Settings is included here but specific sub-pages are intercepted separately.
          */
         val ALWAYS_ALLOWED: Set<String> = setOf(
             // Core Android OS
@@ -78,71 +96,47 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.google.android.dialer",
             "com.samsung.android.app.telephonyui",
             // Settings (user must be able to reach FocusFlow settings to stop the session)
+            // Specific dangerous sub-pages are blocked via content inspection below.
             "com.android.settings",
             "com.samsung.android.app.settings",
             "com.samsung.android.settings"
         )
 
-        /**
-         * Previously used to permanently block package installers.
-         * Removed — the user now has full control over whether to block the installer
-         * via the Allowed Apps list (focus mode) or Block Schedule (standalone).
-         * Kept as an empty set so callers don't need updating.
-         */
         val ALWAYS_BLOCKED: Set<String> = emptySet()
 
         /**
          * Package names for Android system package installers and uninstallers across OEMs.
-         *
-         * When any blocking session is active (task focus OR standalone block), opening any
-         * of these packages is intercepted and dismissed with BACK (not just HOME) so that
-         * the install/uninstall confirmation dialog is dismissed rather than left pending.
-         *
-         * Why BACK and not HOME?
-         *   HOME sends the user to the launcher but leaves the installer dialog in the back
-         *   stack. On some devices the user can resume it. BACK dismisses the dialog
-         *   cleanly, ensuring the install/uninstall action never completes.
-         *
-         * Note: Silent Play Store background installs cannot be blocked via Accessibility —
-         * they produce no visible window event. The user should also block com.android.vending
-         * in their allowed-apps / block schedule list if they want to prevent manual triggers.
          */
         val INSTALLER_PACKAGES: Set<String> = setOf(
-            // AOSP package installer (sideload APKs)
             "com.android.packageinstaller",
-            // Google's variant (Pixel, stock Android 8+)
             "com.google.android.packageinstaller",
-            // Samsung One UI
             "com.samsung.android.packageinstaller",
-            // MIUI (Xiaomi)
             "com.miui.packageinstaller",
-            // ColorOS (OPPO / Realme)
             "com.coloros.packageinstaller",
             "com.oppo.packageinstaller",
-            // OnePlus OxygenOS
             "com.oneplus.packageinstaller",
-            // Huawei EMUI / HarmonyOS
             "com.huawei.appmarket",
             "com.huawei.packageinstaller",
-            // Vivo FuntouchOS
             "com.bbk.packageinstaller",
             "com.vivo.packageinstaller",
-            // System uninstall dialog (Android 10+ routes uninstalls through this)
             "com.android.uninstaller",
         )
+
+        /** Max number of rapid re-check attempts after a block dismissal. */
+        private const val MAX_RETRY_ATTEMPTS = 5
+        /** Interval between retry checks in milliseconds. */
+        private const val RETRY_INTERVAL_MS = 300L
     }
 
     private lateinit var prefs: SharedPreferences
     private var lastBlockedPkg: String? = null
     private var lastBlockedAtMs: Long = 0L
 
+    // Handler for retry re-checks — runs on main thread (same thread as accessibility events)
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onServiceConnected() {
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        // Note: do NOT dynamically reassign serviceInfo here.
-        // Event types, flags, and capabilities are declared in accessibility_service_config.xml.
-        // Reassigning serviceInfo in onServiceConnected can silently break Samsung One UI
-        // because Samsung's accessibility manager re-reads the XML config after connection
-        // and may reject conflicting dynamic updates.
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -155,7 +149,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         if (focusActive) {
             val endMs = prefs.getLong("task_end_ms", 0L)
             if (endMs > 0L && now > endMs) {
-                // Native authority: task expired but JS didn't clean up — self-correct.
                 prefs.edit().putBoolean(PREF_FOCUS_ON, false).apply()
                 focusActive = false
                 lastBlockedPkg = null
@@ -167,7 +160,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         if (saActive) {
             val untilMs = prefs.getLong(PREF_SA_UNTIL, 0L)
             if (untilMs > 0L && now > untilMs) {
-                // Standalone block expired — self-correct.
                 prefs.edit().putBoolean(PREF_SA_ACTIVE, false).apply()
                 saActive = false
             }
@@ -178,31 +170,42 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // Never block our own app.
         if (pkg == packageName) return
 
-        // ALWAYS_ALLOWED packages (launchers, settings) are normally passed through,
-        // BUT they can host system uninstall confirmation dialogs.
-        // On Samsung One UI, long-pressing an app icon → Uninstall fires a
-        // TYPE_WINDOW_STATE_CHANGED event with packageName = com.sec.android.app.launcher.
-        // On stock Android, Settings → App Info → Uninstall fires with
-        // packageName = com.android.settings.
-        // Both are ALWAYS_ALLOWED, so we must intercept them here based on dialog
-        // content rather than package name.
+        // ── ALWAYS_ALLOWED packages ───────────────────────────────────────────
+        // Settings is always allowed at the package level but we intercept dangerous
+        // sub-pages (accessibility settings, clear data, date/time) during focus.
         if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) {
-            if ((focusActive || saActive) && isUninstallDialog(event)) {
-                performGlobalAction(GLOBAL_ACTION_BACK)
+            if (focusActive || saActive) {
+                // Block uninstall dialogs
+                if (isUninstallDialog(event)) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
+                }
+                // During active focus, block the accessibility settings page to prevent
+                // the user from disabling this service mid-session.
+                if (focusActive && isAccessibilitySettingsPage(event)) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
+                }
+                // Block "Clear data / Clear storage" dialogs in Settings during any block session.
+                if (isClearDataDialog(event)) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
+                }
+                // Block date/time settings during focus to prevent clock manipulation.
+                if (focusActive && isDateTimeSettingsPage(event)) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
+                }
             }
             return
         }
 
-        // Google Play Store — uninstall dialogs are always allowed through,
-        // even when the Play Store itself is blocked. The user must be able to
-        // uninstall apps at any time. Install confirmations and general browsing
-        // are NOT exempt and continue through the normal blocking logic below.
+        // Google Play Store — uninstall dialogs are always allowed through.
         if (pkg == "com.android.vending" && (focusActive || saActive) && isUninstallDialog(event)) {
             return
         }
 
-        // ALWAYS_BLOCKED is now empty — this block is a no-op but kept for safety.
-        // Previously used to permanently block package installers; user now controls this.
+        // ALWAYS_BLOCKED is now empty — kept for safety.
         if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) {
             val samePackage = pkg == lastBlockedPkg
             val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
@@ -220,18 +223,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
+        // ── Daily allowance check ─────────────────────────────────────────────
+        // If the package is in the daily allowance list and hasn't been used today yet,
+        // allow it through and mark it as used.
+        if (isDailyAllowanceApp(pkg)) {
+            if (!hasDailyAllowanceBeenUsed(pkg)) {
+                markDailyAllowanceUsed(pkg)
+                lastBlockedPkg = null
+                return // Allowed — first use today
+            }
+            // Already used today — fall through to normal block logic
+        }
+
         val isBlocked = isPackageBlocked(pkg, focusActive, saActive)
 
         if (isBlocked) {
-            // Rate-limit: only re-block the same package if it's been at least 2s since
-            // the last block action, or if it's a different package. This prevents the
-            // enforcement from firing hundreds of times during a transition animation.
             val samePackage = pkg == lastBlockedPkg
             val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
             if (!samePackage || cooldownExpired) {
                 lastBlockedPkg = pkg
                 lastBlockedAtMs = now
                 handleBlockedApp(pkg)
+                scheduleRetryCheck(pkg, 1, focusActive, saActive)
             }
         } else {
             lastBlockedPkg = null
@@ -242,66 +255,148 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         lastBlockedPkg = null
     }
 
-    // ─── Uninstall dialog detection ───────────────────────────────────────────
+    // ─── Retry mechanism ──────────────────────────────────────────────────────
 
     /**
-     * Returns true if the accessibility event represents a system uninstall
-     * confirmation dialog (triggered via long-press on launcher or via Settings).
-     * Checks event text fields first (fast path), then walks the node tree.
+     * Schedules up to [MAX_RETRY_ATTEMPTS] re-checks at [RETRY_INTERVAL_MS] ms intervals
+     * to catch apps that relaunch themselves after the initial dismissal.
      */
+    private fun scheduleRetryCheck(pkg: String, attempt: Int, focusWasActive: Boolean, saWasActive: Boolean) {
+        if (attempt > MAX_RETRY_ATTEMPTS) return
+        handler.postDelayed({
+            val now = System.currentTimeMillis()
+            val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+            val saActive = prefs.getBoolean(PREF_SA_ACTIVE, false)
+            if (!focusActive && !saActive) return@postDelayed
+            val isBlocked = isPackageBlocked(pkg, focusActive, saActive)
+            if (isBlocked && !isDailyAllowanceApp(pkg)) {
+                dismissPackage(pkg)
+                scheduleRetryCheck(pkg, attempt + 1, focusActive, saActive)
+            }
+        }, RETRY_INTERVAL_MS * attempt)
+    }
+
+    // ─── Uninstall dialog detection ───────────────────────────────────────────
+
     private fun isUninstallDialog(event: AccessibilityEvent): Boolean {
         val keywords = listOf("uninstall", "remove app", "delete app")
-
-        // Fast path: check event text / content description.
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
             event.contentDescription?.let { append(it) }
         }.lowercase()
         if (keywords.any { it in eventText }) return true
-
-        // Deep path: walk the accessibility node tree for dialog title/body text.
         val root = event.source ?: return false
         return try {
-            val nodeText = buildString {
-                fun walk(node: AccessibilityNodeInfo) {
-                    node.text?.let { append(it); append(' ') }
-                    node.contentDescription?.let { append(it); append(' ') }
-                    for (i in 0 until node.childCount) {
-                        node.getChild(i)?.let { child ->
-                            walk(child)
-                            child.recycle()
-                        }
-                    }
-                }
-                walk(root)
-            }.lowercase()
+            val nodeText = collectNodeText(root).lowercase()
             keywords.any { it in nodeText }
         } finally {
             root.recycle()
         }
     }
 
+    // ─── Settings sub-page detection ─────────────────────────────────────────
+
+    /**
+     * Returns true when the event represents Android's Accessibility Settings page.
+     * We detect by class name since accessibility settings may not have distinctive text.
+     */
+    private fun isAccessibilitySettingsPage(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        val classKeywords = listOf(
+            "accessibilitysettings",
+            "accessibilityservicesettings",
+            "toggleaccessibilityservicepreferencefragment"
+        )
+        if (classKeywords.any { it in className }) return true
+
+        // Also check event text for accessibility-related content as a fallback
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+        }.lowercase()
+        // Only match if it looks like an accessibility services list, not just any settings page
+        return "downloaded apps" in eventText && "accessibility" in eventText
+    }
+
+    /**
+     * Returns true when the event represents a "Clear data" or "Clear storage" dialog
+     * in Android Settings — prevents the user from clearing FocusFlow data mid-session.
+     */
+    private fun isClearDataDialog(event: AccessibilityEvent): Boolean {
+        val keywords = listOf("clear data", "clear storage", "clear cache", "clear app data")
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it) }
+        }.lowercase()
+        if (keywords.any { it in eventText }) return true
+
+        val root = event.source ?: return false
+        return try {
+            val nodeText = collectNodeText(root).lowercase()
+            keywords.any { it in nodeText }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Returns true when the user navigated to the Date & Time settings page.
+     * Detects by class name and page title text.
+     */
+    private fun isDateTimeSettingsPage(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        if ("datetime" in className || "timesettings" in className || "datesettings" in className) return true
+
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+        }.lowercase()
+        // "Set date" / "Set time" / "Date & time" headings
+        val keywords = listOf("set date", "set time", "date & time", "date and time", "automatic date")
+        return keywords.any { it in eventText }
+    }
+
+    // ─── Daily allowance helpers ──────────────────────────────────────────────
+
+    private fun isDailyAllowanceApp(pkg: String): Boolean {
+        val json = prefs.getString(PREF_DAILY_ALLOWANCE_PKGS, "[]") ?: "[]"
+        val list = parseJsonArray(json)
+        return list.any { it.equals(pkg, ignoreCase = true) }
+    }
+
+    private fun hasDailyAllowanceBeenUsed(pkg: String): Boolean {
+        val today = todayDateString()
+        val usedJson = prefs.getString(PREF_DAILY_ALLOWANCE_USED, "{}") ?: "{}"
+        return try {
+            val obj = org.json.JSONObject(usedJson)
+            obj.optString(pkg, "") == today
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun markDailyAllowanceUsed(pkg: String) {
+        val today = todayDateString()
+        val usedJson = prefs.getString(PREF_DAILY_ALLOWANCE_USED, "{}") ?: "{}"
+        try {
+            val obj = org.json.JSONObject(usedJson)
+            obj.put(pkg, today)
+            prefs.edit().putString(PREF_DAILY_ALLOWANCE_USED, obj.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun todayDateString(): String {
+        val cal = java.util.Calendar.getInstance()
+        return "${cal.get(java.util.Calendar.YEAR)}-${cal.get(java.util.Calendar.MONTH) + 1}-${cal.get(java.util.Calendar.DAY_OF_MONTH)}"
+    }
+
     // ─── Block determination ──────────────────────────────────────────────────
 
     private fun isPackageBlocked(pkg: String, focusActive: Boolean, saActive: Boolean): Boolean {
-        // 1. ALWAYS_BLOCKED is empty — no-op, kept for API stability.
-        if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) {
-            return true
-        }
+        if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) return true
 
-        // 2. Installer/uninstaller packages — blocked whenever ANY session is active.
-        //    DISALLOW_INSTALL_APPS / DISALLOW_UNINSTALL_APPS via Device Admin requires
-        //    Device Owner (unachievable for a sideloaded app), so Accessibility is the
-        //    only reliable enforcement layer. We intercept the installer window before
-        //    the user can tap "Install" or "Uninstall" and dismiss it with BACK.
         if (focusActive || saActive) {
-            if (INSTALLER_PACKAGES.any { pkg.equals(it, ignoreCase = true) }) {
-                return true
-            }
+            if (INSTALLER_PACKAGES.any { pkg.equals(it, ignoreCase = true) }) return true
         }
 
-        // 3. Task-based block: block any app NOT in the allowed list.
-        //    Empty list [] is a sentinel meaning "all apps allowed" — skip blocking entirely.
         if (focusActive) {
             val allowedJson = prefs.getString(PREF_ALLOWED_PKG, "[]") ?: "[]"
             val allowedList = parseJsonArray(allowedJson)
@@ -309,10 +404,8 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 val isAllowed = allowedList.any { a -> pkg.equals(a, ignoreCase = true) }
                 if (!isAllowed) return true
             }
-            // allowedList.isEmpty() → all apps allowed, do not block
         }
 
-        // 4. Standalone block: block any app explicitly listed
         if (saActive) {
             val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
             val saList = parseJsonArray(saJson)
@@ -325,30 +418,37 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // ─── Enforcement ─────────────────────────────────────────────────────────
 
     private fun handleBlockedApp(blockedPackage: String) {
-        // 1. Notify JS via broadcast → FocusDayBridgeModule → "APP_BLOCKED" event
-        //    JS uses this to show a "blocked" overlay/toast in the app UI.
         val broadcast = Intent(FocusDayBridgeModule.ACTION_APP_BLOCKED).apply {
             `package` = packageName
             putExtra(FocusDayBridgeModule.EXTRA_BLOCKED_PKG, blockedPackage)
         }
         sendBroadcast(broadcast)
+        dismissPackage(blockedPackage)
+    }
 
-        // 2. Choose the dismissal action based on the blocked package.
-        //
-        //    Installer/uninstaller packages show a confirmation dialog (a new Activity
-        //    on the back stack). If we press HOME the dialog stays in the back stack
-        //    and the user can resume it from Recents. Pressing BACK dismisses the dialog
-        //    cleanly so the install/uninstall never completes.
-        //
-        //    For all other blocked apps HOME is correct — pressing BACK could close
-        //    FocusFlow's own task if it was previously in the back stack.
-        //
-        //    Note: Do NOT call startActivity() here. Android 10+ blocks background
-        //    activity starts from Accessibility Services.
+    private fun dismissPackage(blockedPackage: String) {
         if (INSTALLER_PACKAGES.any { blockedPackage.equals(it, ignoreCase = true) }) {
             performGlobalAction(GLOBAL_ACTION_BACK)
         } else {
             performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+    }
+
+    // ─── Node text collector ──────────────────────────────────────────────────
+
+    private fun collectNodeText(root: AccessibilityNodeInfo): String {
+        return buildString {
+            fun walk(node: AccessibilityNodeInfo) {
+                node.text?.let { append(it); append(' ') }
+                node.contentDescription?.let { append(it); append(' ') }
+                for (i in 0 until node.childCount) {
+                    node.getChild(i)?.let { child ->
+                        walk(child)
+                        child.recycle()
+                    }
+                }
+            }
+            walk(root)
         }
     }
 

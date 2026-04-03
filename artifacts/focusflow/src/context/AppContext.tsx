@@ -106,6 +106,7 @@ const defaultSettings: AppSettings = {
   onboardingComplete: false,
   standaloneBlockPackages: [],
   standaloneBlockUntil: null,
+  dailyAllowancePackages: [],
 };
 
 const initialState: AppState = {
@@ -136,6 +137,7 @@ interface AppContextValue {
 
   updateSettings: (settings: AppSettings) => Promise<void>;
   setStandaloneBlock: (packages: string[], untilMs: number | null) => Promise<void>;
+  setDailyAllowancePackages: (packages: string[]) => Promise<void>;
   refreshTasks: () => Promise<void>;
 }
 
@@ -172,6 +174,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Re-apply standalone block from persisted settings on startup.
       await _syncStandaloneBlock(settings);
+      // Re-apply daily allowance list on startup.
+      await _syncDailyAllowance(settings);
 
       await refreshTasks();
 
@@ -193,6 +197,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
+  }
+
+  /**
+   * Syncs the daily allowance package list into SharedPreferences so the
+   * AccessibilityService can read it without the JS bundle being running.
+   */
+  async function _syncDailyAllowance(settings: AppSettings): Promise<void> {
+    const packages = settings.dailyAllowancePackages ?? [];
+    await SharedPrefsModule.setDailyAllowancePackages(packages);
   }
 
   /**
@@ -382,6 +395,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await cancelTaskReminders(taskId);
         await scheduleTaskReminders(extended);
 
+        // If this task is the one currently in focus, update the foreground notification
+        // with the new end time so the countdown shows the correct remaining time.
+        if (stateRef.current.focusSession?.taskId === taskId) {
+          const newEndMs = new Date(extended.endTime).getTime();
+          const nextTask = finalTasks.find(
+            (t) => t.id !== extended.id && new Date(t.startTime).getTime() >= newEndMs
+          );
+          await ForegroundServiceModule.updateNotification(
+            extended.id,
+            extended.title,
+            newEndMs,
+            nextTask?.title ?? null,
+          );
+          // Also update the SharedPrefs task_end_ms so the widget and AccessibilityService
+          // see the new end time immediately.
+          await SharedPrefsModule.setActiveTask(
+            extended.id,
+            extended.title,
+            newEndMs,
+            nextTask?.title ?? null,
+          );
+        }
+
         if (needsUserConfirm.length > 0) {
           const names = needsUserConfirm.map((t) => `• ${t.title}`).join('\n');
           Alert.alert(
@@ -473,6 +509,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     // Always sync standalone block — it works independently of task focus.
     await _syncStandaloneBlock(settings);
+    // Sync daily allowance packages.
+    await _syncDailyAllowance(settings);
   }, [state.focusSession]);
 
   /**
@@ -482,6 +520,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    * @param packages  Package names to block (empty array = disable)
    * @param untilMs   Epoch ms when block expires (null = disable)
    */
+  const setDailyAllowancePackages = useCallback(async (packages: string[]) => {
+    const newSettings: AppSettings = {
+      ...state.settings,
+      dailyAllowancePackages: packages,
+    };
+    await dbSaveSettings(newSettings);
+    dispatch({ type: 'SET_SETTINGS', payload: newSettings });
+    await SharedPrefsModule.setDailyAllowancePackages(packages);
+  }, [state.settings]);
+
   const setStandaloneBlock = useCallback(async (packages: string[], untilMs: number | null) => {
     const untilIso = untilMs ? new Date(untilMs).toISOString() : null;
     const newSettings: AppSettings = {
@@ -514,6 +562,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     stopFocusMode,
     updateSettings,
     setStandaloneBlock,
+    setDailyAllowancePackages,
     refreshTasks,
   };
 

@@ -28,8 +28,17 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
+        // Handle all relevant boot/restart broadcasts:
+        //   BOOT_COMPLETED          — normal boot (user-encrypted storage available)
+        //   QUICKBOOT_POWERON       — some OEM fast-boot variants (Huawei, HTC)
+        //   ACTION_MY_PACKAGE_REPLACED — app was updated; restart service with fresh binary
+        //   ACTION_USER_UNLOCKED    — Android 7+ direct-boot: user unlocked device after boot
+        //                            Required on devices with file-based encryption (most modern phones)
+        //                            where BOOT_COMPLETED fires before user data is decrypted.
         if (action != Intent.ACTION_BOOT_COMPLETED &&
-            action != "android.intent.action.QUICKBOOT_POWERON") return
+            action != "android.intent.action.QUICKBOOT_POWERON" &&
+            action != Intent.ACTION_MY_PACKAGE_REPLACED &&
+            action != Intent.ACTION_USER_UNLOCKED) return
 
         val prefs: SharedPreferences = context.getSharedPreferences(
             AppBlockerAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE
