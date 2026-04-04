@@ -155,6 +155,17 @@ export function StandaloneBlockModal({
     });
   };
 
+  const adjustDailyCount = (packageName: string, delta: number) => {
+    setDailyEntriesMap((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(packageName);
+      if (!existing) return next;
+      const newCount = Math.min(20, Math.max(1, (existing.countPerDay ?? 1) + delta));
+      next.set(packageName, { ...existing, countPerDay: newCount });
+      return next;
+    });
+  };
+
   const handleAddManual = () => {
     const pkg = manualInput.trim().toLowerCase();
     if (!pkg || !pkg.includes('.')) return;
@@ -245,6 +256,7 @@ export function StandaloneBlockModal({
   const renderItem = ({ item }: { item: InstalledApp }) => {
     const blocked = selected.has(item.packageName);
     const isDaily = dailyAllowed.has(item.packageName);
+    const dailyEntry = dailyEntriesMap.get(item.packageName);
     return (
       <View style={styles.rowWrap}>
         <TouchableOpacity style={[styles.row, { backgroundColor: theme.card }]} onPress={() => toggle(item.packageName)} activeOpacity={0.7}>
@@ -266,21 +278,30 @@ export function StandaloneBlockModal({
             {blocked && <Ionicons name="ban" size={13} color="#fff" />}
           </View>
         </TouchableOpacity>
-        {/* Daily allowance toggle — shown below the block row */}
-        <TouchableOpacity
-          style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}
-          onPress={() => toggleDailyAllowed(item.packageName)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={isDaily ? 'sunny' : 'sunny-outline'}
-            size={13}
-            color={isDaily ? COLORS.orange : COLORS.muted}
-          />
-          <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
-            {isDaily ? 'Daily allowance active' : 'Add daily allowance'}
-          </Text>
-        </TouchableOpacity>
+        {/* Daily allowance row — toggle + inline count stepper when active */}
+        <View style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}>
+          <TouchableOpacity style={styles.dailyToggle} onPress={() => toggleDailyAllowed(item.packageName)} activeOpacity={0.7}>
+            <Ionicons
+              name={isDaily ? 'sunny' : 'sunny-outline'}
+              size={13}
+              color={isDaily ? COLORS.orange : COLORS.muted}
+            />
+            <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
+              {isDaily ? 'Daily allowance:' : 'Add daily allowance'}
+            </Text>
+          </TouchableOpacity>
+          {isDaily && dailyEntry && (
+            <View style={styles.dailyStepper}>
+              <TouchableOpacity onPress={() => adjustDailyCount(item.packageName, -1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="remove-circle-outline" size={18} color={COLORS.orange} />
+              </TouchableOpacity>
+              <Text style={styles.dailyCountText}>{dailyEntry.countPerDay ?? 1}×/day</Text>
+              <TouchableOpacity onPress={() => adjustDailyCount(item.packageName, 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="add-circle-outline" size={18} color={COLORS.orange} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
     );
   };
@@ -288,6 +309,7 @@ export function StandaloneBlockModal({
   const renderManualPackage = (pkg: string) => {
     const blocked = selected.has(pkg);
     const isDaily = dailyAllowed.has(pkg);
+    const dailyEntry = dailyEntriesMap.get(pkg);
     return (
       <View key={pkg} style={styles.rowWrap}>
         <TouchableOpacity style={[styles.row, { backgroundColor: theme.card }]} onPress={() => toggle(pkg)} activeOpacity={0.7}>
@@ -302,16 +324,25 @@ export function StandaloneBlockModal({
             {blocked && <Ionicons name="ban" size={13} color="#fff" />}
           </View>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}
-          onPress={() => toggleDailyAllowed(pkg)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name={isDaily ? 'sunny' : 'sunny-outline'} size={13} color={isDaily ? COLORS.orange : COLORS.muted} />
-          <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
-            {isDaily ? 'Daily allowance active' : 'Add daily allowance'}
-          </Text>
-        </TouchableOpacity>
+        <View style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}>
+          <TouchableOpacity style={styles.dailyToggle} onPress={() => toggleDailyAllowed(pkg)} activeOpacity={0.7}>
+            <Ionicons name={isDaily ? 'sunny' : 'sunny-outline'} size={13} color={isDaily ? COLORS.orange : COLORS.muted} />
+            <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
+              {isDaily ? 'Daily allowance:' : 'Add daily allowance'}
+            </Text>
+          </TouchableOpacity>
+          {isDaily && dailyEntry && (
+            <View style={styles.dailyStepper}>
+              <TouchableOpacity onPress={() => adjustDailyCount(pkg, -1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="remove-circle-outline" size={18} color={COLORS.orange} />
+              </TouchableOpacity>
+              <Text style={styles.dailyCountText}>{dailyEntry.countPerDay ?? 1}×/day</Text>
+              <TouchableOpacity onPress={() => adjustDailyCount(pkg, 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="add-circle-outline" size={18} color={COLORS.orange} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
     );
   };
@@ -740,7 +771,7 @@ const styles = StyleSheet.create({
   dailyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.xs,
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.md,
     paddingVertical: 5,
     marginTop: -2,
@@ -754,6 +785,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.orange + '15',
     borderTopColor: COLORS.orange + '33',
   },
+  dailyToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    flex: 1,
+  },
   dailyText: {
     fontSize: FONT.xs,
     color: COLORS.muted,
@@ -761,6 +798,18 @@ const styles = StyleSheet.create({
   dailyTextActive: {
     color: COLORS.orange,
     fontWeight: '600',
+  },
+  dailyStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  dailyCountText: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    color: COLORS.orange,
+    minWidth: 40,
+    textAlign: 'center',
   },
   emptyContainer: {
     paddingTop: SPACING.xl,

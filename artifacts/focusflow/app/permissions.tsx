@@ -191,6 +191,11 @@ export default function PermissionsScreen() {
   const { state } = useApp();
   const { theme } = useTheme();
   const isFocusing = state.focusSession !== null && state.focusSession.isActive;
+  const standaloneActive =
+    (state.settings.standaloneBlockPackages ?? []).length > 0 &&
+    state.settings.standaloneBlockUntil !== null &&
+    new Date(state.settings.standaloneBlockUntil).getTime() > Date.now();
+  const isLocked = isFocusing || standaloneActive;
   const nativeModulesOk = Platform.OS !== 'android' || (isSharedPrefsAvailable && isUsageStatsAvailable);
   const [statuses, setStatuses] = useState<Record<string, PermStatus>>({});
   const [checking, setChecking] = useState(true);
@@ -231,11 +236,11 @@ export default function PermissionsScreen() {
   }, [checkAll]);
 
   useEffect(() => {
-    if (isFocusing) {
+    if (isLocked) {
       setTroubleshootPerm(null);
       setExpandedId(null);
     }
-  }, [isFocusing]);
+  }, [isLocked]);
 
   const grantedCount = PERMISSIONS.filter(
     (p) => !p.optional && statuses[p.id] === 'granted'
@@ -251,7 +256,7 @@ export default function PermissionsScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.text }]}>Permissions</Text>
-        {!isFocusing && (
+        {!isLocked && (
           <TouchableOpacity onPress={checkAll} style={styles.refreshBtn} disabled={checking}>
             {checking ? (
               <ActivityIndicator size="small" color={COLORS.primary} />
@@ -262,10 +267,10 @@ export default function PermissionsScreen() {
         )}
       </View>
 
-      {/* ── Full-screen lock when a focus session is running ──────────────────
+      {/* ── Full-screen lock when a focus or standalone block is running ──────
            No touch events reach the permission list — users cannot open any
            system settings page that could be used to bypass blocking. */}
-      {isFocusing ? (
+      {isLocked ? (
         <View style={[styles.lockedScreen, { backgroundColor: theme.background }]}>
           <View style={[styles.lockedCard, { backgroundColor: theme.card, borderColor: COLORS.orange + '55' }]}>
             <View style={styles.lockedIconRing}>
@@ -273,9 +278,11 @@ export default function PermissionsScreen() {
             </View>
             <Text style={[styles.lockedHeading, { color: theme.text }]}>Settings Locked</Text>
             <Text style={[styles.lockedBody, { color: theme.textSecondary }]}>
-              Permission settings are disabled while a focus session is running.
+              {isFocusing
+                ? 'Permission settings are disabled while a focus session is running.'
+                : 'Permission settings are disabled while a block schedule is active.'}
               {'\n\n'}
-              Granting or revoking permissions during focus could bypass app blocking — stop your session first to make changes.
+              Changing permissions during an active block could bypass app blocking — stop the block first to make changes.
             </Text>
             <TouchableOpacity style={styles.lockedBackBtn} onPress={() => router.back()} activeOpacity={0.8}>
               <Ionicons name="chevron-back" size={16} color="#fff" />

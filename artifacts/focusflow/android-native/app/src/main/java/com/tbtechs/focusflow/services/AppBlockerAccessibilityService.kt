@@ -857,15 +857,25 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true if any blocked word appears in the event's text, content description,
-     * or class name. Matching is case-insensitive and uses simple substring search.
-     * We deliberately avoid deep node traversal here to keep this check fast (~0 ms),
-     * since it runs on every TYPE_WINDOW_STATE_CHANGED event.
+     * class name, or any text found in the accessibility node tree.
+     * Matching is case-insensitive and uses simple substring search.
+     * Node traversal is included so words that appear in on-screen content
+     * (not just the window title) are reliably caught.
      */
     private fun containsBlockedWord(event: AccessibilityEvent, words: List<String>): Boolean {
         val corpus = buildString {
             event.text?.forEach { t -> t?.let { append(it); append(' ') } }
             event.contentDescription?.let { append(it); append(' ') }
             event.className?.let { append(it); append(' ') }
+            // Traverse the accessibility node tree so content inside the app
+            // (e.g. page titles, tab labels, visible text) is also checked.
+            event.source?.let { root ->
+                try {
+                    append(collectNodeText(root))
+                } finally {
+                    root.recycle()
+                }
+            }
         }.lowercase()
         if (corpus.isBlank()) return false
         return words.any { word -> corpus.contains(word.lowercase()) }
