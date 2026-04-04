@@ -210,6 +210,11 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     performGlobalAction(GLOBAL_ACTION_BACK)
                     return
                 }
+                // Block Developer Options to prevent ADB, "Don't keep activities", etc.
+                if (isDeveloperOptionsPage(event)) {
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    return
+                }
             }
             return
         }
@@ -312,22 +317,32 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true when the event represents Android's Accessibility Settings page.
-     * We detect by class name since accessibility settings may not have distinctive text.
+     * Covers AOSP, Samsung One UI, MIUI, OPPO/ColorOS, and Vivo class name variants.
      */
     private fun isAccessibilitySettingsPage(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString()?.lowercase() ?: ""
         val classKeywords = listOf(
+            // AOSP / Pixel
             "accessibilitysettings",
             "accessibilityservicesettings",
-            "toggleaccessibilityservicepreferencefragment"
+            "toggleaccessibilityservicepreferencefragment",
+            // Samsung One UI
+            "com.samsung.android.settings.accessibility",
+            "samsungaccessibility",
+            // MIUI
+            "miuiaccessibility",
+            "com.miui.accessibility",
+            // OPPO / ColorOS / Realme
+            "oppoaccessibility",
+            "coloros.settings.accessibility",
+            // Vivo / FuntouchOS
+            "vivoaccessibility"
         )
         if (classKeywords.any { it in className }) return true
 
-        // Also check event text for accessibility-related content as a fallback
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
         }.lowercase()
-        // Only match if it looks like an accessibility services list, not just any settings page
         return "downloaded apps" in eventText && "accessibility" in eventText
     }
 
@@ -369,15 +384,26 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true when the user navigated to the Usage Access (Usage Stats) settings page.
-     * Blocks this page to prevent the user from revoking FocusFlow's usage access permission.
+     * Covers AOSP, Samsung One UI, MIUI, and OPPO/ColorOS class name variants.
      */
     private fun isUsageAccessSettingsPage(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString()?.lowercase() ?: ""
         val classKeywords = listOf(
+            // AOSP / Pixel
             "usageaccesssettings",
             "usagestatssettings",
-            "usagestats",
-            "appopsdetail"
+            "appopsdetail",
+            // Samsung One UI
+            "com.samsung.android.settings.usage",
+            "samsungusageaccess",
+            // MIUI
+            "com.miui.permcenter.permissions",
+            "miuiusageaccess",
+            // OPPO / ColorOS / Realme
+            "coloros.settings.usagestats",
+            "oppoappmanager",
+            // Vivo
+            "vivo.permission.usagestats"
         )
         if (classKeywords.any { it in className }) return true
 
@@ -395,47 +421,67 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true when the user navigated to Battery Optimization settings.
-     * Blocks this page to prevent the user from removing FocusFlow's battery exemption,
-     * which would allow the OS to kill the blocking service.
+     * Only matches specific multi-word battery phrases to avoid false positives on generic
+     * app-info pages that contain words like "unrestricted" or "background activity".
+     * Covers AOSP, Samsung One UI, MIUI, OPPO/ColorOS, and Vivo class name variants.
      */
     private fun isBatteryOptimizationSettingsPage(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString()?.lowercase() ?: ""
         val classKeywords = listOf(
+            // AOSP / Pixel
             "batteryoptimization",
             "highpowerapps",
+            "ignoreoptimizationsettings",
+            // Samsung One UI
+            "com.samsung.android.settings.battery",
+            "samsungbatteryoptimization",
             "powersavingdetail",
-            "batterysaver",
-            "ignoreoptimizationsettings"
+            // MIUI
+            "com.miui.powercenter",
+            "miuibatteryoptimization",
+            "miuipowersaver",
+            // OPPO / ColorOS / Realme
+            "coloros.settings.battery",
+            "oppopowerconsumption",
+            // Vivo / FuntouchOS
+            "vivo.battery",
+            "vivohighconsumption"
         )
         if (classKeywords.any { it in className }) return true
 
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
         }.lowercase()
+        // Only use specific multi-word phrases — avoids false positives on generic app-info pages
         val keywords = listOf(
             "battery optimization",
-            "optimizing battery",
-            "unrestricted",
-            "don't optimize",
-            "not optimized",
             "optimize battery usage",
-            "background activity"
+            "optimizing battery",
+            "battery optimiz"
         )
         return keywords.any { it in eventText }
     }
 
     /**
      * Returns true when the user navigated to Device Admin settings.
-     * Blocks this page to prevent the user from deactivating FocusFlow's Device Admin rights,
-     * which would allow them to force-stop or uninstall the app.
+     * Covers AOSP, Samsung One UI, MIUI, and OPPO/ColorOS class name variants.
      */
     private fun isDeviceAdminSettingsPage(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString()?.lowercase() ?: ""
         val classKeywords = listOf(
+            // AOSP / Pixel
             "deviceadminsettings",
             "deviceadmininfo",
             "deviceadmin",
-            "devicepolicysettings"
+            "devicepolicysettings",
+            // Samsung One UI
+            "com.samsung.android.settings.deviceadmin",
+            "samsungdeviceadmin",
+            // MIUI
+            "com.miui.deviceadmin",
+            "miuideviceadmin",
+            // OPPO / ColorOS
+            "coloros.settings.deviceadmin"
         )
         if (classKeywords.any { it in className }) return true
 
@@ -448,6 +494,47 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "deactivate device admin",
             "remove device admin",
             "active device admin"
+        )
+        return keywords.any { it in eventText }
+    }
+
+    /**
+     * Returns true when the user navigated to Developer Options.
+     * This page allows ADB debugging, "Don't keep activities", and other settings
+     * that can be used to bypass or kill the blocking service mid-session.
+     * Covers AOSP, Samsung One UI, MIUI, OPPO/ColorOS, and Vivo class name variants.
+     */
+    private fun isDeveloperOptionsPage(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        val classKeywords = listOf(
+            // AOSP / Pixel
+            "developmentsettings",
+            "developmentsettingsdashboardfragment",
+            "developeroptions",
+            // Samsung One UI
+            "com.samsung.android.settings.development",
+            "samsungdeveloperoptions",
+            // MIUI
+            "com.android.settings.development",
+            "miuideveloperoptions",
+            // OPPO / ColorOS / Realme
+            "coloros.settings.development",
+            "oppodeveloperoptions",
+            // Vivo / FuntouchOS
+            "vivo.developeroptions"
+        )
+        if (classKeywords.any { it in className }) return true
+
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+        }.lowercase()
+        val keywords = listOf(
+            "developer options",
+            "usb debugging",
+            "don't keep activities",
+            "mock location",
+            "running services",
+            "background process limit"
         )
         return keywords.any { it in eventText }
     }

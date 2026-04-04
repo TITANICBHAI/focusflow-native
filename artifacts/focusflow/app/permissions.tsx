@@ -228,6 +228,13 @@ export default function PermissionsScreen() {
     };
   }, [checkAll]);
 
+  useEffect(() => {
+    if (isFocusing) {
+      setTroubleshootPerm(null);
+      setExpandedId(null);
+    }
+  }, [isFocusing]);
+
   const grantedCount = PERMISSIONS.filter(
     (p) => !p.optional && statuses[p.id] === 'granted'
   ).length;
@@ -242,13 +249,15 @@ export default function PermissionsScreen() {
           <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.text }]}>Permissions</Text>
-        <TouchableOpacity onPress={checkAll} style={styles.refreshBtn} disabled={checking}>
-          {checking ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <Ionicons name="refresh" size={20} color={COLORS.primary} />
-          )}
-        </TouchableOpacity>
+        {!isFocusing && (
+          <TouchableOpacity onPress={checkAll} style={styles.refreshBtn} disabled={checking}>
+            {checking ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Ionicons name="refresh" size={20} color={COLORS.primary} />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ── Full-screen lock when a focus session is running ──────────────────
