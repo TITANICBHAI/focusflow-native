@@ -1,0 +1,101 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK with EAS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: artifacts/focusflow/package.json
+
+      - name: Install dependencies
+        working-directory: artifacts/focusflow
+        run: npm install
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK via EAS (preview profile)
+        working-directory: artifacts/focusflow
+        run: |
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --no-wait \
+            --json > build-output.json
+          echo "BUILD_ID=$(cat build-output.json | node -e \"process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d)[0].id))\")" >> $GITHUB_ENV
+
+      - name: Wait for EAS build to complete
+        working-directory: artifacts/focusflow
+        run: |
+          echo "Waiting for build $BUILD_ID to complete..."
+          while true; do
+            STATUS=$(eas build:view $BUILD_ID --json | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).status))")
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "FINISHED" ]; then
+              break
+            elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
+              echo "Build failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 30
+          done
+
+      - name: Download APK from EAS
+        working-directory: artifacts/focusflow
+        run: |
+          APK_URL=$(eas build:view $BUILD_ID --json | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).artifacts.buildUrl))")
+          echo "APK_URL=$APK_URL" >> $GITHUB_ENV
+          curl -L "$APK_URL" -o focusflow.apk
+          echo "APK downloaded successfully"
+
+      - name: Get version from app.json
+        working-directory: artifacts/focusflow
+        run: |
+          VERSION=$(node -e "console.log(require('./app.json').expo.version)")
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "App version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}-${{ github.run_number }}
+          name: FocusFlow v${{ env.APP_VERSION }} (Build ${{ github.run_number }})
+          body: |
+            ## FocusFlow APK Release
+
+            **Version:** ${{ env.APP_VERSION }}
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+
+            ### Install
+            Download `focusflow.apk` below and install it on your Android device.
+            > You may need to enable "Install from unknown sources" in your Android settings.
+
+            ### Changes
+            ${{ github.event.head_commit.message }}
+          files: artifacts/focusflow/focusflow.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
