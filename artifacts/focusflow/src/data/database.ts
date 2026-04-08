@@ -178,7 +178,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultDuration: 60,
   defaultReminderOffsets: [-10, -5, 0],
   focusModeEnabled: true,
-  allowedInFocus: [], // [] = all apps allowed (no blocking) — the new default
+  allowedInFocus: [],
   allowedAppPresets: [],
   pomodoroEnabled: false,
   pomodoroDuration: 25,
@@ -189,6 +189,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   dailyAllowanceEntries: [],
   onboardingComplete: false,
   blockedWords: [],
+  aversionDimmerEnabled: false,
+  aversionVibrateEnabled: false,
+  aversionSoundEnabled: false,
+  weeklyReportEnabled: false,
+  greyoutSchedule: [],
 };
 
 export async function dbGetSettings(): Promise<AppSettings> {
