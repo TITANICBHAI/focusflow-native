@@ -219,6 +219,8 @@ class ForegroundTaskService : Service() {
         handler.removeCallbacks(tickRunnable)
         // Release the wake lock — CPU throttling is fine again when no session is active
         WakeLockManager.release()
+        // Stop all aversive deterrents (dim overlay, vibration) if they were running
+        AversiveActionsManager.stopAll(this)
         // Stop network blocking and restore connectivity if the restore flag is set
         stopNetworkBlock()
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

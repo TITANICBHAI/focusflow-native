@@ -1,7 +1,7 @@
 package com.tbtechs.focusflow.services
 
+import android.animation.ValueAnimator
 import android.app.Activity
-import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -24,34 +24,40 @@ import java.io.File
 /**
  * BlockOverlayActivity
  *
- * Full-screen blocking overlay launched by AppBlockerAccessibilityService the
- * instant a blocked package is detected. Occupying the foreground as an Activity
- * means the blocked app never finishes rendering — Android stops drawing it the
- * moment our Activity takes focus. The AccessibilityService can then back off
- * (no repeated HOME presses needed) while this overlay holds the screen.
+ * Full-screen blocking overlay launched the instant a blocked package is detected.
+ * The overlay covers the entire screen (including status/nav bars), persists while
+ * the session is active, and cannot be dismissed by the user until the accessibility
+ * service has confirmed the blocked app is gone from the foreground.
  *
- * Enforcement layers:
- *   1. Covers the entire screen including status/nav bars (FLAG_LAYOUT_NO_LIMITS)
- *   2. Shows even over the lock screen (FLAG_SHOW_WHEN_LOCKED)
- *   3. Keeps screen on (FLAG_KEEP_SCREEN_ON) — no sneaking past by letting it sleep
- *   4. onBackPressed() redirects to FocusFlow instead of resuming the blocked app
- *   5. onPause() re-raises the overlay if a session is still active and the
- *      activity is not intentionally finishing (slow-phone bypass counter)
+ * Dismissal flow:
+ *   1. Overlay appears immediately when blocked app opens.
+ *   2. AccessibilityService presses HOME — blocked app leaves foreground.
+ *   3. On the next window event (launcher/home visible), the service writes
+ *      overlay_x_ready = true in SharedPreferences.
+ *   4. This activity polls prefs every 300 ms; when overlay_x_ready = true it
+ *      fades in the ✕ button in the top-right corner.
+ *   5. User taps ✕ → overlay finishes.  No navigation — they're already at home.
  *
- * Customisation (read from SharedPrefs "focusday_prefs"):
- *   block_overlay_quote     — fixed quote string; empty = pick random each time
- *   block_overlay_quotes    — JSON array of custom quotes (fallback: built-in set)
- *   block_overlay_wallpaper — absolute path to a JPEG/PNG wallpaper image
+ * Back button: intentionally swallowed — overlay cannot be dismissed by back press.
+ * onPause re-raise: kept from the original for slow-device protection.
  *
- * Intent extras:
- *   EXTRA_BLOCKED_PKG  — package name of the blocked app (e.g. "com.instagram.android")
- *   EXTRA_BLOCKED_NAME — human-readable app name (e.g. "Instagram")
+ * SharedPrefs keys read:
+ *   block_overlay_quote      — fixed quote string
+ *   block_overlay_quotes     — JSON array of custom quotes
+ *   block_overlay_wallpaper  — absolute path to background image
+ *   overlay_x_ready          — Boolean set by AccessibilityService; cleared here on dismiss
+ *   focus_active / standalone_block_active — used by re-raise guard
  */
 class BlockOverlayActivity : Activity() {
 
     companion object {
         const val EXTRA_BLOCKED_PKG  = "blocked_pkg"
         const val EXTRA_BLOCKED_NAME = "blocked_name"
+
+        /** Written by AccessibilityService after HOME press is confirmed. */
+        const val PREF_OVERLAY_X_READY = "overlay_x_ready"
+
+        private const val X_POLL_INTERVAL_MS = 300L
 
         private val DEFAULT_QUOTES = listOf(
             "The present moment is the only time over which we have dominion.",
@@ -77,13 +83,87 @@ class BlockOverlayActivity : Activity() {
     private var blockedName: String = ""
     private var intentionalFinish = false
 
+    // The ✕ button — starts invisible, fades in when x_ready flag is set
+    private lateinit var xButton: TextView
+    private var xButtonRevealed = false
+
+    // ─── Polling runnable ─────────────────────────────────────────────────────
+
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed || xButtonRevealed) return
+            if (prefs.getBoolean(PREF_OVERLAY_X_READY, false)) {
+                revealXButton()
+            } else {
+                handler.postDelayed(this, X_POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    // ─── Lifecycle ────────────────────────────────────────────────────────────
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(AppBlockerAccessibilityService.PREFS_NAME, MODE_PRIVATE)
         blockedName = intent?.getStringExtra(EXTRA_BLOCKED_NAME) ?: ""
 
+        // Clear any stale x_ready flag from a previous session
+        prefs.edit().putBoolean(PREF_OVERLAY_X_READY, false).apply()
+
         applyWindowFlags()
         buildUI()
+
+        // Start polling for the x_ready signal
+        handler.postDelayed(pollRunnable, X_POLL_INTERVAL_MS)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent?) {
+        super.onNewIntent(intent)
+        // singleTask re-use: just update the blocked name label if needed
+        intent?.getStringExtra(EXTRA_BLOCKED_NAME)?.let { if (it.isNotEmpty()) blockedName = it }
+    }
+
+    // ─── Back button: swallowed entirely — overlay CANNOT be dismissed by back ─
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // Intentionally do nothing — the ✕ button is the only exit
+    }
+
+    // ─── Slow-phone re-raise guard ────────────────────────────────────────────
+    //
+    // If the overlay is paused (e.g. the blocked app finishes drawing on a very
+    // slow phone before the overlay could take focus), re-raise ourselves.
+    // The x_ready polling continues after we re-raise.
+
+    override fun onPause() {
+        super.onPause()
+        if (intentionalFinish || isFinishing) return
+
+        val focusActive = prefs.getBoolean(AppBlockerAccessibilityService.PREF_FOCUS_ON, false)
+        val saActive    = prefs.getBoolean(AppBlockerAccessibilityService.PREF_SA_ACTIVE, false)
+        val greyActive  = prefs.getBoolean("overlay_x_ready", false)  // still in blocking context
+        if (!focusActive && !saActive && !greyActive) return
+
+        handler.postDelayed({
+            if (!isFinishing && !isDestroyed && !intentionalFinish) {
+                try {
+                    val reRaise = android.content.Intent(
+                        applicationContext, BlockOverlayActivity::class.java
+                    ).apply {
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        putExtra(EXTRA_BLOCKED_NAME, blockedName)
+                    }
+                    applicationContext.startActivity(reRaise)
+                } catch (_: Exception) { }
+            }
+        }, 550L)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     // ─── Window flags ─────────────────────────────────────────────────────────
@@ -98,12 +178,10 @@ class BlockOverlayActivity : Activity() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
             )
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
         }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
         } else {
@@ -130,7 +208,7 @@ class BlockOverlayActivity : Activity() {
             setBackgroundColor(Color.parseColor("#0A0A0F"))
         }
 
-        // Optional wallpaper behind content at reduced opacity
+        // Optional wallpaper at reduced opacity
         val wallpaperPath = prefs.getString("block_overlay_wallpaper", "") ?: ""
         if (wallpaperPath.isNotEmpty()) {
             val file = File(wallpaperPath)
@@ -138,7 +216,7 @@ class BlockOverlayActivity : Activity() {
                 try {
                     val bmp = BitmapFactory.decodeFile(wallpaperPath)
                     if (bmp != null) {
-                        val iv = ImageView(this).apply {
+                        root.addView(ImageView(this).apply {
                             layoutParams = FrameLayout.LayoutParams(
                                 FrameLayout.LayoutParams.MATCH_PARENT,
                                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -146,24 +224,22 @@ class BlockOverlayActivity : Activity() {
                             setImageBitmap(bmp)
                             scaleType = ImageView.ScaleType.CENTER_CROP
                             alpha = 0.30f
-                        }
-                        root.addView(iv)
+                        })
                     }
-                } catch (_: Exception) { /* bad image — use solid background */ }
+                } catch (_: Exception) { }
             }
         }
 
-        // Semi-transparent dark scrim so text is always readable
-        val scrim = View(this).apply {
+        // Dark scrim — text always readable
+        root.addView(View(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
             setBackgroundColor(Color.parseColor("#CC0A0A0F"))
-        }
-        root.addView(scrim)
+        })
 
-        // Content column
+        // Centered content column
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(
@@ -173,19 +249,21 @@ class BlockOverlayActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(dp(32), dp(80), dp(32), dp(80))
         }
-
         col.addView(buildLockEmoji())
         col.addView(buildBlockedLabel())
         col.addView(buildQuoteView())
         col.addView(buildSubLabel())
-        col.addView(buildBackButton())
         root.addView(col)
+
+        // ✕ button — top-right corner, starts invisible
+        xButton = buildXButton()
+        root.addView(xButton)
 
         setContentView(root)
     }
 
     private fun buildLockEmoji(): TextView = TextView(this).apply {
-        text = "\uD83D\uDD12"          // 🔒
+        text = "\uD83D\uDD12"
         textSize = 52f
         gravity = Gravity.CENTER
         layoutParams = LinearLayout.LayoutParams(
@@ -195,8 +273,7 @@ class BlockOverlayActivity : Activity() {
     }
 
     private fun buildBlockedLabel(): TextView = TextView(this).apply {
-        text = if (blockedName.isNotEmpty()) "\u201C$blockedName\u201D is blocked"
-               else "App Blocked"
+        text = if (blockedName.isNotEmpty()) "\u201C$blockedName\u201D is blocked" else "App Blocked"
         textSize = 15f
         setTextColor(Color.parseColor("#FF6B6B"))
         gravity = Gravity.CENTER
@@ -227,26 +304,63 @@ class BlockOverlayActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(36) }
+        )
     }
 
-    private fun buildBackButton(): TextView = TextView(this).apply {
-        text = "\u2190 Back to FocusFlow"
-        textSize = 15f
-        setTextColor(Color.parseColor("#7C6AFF"))
+    /**
+     * Corner ✕ button — initially invisible (alpha = 0, not clickable).
+     * Positioned in the top-right corner via FrameLayout gravity.
+     * Fades in and becomes clickable when [revealXButton] is called.
+     */
+    private fun buildXButton(): TextView = TextView(this).apply {
+        text = "\u2715"    // ✕
+        textSize = 20f
+        setTextColor(Color.parseColor("#AAAACC"))
         gravity = Gravity.CENTER
-        setPadding(dp(28), dp(14), dp(28), dp(14))
+        setPadding(dp(16), dp(16), dp(16), dp(16))
         background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(12).toFloat()
-            setColor(Color.parseColor("#1A1A2E"))
-            setStroke(dp(1), Color.parseColor("#7C6AFF"))
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#22222E"))
+            setStroke(dp(1), Color.parseColor("#44445A"))
         }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        setOnClickListener { finishAndOpenFocusFlow() }
+        alpha = 0f
+        isClickable = false
+        isFocusable = false
+
+        val size = dp(48)
+        layoutParams = FrameLayout.LayoutParams(size, size).apply {
+            gravity = Gravity.TOP or Gravity.END
+            topMargin  = dp(56)
+            rightMargin = dp(24)
+        }
+        setOnClickListener { dismissOverlay() }
+    }
+
+    // ─── X button reveal ──────────────────────────────────────────────────────
+
+    private fun revealXButton() {
+        if (xButtonRevealed) return
+        xButtonRevealed = true
+
+        // Clear the flag so the next overlay doesn't skip the wait
+        prefs.edit().putBoolean(PREF_OVERLAY_X_READY, false).apply()
+
+        xButton.isClickable = true
+        xButton.isFocusable = true
+
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 400L
+            addUpdateListener { xButton.alpha = it.animatedValue as Float }
+            start()
+        }
+    }
+
+    // ─── Dismissal ────────────────────────────────────────────────────────────
+
+    private fun dismissOverlay() {
+        intentionalFinish = true
+        prefs.edit().putBoolean(PREF_OVERLAY_X_READY, false).apply()
+        finish()
     }
 
     // ─── Quote resolution ─────────────────────────────────────────────────────
@@ -265,58 +379,6 @@ class BlockOverlayActivity : Activity() {
         } else DEFAULT_QUOTES
 
         return pool.random()
-    }
-
-    // ─── Navigation ───────────────────────────────────────────────────────────
-
-    private fun finishAndOpenFocusFlow() {
-        intentionalFinish = true
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        startActivity(intent)
-        finish()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        finishAndOpenFocusFlow()
-    }
-
-    // ─── Slow-phone bypass counter ────────────────────────────────────────────
-    //
-    // If something else covers the overlay while a session is active (e.g. the
-    // blocked app finishes animating in before our overlay could take focus on a
-    // slow device), re-raise ourselves after a short delay. This gives the
-    // AccessibilityService a window to trigger but is NOT a replacement for it.
-
-    override fun onPause() {
-        super.onPause()
-        if (intentionalFinish || isFinishing) return
-
-        val focusActive = prefs.getBoolean(AppBlockerAccessibilityService.PREF_FOCUS_ON, false)
-        val saActive    = prefs.getBoolean(AppBlockerAccessibilityService.PREF_SA_ACTIVE, false)
-        if (!focusActive && !saActive) return
-
-        handler.postDelayed({
-            if (!isFinishing && !isDestroyed && !intentionalFinish) {
-                try {
-                    val reRaise = Intent(applicationContext, BlockOverlayActivity::class.java).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                        putExtra(EXTRA_BLOCKED_NAME, blockedName)
-                    }
-                    applicationContext.startActivity(reRaise)
-                } catch (_: Exception) { /* overlay re-raise failed — service will catch it */ }
-            }
-        }, 550L)
-    }
-
-    override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
-        super.onDestroy()
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

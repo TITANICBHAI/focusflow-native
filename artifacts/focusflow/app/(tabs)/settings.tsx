@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
-import type { DailyAllowanceEntry } from '@/data/types';
+import type { DailyAllowanceEntry, GreyoutWindow } from '@/data/types';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
@@ -22,7 +22,9 @@ import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
 import { DailyAllowanceModal } from '@/components/DailyAllowanceModal';
 import { BlockedWordsModal } from '@/components/BlockedWordsModal';
+import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
+import { GreyoutModule } from '@/native-modules/GreyoutModule';
 
 const DURATION_OPTIONS = [30, 45, 60, 90, 120];
 

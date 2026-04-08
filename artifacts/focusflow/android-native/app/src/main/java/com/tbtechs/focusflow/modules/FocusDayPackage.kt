@@ -30,6 +30,8 @@ import com.facebook.react.uimanager.ViewManager
  *   BlockOverlay      — configure full-screen overlay quotes and wallpaper
  *   NuclearMode       — request system uninstall dialogs for distracting apps
  *   NetworkBlock      — VPN tunnel + WiFi/data disable when a blocked app opens
+ *   Aversions         — screen dimmer / vibration / sound alert toggles
+ *   Greyout           — time-window block schedule + temptation log access
  */
 class FocusDayPackage : ReactPackage {
 
@@ -44,6 +46,8 @@ class FocusDayPackage : ReactPackage {
             BlockOverlayModule(reactContext),
             NuclearModeModule(reactContext),
             NetworkBlockModule(reactContext),
+            AversionsModule(reactContext),
+            GreyoutModule(reactContext),
         )
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

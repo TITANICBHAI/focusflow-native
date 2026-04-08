@@ -52,6 +52,15 @@ export interface FocusSession {
   allowedPackages: string[]; // e.g. com.whatsapp, com.android.phone
 }
 
+export interface GreyoutWindow {
+  pkg: string;
+  startHour: number;
+  startMin: number;
+  endHour: number;
+  endMin: number;
+  days: number[]; // Calendar.DAY_OF_WEEK: 1=Sun 2=Mon 3=Tue 4=Wed 5=Thu 6=Fri 7=Sat
+}
+
 export interface AppSettings {
   darkMode: boolean;
   defaultDuration: number; // minutes
@@ -76,4 +85,12 @@ export interface AppSettings {
   // Word blocking: if any of these words appear on screen during an active blocking session
   // (task focus or standalone block), the user is immediately redirected to home.
   blockedWords: string[];
+  // Aversion deterrents — each applied the instant a blocked app is detected
+  aversionDimmerEnabled: boolean;   // near-black WindowManager overlay (dark screen)
+  aversionVibrateEnabled: boolean;  // repeated vibration pulse while app is open
+  aversionSoundEnabled: boolean;    // alert sound the moment the blocked app opens
+  // Temptation report
+  weeklyReportEnabled: boolean;     // Sunday notification with blocked-app attempt counts
+  // Greyout schedule — time-window blocks independent of any focus session
+  greyoutSchedule: GreyoutWindow[];
 }

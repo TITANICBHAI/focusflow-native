@@ -200,6 +200,19 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // pressing Home when the user has already switched to an allowed app.
         lastSeenPkg = pkg
 
+        // ── Overlay X-button: signal when the blocked app leaves foreground ──
+        // When the AccessibilityService presses HOME after blocking, the next
+        // window event from a different package means the user is back at the
+        // launcher.  At that point we set overlay_x_ready = true so the
+        // BlockOverlayActivity can fade in its dismiss button.
+        val awaitingPkg = prefs.getString("overlay_awaiting_pkg", "") ?: ""
+        if (awaitingPkg.isNotEmpty() && !pkg.equals(awaitingPkg, ignoreCase = true)) {
+            prefs.edit()
+                .putBoolean(BlockOverlayActivity.PREF_OVERLAY_X_READY, true)
+                .putString("overlay_awaiting_pkg", "")
+                .apply()
+        }
+
         // ── Timed allowance: accumulate usage when user switches away ─────────
         // If the user was in a time-limited allowed app and just switched to a
         // different app, record elapsed time before continuing with other checks.
@@ -291,6 +304,21 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 lastBlockedPkg = pkg
                 lastBlockedAtMs = now
                 handleBlockedApp(pkg)
+            }
+            return
+        }
+
+        // ── Greyout Schedule check (time-window blocking, session-independent) ─
+        // Works even when no focus session or standalone block is active — the user
+        // pre-committed to blocking certain apps during specific hours and days.
+        if (isInGreyoutWindow(pkg)) {
+            val samePackage  = pkg == lastBlockedPkg
+            val cooldownDone = (now - lastBlockedAtMs) > 2_000L
+            if (!samePackage || cooldownDone) {
+                lastBlockedPkg  = pkg
+                lastBlockedAtMs = now
+                handleBlockedApp(pkg)
+                scheduleGreyoutRetryCheck(pkg, 1)
             }
             return
         }
@@ -946,6 +974,19 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // 3. Belt-and-suspenders: press HOME / BACK for extremely slow devices where
         //    the overlay takes >1 frame to arrive.
         dismissPackage(blockedPackage)
+
+        // 4. Tell the overlay to wait for X-button confirmation: once the next
+        //    window event shows a different package (HOME/launcher), overlay_x_ready
+        //    is set to true and the BlockOverlayActivity fades in the ✕ button.
+        prefs.edit().putString("overlay_awaiting_pkg", blockedPackage).apply()
+
+        // 5. Aversive deterrents — screen dim, vibration, alert sound (each gated
+        //    by its own toggle; no-op if all are disabled).
+        AversiveActionsManager.onBlockedApp(this)
+
+        // 6. Temptation log — record every intercept for the weekly shame report.
+        val displayName = resolveAppDisplayName(blockedPackage)
+        TemptationLogManager.log(this, blockedPackage, displayName)
     }
 
     /**
@@ -1111,6 +1152,60 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             }
             walk(root, 0)
         }
+    }
+
+    // ─── Greyout schedule helpers ─────────────────────────────────────────────
+
+    /**
+     * Returns true when [pkg] is inside an active greyout window right now.
+     *
+     * Window format (SharedPrefs key "greyout_schedule", JSON array):
+     *   { pkg, startHour, startMin, endHour, endMin, days: [1..7] }
+     * days values match Java Calendar.DAY_OF_WEEK: 1=Sun, 2=Mon, … 7=Sat.
+     * Overnight windows are supported (startHour > endHour).
+     */
+    private fun isInGreyoutWindow(pkg: String): Boolean {
+        val json = prefs.getString("greyout_schedule", "[]") ?: "[]"
+        if (json == "[]" || json.isEmpty()) return false
+        return try {
+            val arr = org.json.JSONArray(json)
+            val cal = java.util.Calendar.getInstance()
+            val currentDay     = cal.get(java.util.Calendar.DAY_OF_WEEK)
+            val currentMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                                 cal.get(java.util.Calendar.MINUTE)
+            for (i in 0 until arr.length()) {
+                val entry = arr.optJSONObject(i) ?: continue
+                if (!entry.optString("pkg").equals(pkg, ignoreCase = true)) continue
+                val days = entry.optJSONArray("days") ?: continue
+                val dayMatch = (0 until days.length()).any { days.optInt(it) == currentDay }
+                if (!dayMatch) continue
+                val startMins = entry.optInt("startHour") * 60 + entry.optInt("startMin")
+                val endMins   = entry.optInt("endHour")   * 60 + entry.optInt("endMin")
+                val inWindow = if (startMins <= endMins) {
+                    currentMinutes in startMins until endMins   // normal: 09:00–18:00
+                } else {
+                    currentMinutes >= startMins || currentMinutes < endMins  // overnight
+                }
+                if (inWindow) return true
+            }
+            false
+        } catch (_: Exception) { false }
+    }
+
+    /**
+     * Retry checker for greyout-triggered blocks.  Unlike the session-based retry,
+     * this one re-checks the greyout schedule (not focus/standalone flags) so it
+     * continues working when no session is active.
+     */
+    private fun scheduleGreyoutRetryCheck(pkg: String, attempt: Int) {
+        if (attempt > MAX_RETRY_ATTEMPTS) return
+        handler.postDelayed({
+            if (lastSeenPkg != pkg) return@postDelayed
+            if (isInGreyoutWindow(pkg)) {
+                dismissPackage(pkg)
+                scheduleGreyoutRetryCheck(pkg, attempt + 1)
+            }
+        }, RETRY_INTERVAL_MS * attempt)
     }
 
     // ─── JSON helper ──────────────────────────────────────────────────────────

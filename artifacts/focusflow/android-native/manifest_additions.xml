@@ -45,6 +45,8 @@
     CHANGE_NETWORK_STATE
     INTERNET                    (for VpnService tunnel interface)
     BIND_VPN_SERVICE
+    VIBRATE                     (for vibration harassment aversion layer)
+    SCHEDULE_EXACT_ALARM        (for weekly temptation report alarm; optional, falls back to inexact)
 
   AndroidManifest.xml components (patched automatically):
 
@@ -69,6 +71,15 @@
             <action android:name="android.intent.action.QUICKBOOT_POWERON" />
         </intent-filter>
     </receiver>
+
+    <!--
+      TemptationReportReceiver — fires every Sunday 08:00 via AlarmManager to
+      post the weekly "Temptation Report" notification summarising how many times
+      each blocked app was attempted during the past 7 days.
+      exported="false" — only our own AlarmManager alarm can trigger it.
+    -->
+    <receiver android:name="...services.TemptationReportReceiver"
+        android:exported="false" />
 
     <receiver android:name="...widget.FocusFlowWidget" android:exported="true">
         <intent-filter>

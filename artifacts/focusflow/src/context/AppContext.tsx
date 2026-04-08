@@ -41,6 +41,8 @@ import {
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 import { ForegroundServiceModule } from '@/native-modules/ForegroundServiceModule';
 import { EventBridge } from '@/services/eventBridge';
+import { AversionsModule } from '@/native-modules/AversionsModule';
+import { GreyoutModule } from '@/native-modules/GreyoutModule';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -108,6 +110,11 @@ const defaultSettings: AppSettings = {
   standaloneBlockUntil: null,
   dailyAllowanceEntries: [],
   blockedWords: [],
+  aversionDimmerEnabled: false,
+  aversionVibrateEnabled: false,
+  aversionSoundEnabled: false,
+  weeklyReportEnabled: false,
+  greyoutSchedule: [],
 };
 
 const initialState: AppState = {
@@ -181,6 +188,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await _syncDailyAllowance(settings);
       // Re-apply blocked words list on startup.
       await _syncBlockedWords(settings);
+      // Re-apply aversion deterrent flags on startup.
+      await _syncAversions(settings);
+      // Re-apply greyout schedule on startup.
+      await _syncGreyoutSchedule(settings);
 
       await refreshTasks();
 
@@ -221,6 +232,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function _syncBlockedWords(settings: AppSettings): Promise<void> {
     const words = settings.blockedWords ?? [];
     await SharedPrefsModule.setBlockedWords(words);
+  }
+
+  /**
+   * Syncs aversion deterrent flags (dimmer, vibration, sound, weekly report)
+   * into SharedPreferences via the Kotlin bridge.
+   */
+  async function _syncAversions(settings: AppSettings): Promise<void> {
+    try {
+      await AversionsModule.setSettings({
+        dimmerEnabled:       settings.aversionDimmerEnabled  ?? false,
+        vibrateEnabled:      settings.aversionVibrateEnabled ?? false,
+        soundEnabled:        settings.aversionSoundEnabled   ?? false,
+        weeklyReportEnabled: settings.weeklyReportEnabled    ?? false,
+      });
+    } catch { /* module not available in bare Expo Go dev builds — ignore */ }
+  }
+
+  /**
+   * Syncs the greyout schedule JSON into SharedPreferences so the
+   * AccessibilityService can enforce time-window blocks without JS running.
+   */
+  async function _syncGreyoutSchedule(settings: AppSettings): Promise<void> {
+    try {
+      await GreyoutModule.setSchedule(settings.greyoutSchedule ?? []);
+    } catch { /* module not available in bare Expo Go dev builds — ignore */ }
   }
 
   /**
@@ -526,6 +562,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await _syncStandaloneBlock(settings);
     // Sync daily allowance packages.
     await _syncDailyAllowance(settings);
+    // Sync aversion deterrent flags.
+    await _syncAversions(settings);
+    // Sync greyout schedule.
+    await _syncGreyoutSchedule(settings);
   }, [state.focusSession]);
 
   /**
