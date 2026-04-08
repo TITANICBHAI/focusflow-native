@@ -61,4 +61,9 @@ export const SharedPrefsModule = {
     if (!SharedPrefs) return;
     return SharedPrefs.setBlockedWords(words);
   },
+
+  async putString(key: string, value: string): Promise<void> {
+    if (!SharedPrefs) return;
+    return SharedPrefs.putString(key, value);
+  },
 };

@@ -24,6 +24,7 @@ import { DailyAllowanceModal } from '@/components/DailyAllowanceModal';
 import { BlockedWordsModal } from '@/components/BlockedWordsModal';
 import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
 import { WeeklyReportModal } from '@/components/WeeklyReportModal';
+import { OverlayAppearanceModal } from '@/components/OverlayAppearanceModal';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
 const DURATION_OPTIONS = [30, 45, 60, 90, 120];
@@ -39,6 +40,7 @@ export default function SettingsScreen() {
   const [wordsModalVisible, setWordsModalVisible] = useState(false);
   const [greyoutModalVisible, setGreyoutModalVisible] = useState(false);
   const [weeklyReportVisible, setWeeklyReportVisible] = useState(false);
+  const [overlayAppearanceVisible, setOverlayAppearanceVisible] = useState(false);
 
   if (!state.isDbReady) {
     return (
@@ -277,6 +279,27 @@ export default function SettingsScreen() {
           />
         </Section>
 
+        {/* ── Block Overlay ── */}
+        <Section title="Block Overlay">
+          <SettingButton
+            icon="phone-portrait-outline"
+            label="Overlay Appearance"
+            description={
+              (settings.overlayQuotes ?? []).length > 0 || (settings.overlayWallpaper ?? '')
+                ? [
+                    (settings.overlayWallpaper ?? '') ? 'Custom background set' : null,
+                    (settings.overlayQuotes ?? []).length > 0
+                      ? `${(settings.overlayQuotes ?? []).length} custom quote${(settings.overlayQuotes ?? []).length !== 1 ? 's' : ''}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'Customise background image and quotes shown on the block screen'
+            }
+            onPress={() => setOverlayAppearanceVisible(true)}
+          />
+        </Section>
+
         {/* ── Temptation Report ── */}
         <Section title="Temptation Report">
           <SettingRow label="Weekly Report" description="Sunday notification with blocked-app attempt counts">
@@ -387,6 +410,11 @@ export default function SettingsScreen() {
       <WeeklyReportModal
         visible={weeklyReportVisible}
         onClose={() => setWeeklyReportVisible(false)}
+      />
+
+      <OverlayAppearanceModal
+        visible={overlayAppearanceVisible}
+        onClose={() => setOverlayAppearanceVisible(false)}
       />
     </SafeAreaView>
   );

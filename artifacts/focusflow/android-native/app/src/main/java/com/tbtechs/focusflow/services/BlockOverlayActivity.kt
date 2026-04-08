@@ -1,7 +1,6 @@
 package com.tbtechs.focusflow.services
 
 import android.app.Activity
-import android.app.WallpaperManager
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -207,18 +206,23 @@ class BlockOverlayActivity : Activity() {
     // ─── UI construction ──────────────────────────────────────────────────────
 
     private fun buildUI() {
+        // Built-in branded gradient: deep navy → dark indigo (FocusFlow brand)
         val root = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.parseColor("#0A0A0F"))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(
+                    Color.parseColor("#0C0C1A"),  // deep navy-black
+                    Color.parseColor("#1A1245")   // dark indigo
+                )
+            )
         }
 
-        // Background: custom wallpaper path > system wallpaper > plain dark
+        // Optional: user-set background image (configured in app settings)
         val wallpaperPath = prefs.getString("block_overlay_wallpaper", "") ?: ""
-        var wallpaperAdded = false
-
         if (wallpaperPath.isNotEmpty()) {
             val file = File(wallpaperPath)
             if (file.exists()) {
@@ -232,41 +236,20 @@ class BlockOverlayActivity : Activity() {
                             )
                             setImageBitmap(bmp)
                             scaleType = ImageView.ScaleType.CENTER_CROP
-                            alpha = 0.35f
+                            alpha = 0.40f
                         })
-                        wallpaperAdded = true
                     }
                 } catch (_: Exception) { }
             }
         }
 
-        // Fall back to the device's system wallpaper when no custom one is set
-        if (!wallpaperAdded) {
-            try {
-                val wm = WallpaperManager.getInstance(this)
-                val wallDrawable = wm.drawable
-                if (wallDrawable != null) {
-                    root.addView(ImageView(this).apply {
-                        layoutParams = FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT
-                        )
-                        setImageDrawable(wallDrawable)
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        alpha = 0.30f
-                    })
-                    wallpaperAdded = true
-                }
-            } catch (_: Exception) { }
-        }
-
-        // Dark scrim — text always readable
+        // Dark scrim — keeps text legible regardless of background
         root.addView(View(this).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
-            setBackgroundColor(Color.parseColor("#CC0A0A0F"))
+            setBackgroundColor(Color.parseColor("#AA0A0A1A"))
         })
 
         // Centered content column

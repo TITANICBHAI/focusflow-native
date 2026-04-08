@@ -93,4 +93,7 @@ export interface AppSettings {
   weeklyReportEnabled: boolean;     // Sunday notification with blocked-app attempt counts
   // Greyout schedule — time-window blocks independent of any focus session
   greyoutSchedule: GreyoutWindow[];
+  // Block overlay appearance
+  overlayWallpaper?: string;        // Absolute path to custom background image (empty = use gradient)
+  overlayQuotes?: string[];         // Custom quote pool (empty = use built-in quotes)
 }

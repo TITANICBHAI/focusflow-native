@@ -115,6 +115,8 @@ const defaultSettings: AppSettings = {
   aversionSoundEnabled: false,
   weeklyReportEnabled: false,
   greyoutSchedule: [],
+  overlayWallpaper: '',
+  overlayQuotes: [],
 };
 
 const initialState: AppState = {

@@ -160,6 +160,24 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Generic key/value string setter — lets JS write arbitrary overlay config keys
+     * (e.g. block_overlay_wallpaper, block_overlay_quotes) directly to SharedPreferences
+     * without needing a dedicated typed method for each one.
+     *
+     * @param key    SharedPreferences key
+     * @param value  String value to store (pass empty string to clear)
+     */
+    @ReactMethod
+    fun putString(key: String, value: String, promise: Promise) {
+        if (value.isEmpty()) {
+            prefs().edit().remove(key).apply()
+        } else {
+            prefs().edit().putString(key, value).apply()
+        }
+        promise.resolve(null)
+    }
+
+    /**
      * Resets the daily allowance usage tracking for all packages (or a specific one).
      * Call with null to reset all packages, or a specific package name to reset just that one.
      *
