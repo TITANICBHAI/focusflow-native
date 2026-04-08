@@ -73,6 +73,10 @@ class ForegroundTaskService : Service() {
 
         /** Cooldown: don't re-block the same package within this window (ms). */
         private const val FALLBACK_COOLDOWN_MS = 2_000L
+
+        /** Notification channel for full-screen block-overlay intent. */
+        private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
+        private const val BLOCK_ALERT_NOTIF_ID = 9001
     }
 
     private var taskId: String    = ""
@@ -600,50 +604,76 @@ class ForegroundTaskService : Service() {
     }
 
     /**
-     * Fallback enforcement action: launches the overlay (which immediately
-     * pushes the blocked app to the background) then kills its process 400 ms
-     * later once it is no longer in the foreground.
+     * Fallback enforcement action: launches [BlockOverlayActivity] via a
+     * full-screen notification PendingIntent.
      *
-     * The overlay's own re-raise logic keeps it on screen; the X button will
-     * appear once the fallback poller detects a non-blocked package in the
-     * foreground and sets overlay_x_ready.  Because there is no accessibility
-     * service in this path, we write overlay_x_ready directly from this
-     * service on the next poll tick where the blocked pkg is no longer seen.
+     * Using a full-screen intent (rather than startActivity) bypasses the
+     * Android 10+ restriction that prevents foreground services from starting
+     * activities directly — the system launches the activity on our behalf so
+     * SYSTEM_ALERT_WINDOW is not required.
+     *
+     * overlay_x_ready is written after a short delay so the X button only
+     * appears once the overlay is visually in front (no accessibility events
+     * are available in this no-accessibility path).
      */
     private fun handleFallbackBlock(blockedPackage: String) {
-        // Signal overlay to await the package leaving before showing X
+        // Signal overlay to await the blocked package leaving foreground
         blockPrefs.edit().putString("overlay_awaiting_pkg", blockedPackage).apply()
 
-        // Launch the full-screen overlay
-        try {
-            val pm      = applicationContext.packageManager
-            val info    = pm.getApplicationInfo(blockedPackage, 0)
-            val appName = pm.getApplicationLabel(info).toString()
-            val intent  = Intent(applicationContext, BlockOverlayActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_PKG, blockedPackage)
-                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_NAME, appName)
+        // Resolve display name
+        val appName = try {
+            val pm   = applicationContext.packageManager
+            val info = pm.getApplicationInfo(blockedPackage, 0)
+            pm.getApplicationLabel(info).toString()
+        } catch (_: Exception) { blockedPackage }
+
+        // Build the PendingIntent pointing at BlockOverlayActivity
+        val activityIntent = Intent(applicationContext, BlockOverlayActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(BlockOverlayActivity.EXTRA_BLOCKED_PKG, blockedPackage)
+            putExtra(BlockOverlayActivity.EXTRA_BLOCKED_NAME, appName)
+        }
+        val pi = PendingIntent.getActivity(
+            applicationContext, 0, activityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Ensure the block-alert channel exists
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(
+                BLOCK_ALERT_CHANNEL, "Block Alert", NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                setBypassDnd(true)
             }
-            startActivity(intent)
-        } catch (_: Exception) { }
+            nm?.createNotificationChannel(ch)
+        }
 
-        // Kill the blocked app's process after the overlay has had time to
-        // take the foreground (pushing the blocked app to background).
+        // Post the full-screen intent notification — system launches the activity
+        val notif = android.app.Notification.Builder(
+            applicationContext,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) BLOCK_ALERT_CHANNEL else CHANNEL_ID
+        ).apply {
+            setSmallIcon(android.R.drawable.ic_lock_lock)
+            setContentTitle("App Blocked")
+            setContentText("\u201C$appName\u201D is blocked during this session.")
+            setFullScreenIntent(pi, true)
+            setAutoCancel(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+            }
+        }.build()
+        nm?.notify(BLOCK_ALERT_NOTIF_ID, notif)
+
+        // Auto-cancel the alert notification after 2 s (activity already showing)
+        // and write overlay_x_ready so the X button fades in.
         handler.postDelayed({
-            try {
-                val am = getSystemService(ActivityManager::class.java)
-                am?.killBackgroundProcesses(blockedPackage)
-            } catch (_: Exception) { }
-
-            // Write overlay_x_ready so the overlay's X button appears now
-            // (in the accessibility path this is done by the service on the
-            // next window event; here we do it directly after the kill).
+            nm?.cancel(BLOCK_ALERT_NOTIF_ID)
             blockPrefs.edit()
                 .putBoolean(BlockOverlayActivity.PREF_OVERLAY_X_READY, true)
                 .putString("overlay_awaiting_pkg", "")
                 .apply()
-        }, 400L)
+        }, 2_000L)
     }
 }

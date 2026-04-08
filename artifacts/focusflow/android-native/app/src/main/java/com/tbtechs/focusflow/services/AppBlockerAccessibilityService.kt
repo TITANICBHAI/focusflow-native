@@ -1,9 +1,14 @@
 package com.tbtechs.focusflow.services
 
 import android.accessibilityservice.AccessibilityService
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.VpnService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -67,6 +72,10 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         const val PREF_DAILY_ALLOWANCE_USED  = "daily_allowance_used"
 
         const val PREF_BLOCKED_WORDS = "blocked_words"
+
+        /** Notification channel used to launch the block overlay via full-screen intent. */
+        private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
+        private const val BLOCK_ALERT_NOTIF_ID = 9001
 
         /**
          * Packages that are NEVER blocked regardless of focus or standalone settings.
@@ -192,6 +201,15 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 prefs.edit().putBoolean(PREF_SA_ACTIVE, false).apply()
                 saActive = false
             }
+        }
+
+        // ── Cooldown reset: fired when user taps ✕ to dismiss the overlay ───
+        // BlockOverlayActivity writes this flag on intentional dismiss so the
+        // next open of the same blocked app is caught immediately (no 2 s gap).
+        if (prefs.getBoolean("block_cooldown_reset", false)) {
+            prefs.edit().putBoolean("block_cooldown_reset", false).apply()
+            lastBlockedPkg = null
+            lastBlockedAtMs = 0L
         }
 
         val pkg = event.packageName?.toString() ?: return
@@ -1043,25 +1061,53 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Launches [BlockOverlayActivity] as a new foreground task.
-     * The Activity immediately covers the entire screen including the status bar,
-     * navigation bar, and lock screen, giving no visible gap for the blocked app.
+     * Launches [BlockOverlayActivity] via a full-screen notification PendingIntent.
+     *
+     * Using a full-screen intent rather than startActivity() bypasses Android 10+
+     * background activity launch restrictions — the system (not the app) starts
+     * the activity, so SYSTEM_ALERT_WINDOW is not required and OEM battery managers
+     * cannot block it.  The notification is auto-cancelled after 2 s once the
+     * activity is already showing.
      */
     private fun launchBlockOverlay(blockedPackage: String) {
         try {
             val appName = resolveAppDisplayName(blockedPackage)
-            val intent = Intent(this, BlockOverlayActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+            val activityIntent = Intent(this, BlockOverlayActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 putExtra(BlockOverlayActivity.EXTRA_BLOCKED_PKG, blockedPackage)
                 putExtra(BlockOverlayActivity.EXTRA_BLOCKED_NAME, appName)
             }
-            startActivity(intent)
-        } catch (_: Exception) {
-            // Overlay launch failed (e.g. SYSTEM_ALERT_WINDOW not yet granted on first run).
-            // The dismissPackage() call below is the fallback in this case.
-        }
+            val pi = PendingIntent.getActivity(
+                applicationContext, 0, activityIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val nm = getSystemService(NotificationManager::class.java) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val ch = NotificationChannel(
+                    BLOCK_ALERT_CHANNEL, "Block Alert", NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                    setBypassDnd(true)
+                }
+                nm.createNotificationChannel(ch)
+            }
+            val notif = Notification.Builder(
+                this,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) BLOCK_ALERT_CHANNEL else "default"
+            ).apply {
+                setSmallIcon(android.R.drawable.ic_lock_lock)
+                setContentTitle("App Blocked")
+                setContentText("\u201C$appName\u201D is blocked during this session.")
+                setFullScreenIntent(pi, true)
+                setAutoCancel(true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    setVisibility(Notification.VISIBILITY_PUBLIC)
+                }
+            }.build()
+            nm.notify(BLOCK_ALERT_NOTIF_ID, notif)
+            // Auto-cancel after 2 s — the activity is already on screen by then
+            handler.postDelayed({ nm.cancel(BLOCK_ALERT_NOTIF_ID) }, 2_000L)
+        } catch (_: Exception) { }
     }
 
     private fun dismissPackage(blockedPackage: String) {
@@ -1069,15 +1115,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
         } else {
             performGlobalAction(GLOBAL_ACTION_HOME)
-            // Kill the blocked app's background process after HOME is pressed.
-            // A short delay lets the OS process the HOME navigation before the kill
-            // fires, ensuring the app has actually left the foreground first.
-            handler.postDelayed({
-                try {
-                    val am = getSystemService(android.app.ActivityManager::class.java)
-                    am?.killBackgroundProcesses(blockedPackage)
-                } catch (_: Exception) { }
-            }, 500L)
         }
     }
 

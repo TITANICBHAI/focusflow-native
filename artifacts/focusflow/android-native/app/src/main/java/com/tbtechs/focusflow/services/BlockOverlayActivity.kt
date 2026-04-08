@@ -390,7 +390,12 @@ class BlockOverlayActivity : Activity() {
 
     private fun dismissOverlay() {
         intentionalFinish = true
-        prefs.edit().putBoolean(PREF_OVERLAY_X_READY, false).apply()
+        prefs.edit()
+            .putBoolean(PREF_OVERLAY_X_READY, false)
+            // Tell the accessibility service to reset its cooldown so the next
+            // open of the same blocked app is caught immediately (no 2 s gap).
+            .putBoolean("block_cooldown_reset", true)
+            .apply()
         finish()
     }
 
