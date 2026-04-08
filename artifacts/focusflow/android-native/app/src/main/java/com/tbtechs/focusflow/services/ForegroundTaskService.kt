@@ -1,19 +1,24 @@
 package com.tbtechs.focusflow.services
 
 import android.app.*
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import androidx.core.app.NotificationCompat
 import com.tbtechs.focusflow.R
 import com.tbtechs.focusflow.MainActivity
 import com.tbtechs.focusflow.services.NetworkBlockerVpnService
 import com.tbtechs.focusflow.services.WakeLockManager
 import com.tbtechs.focusflow.widget.FocusFlowWidget
+import org.json.JSONArray
 import java.util.Calendar
 
 /**
@@ -62,6 +67,12 @@ class ForegroundTaskService : Service() {
         private const val PI_EXTEND15 = 3
         private const val PI_EXTEND30 = 4
         private const val PI_SKIP     = 5
+
+        /** How often the fallback poller checks the foreground app (ms). */
+        private const val FALLBACK_POLL_MS = 1_000L
+
+        /** Cooldown: don't re-block the same package within this window (ms). */
+        private const val FALLBACK_COOLDOWN_MS = 2_000L
     }
 
     private var taskId: String    = ""
@@ -70,6 +81,11 @@ class ForegroundTaskService : Service() {
     private var startTimeMs: Long = 0L
     private var nextName: String? = null
     private var isActiveMode: Boolean = false
+
+    // ── Fallback blocker state (used only when accessibility is not granted) ──
+    private lateinit var blockPrefs: SharedPreferences
+    private var fallbackLastBlockedPkg: String? = null
+    private var fallbackLastBlockedAtMs: Long   = 0L
 
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
@@ -92,10 +108,98 @@ class ForegroundTaskService : Service() {
         }
     }
 
+    /**
+     * Fallback blocker poll runnable — runs every [FALLBACK_POLL_MS] ms.
+     *
+     * Immediately bails out if the accessibility service is enabled (that path
+     * is faster and more reliable — no need to duplicate work).  When
+     * accessibility is absent this is the only enforcement mechanism, so it
+     * uses UsageStatsManager to detect the foreground package, mirrors the
+     * same SharedPreferences block-check logic, and if a blocked app is found
+     * it launches the overlay (which pushes the app to the background) then
+     * fires killBackgroundProcesses 400 ms later.
+     */
+    private val fallbackPollRunnable = object : Runnable {
+        override fun run() {
+            // ── 1. Defer to accessibility if it is active ─────────────────
+            if (isAccessibilityServiceEnabled()) {
+                handler.postDelayed(this, FALLBACK_POLL_MS)
+                return
+            }
+
+            // ── 2. Only act when at least one blocking mode is active ──────
+            val now = System.currentTimeMillis()
+            val focusActive = blockPrefs.getBoolean("focus_active", false).let { on ->
+                if (on) {
+                    val endMs = blockPrefs.getLong("task_end_ms", 0L)
+                    if (endMs > 0L && now > endMs) {
+                        blockPrefs.edit().putBoolean("focus_active", false).apply()
+                        false
+                    } else on
+                } else false
+            }
+            val saActive = blockPrefs.getBoolean("standalone_block_active", false).let { on ->
+                if (on) {
+                    val untilMs = blockPrefs.getLong("standalone_block_until_ms", 0L)
+                    if (untilMs > 0L && now > untilMs) {
+                        blockPrefs.edit().putBoolean("standalone_block_active", false).apply()
+                        false
+                    } else on
+                } else false
+            }
+            val greyoutJson = blockPrefs.getString("greyout_schedule", "[]") ?: "[]"
+            val hasGreyout = greyoutJson != "[]" && greyoutJson.isNotEmpty()
+
+            if (!focusActive && !saActive && !hasGreyout) {
+                // Nothing to enforce — reset cooldown and poll lightly
+                fallbackLastBlockedPkg = null
+                handler.postDelayed(this, FALLBACK_POLL_MS)
+                return
+            }
+
+            // ── 3. Detect foreground package ──────────────────────────────
+            val pkg = getFallbackForegroundPackage()
+            if (pkg.isNullOrEmpty() || pkg == packageName) {
+                handler.postDelayed(this, FALLBACK_POLL_MS)
+                return
+            }
+
+            // ── 4. Skip always-allowed packages ───────────────────────────
+            if (AppBlockerAccessibilityService.ALWAYS_ALLOWED.any {
+                    pkg.equals(it, ignoreCase = true)
+                }) {
+                handler.postDelayed(this, FALLBACK_POLL_MS)
+                return
+            }
+
+            // ── 5. Check if the package should be blocked ─────────────────
+            if (!isFallbackBlocked(pkg, focusActive, saActive, greyoutJson)) {
+                fallbackLastBlockedPkg = null
+                handler.postDelayed(this, FALLBACK_POLL_MS)
+                return
+            }
+
+            // ── 6. Cooldown guard — don't hammer the same package ─────────
+            val samePackage     = pkg == fallbackLastBlockedPkg
+            val cooldownExpired = (now - fallbackLastBlockedAtMs) > FALLBACK_COOLDOWN_MS
+            if (!samePackage || cooldownExpired) {
+                fallbackLastBlockedPkg = pkg
+                fallbackLastBlockedAtMs = now
+                handleFallbackBlock(pkg)
+            }
+
+            handler.postDelayed(this, FALLBACK_POLL_MS)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        blockPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildIdleNotification())
+        // Start the fallback blocker poll — it self-disables instantly when
+        // accessibility is active, so there is zero overhead in the normal path.
+        handler.postDelayed(fallbackPollRunnable, FALLBACK_POLL_MS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -203,6 +307,7 @@ class ForegroundTaskService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tickRunnable)
+        handler.removeCallbacks(fallbackPollRunnable)
         WakeLockManager.release()
         super.onDestroy()
     }
@@ -393,5 +498,152 @@ class ForegroundTaskService : Service() {
             .edit()
             .putBoolean("focus_active", false)
             .apply()
+    }
+
+    // ─── Fallback blocker helpers ───────────────────────────────────────────────
+
+    /**
+     * Returns true if our AppBlockerAccessibilityService is currently active.
+     * When true the fallback poller defers entirely — accessibility is faster
+     * and event-driven so there is no value in running the polling path too.
+     */
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        return try {
+            val enabled = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            enabled.contains(packageName, ignoreCase = true)
+        } catch (_: Exception) { false }
+    }
+
+    /**
+     * Returns the package name of the currently visible foreground app using
+     * UsageStatsManager.  Returns null if the permission is not granted or the
+     * query returns no results.
+     *
+     * A 5-second look-back window is used so the most-recently-used app is
+     * reliably the one currently on screen.
+     */
+    private fun getFallbackForegroundPackage(): String? {
+        return try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val now = System.currentTimeMillis()
+            val stats = usm.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                now - 5_000L,
+                now
+            )
+            stats?.maxByOrNull { it.lastTimeUsed }?.packageName
+        } catch (_: Exception) { null }
+    }
+
+    /**
+     * Mirrors the core blocking logic from AppBlockerAccessibilityService using
+     * the same SharedPreferences.  Only covers the primary enforcement paths
+     * (task focus, standalone block, greyout schedule) — advanced daily-
+     * allowance time-budget tracking stays in the accessibility service.
+     */
+    private fun isFallbackBlocked(
+        pkg: String,
+        focusActive: Boolean,
+        saActive: Boolean,
+        greyoutJson: String
+    ): Boolean {
+        // ── Task focus: block anything NOT in the allowed list ────────────
+        if (focusActive) {
+            val allowedJson = blockPrefs.getString("allowed_packages", "[]") ?: "[]"
+            val allowed = try {
+                val arr = JSONArray(allowedJson)
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            } catch (_: Exception) { emptySet() }
+            if (!allowed.any { pkg.equals(it, ignoreCase = true) }) return true
+        }
+
+        // ── Standalone block: block anything IN the blocked list ──────────
+        if (saActive) {
+            val blockedJson = blockPrefs.getString("standalone_blocked_packages", "[]") ?: "[]"
+            try {
+                val arr = JSONArray(blockedJson)
+                for (i in 0 until arr.length()) {
+                    if (pkg.equals(arr.getString(i), ignoreCase = true)) return true
+                }
+            } catch (_: Exception) { }
+        }
+
+        // ── Greyout schedule ──────────────────────────────────────────────
+        if (greyoutJson != "[]" && greyoutJson.isNotEmpty()) {
+            try {
+                val arr = org.json.JSONArray(greyoutJson)
+                val cal = java.util.Calendar.getInstance()
+                val currentDay  = cal.get(java.util.Calendar.DAY_OF_WEEK)
+                val currentMins = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                                  cal.get(java.util.Calendar.MINUTE)
+                for (i in 0 until arr.length()) {
+                    val entry = arr.optJSONObject(i) ?: continue
+                    if (!entry.optString("pkg").equals(pkg, ignoreCase = true)) continue
+                    val days = entry.optJSONArray("days") ?: continue
+                    val dayMatch = (0 until days.length()).any { days.optInt(it) == currentDay }
+                    if (!dayMatch) continue
+                    val startMins = entry.optInt("startHour") * 60 + entry.optInt("startMin")
+                    val endMins   = entry.optInt("endHour")   * 60 + entry.optInt("endMin")
+                    val inWindow  = if (startMins <= endMins)
+                        currentMins in startMins until endMins
+                    else
+                        currentMins >= startMins || currentMins < endMins
+                    if (inWindow) return true
+                }
+            } catch (_: Exception) { }
+        }
+
+        return false
+    }
+
+    /**
+     * Fallback enforcement action: launches the overlay (which immediately
+     * pushes the blocked app to the background) then kills its process 400 ms
+     * later once it is no longer in the foreground.
+     *
+     * The overlay's own re-raise logic keeps it on screen; the X button will
+     * appear once the fallback poller detects a non-blocked package in the
+     * foreground and sets overlay_x_ready.  Because there is no accessibility
+     * service in this path, we write overlay_x_ready directly from this
+     * service on the next poll tick where the blocked pkg is no longer seen.
+     */
+    private fun handleFallbackBlock(blockedPackage: String) {
+        // Signal overlay to await the package leaving before showing X
+        blockPrefs.edit().putString("overlay_awaiting_pkg", blockedPackage).apply()
+
+        // Launch the full-screen overlay
+        try {
+            val pm      = applicationContext.packageManager
+            val info    = pm.getApplicationInfo(blockedPackage, 0)
+            val appName = pm.getApplicationLabel(info).toString()
+            val intent  = Intent(applicationContext, BlockOverlayActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_PKG, blockedPackage)
+                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_NAME, appName)
+            }
+            startActivity(intent)
+        } catch (_: Exception) { }
+
+        // Kill the blocked app's process after the overlay has had time to
+        // take the foreground (pushing the blocked app to background).
+        handler.postDelayed({
+            try {
+                val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                am.killBackgroundProcesses(blockedPackage)
+            } catch (_: Exception) { }
+
+            // Write overlay_x_ready so the overlay's X button appears now
+            // (in the accessibility path this is done by the service on the
+            // next window event; here we do it directly after the kill).
+            blockPrefs.edit()
+                .putBoolean(BlockOverlayActivity.PREF_OVERLAY_X_READY, true)
+                .putString("overlay_awaiting_pkg", "")
+                .apply()
+        }, 400L)
     }
 }
