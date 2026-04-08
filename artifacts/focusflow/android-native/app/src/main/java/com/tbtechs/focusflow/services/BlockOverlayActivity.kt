@@ -286,7 +286,7 @@ class BlockOverlayActivity : Activity() {
         textSize = 20f
         setTextColor(Color.parseColor("#E8E8F0"))
         gravity = Gravity.CENTER
-        lineSpacingMultiplier = 1.55f
+        setLineSpacing(0f, 1.55f)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
