@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { requestPermissions } from '@/services/notificationService';
@@ -47,6 +48,20 @@ interface PermItem {
 }
 
 const PERMISSIONS: PermItem[] = [
+  {
+    id: 'media',
+    icon: 'images-outline',
+    title: 'Media & Files',
+    description: 'Access your photo library to set a custom wallpaper on the block screen.',
+    whyNeeded:
+      'Only needed if you want to pick a custom background image for the block overlay. The default wallpaper works without this.',
+    brokenWithout: [
+      'You cannot pick a custom wallpaper for the block screen',
+      'The default built-in wallpaper will be used instead',
+    ],
+    deepLinkLabel: 'Allow Media Access',
+    grantAction: 'auto',
+  },
   {
     id: 'notifications',
     icon: 'notifications-outline',
@@ -112,6 +127,10 @@ const PERMISSIONS: PermItem[] = [
 async function checkStatus(id: string): Promise<PermStatus> {
   try {
     switch (id) {
+      case 'media': {
+        const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+        return status === 'granted' ? 'granted' : 'denied';
+      }
       case 'notifications': {
         const { status } = await Notifications.getPermissionsAsync();
         return status === 'granted' ? 'granted' : 'denied';
@@ -172,7 +191,10 @@ export default function OnboardingScreen() {
     if (statuses[perm.id] === 'granted') return;
     setActionLoading(perm.id);
     try {
-      if (perm.id === 'notifications') {
+      if (perm.id === 'media') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        setStatuses((prev) => ({ ...prev, media: status === 'granted' ? 'granted' : 'denied' }));
+      } else if (perm.id === 'notifications') {
         const granted = await requestPermissions();
         setStatuses((prev) => ({ ...prev, notifications: granted ? 'granted' : 'denied' }));
       } else if (perm.id === 'battery') {

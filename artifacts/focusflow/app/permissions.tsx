@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as ImagePicker from 'expo-image-picker';
 import { UsageStatsModule, isUsageStatsAvailable } from '@/native-modules/UsageStatsModule';
 import { isSharedPrefsAvailable } from '@/native-modules/SharedPrefsModule';
 import { ForegroundLaunchModule } from '@/native-modules/ForegroundLaunchModule';
@@ -23,7 +24,7 @@ import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 
 type PermStatus = 'granted' | 'denied' | 'unknown';
-type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay';
+type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay' | 'media_files';
 
 interface PermissionItem {
   id: PermissionId;
@@ -156,6 +157,34 @@ const PERMISSIONS: PermissionItem[] = [
       } else {
         Linking.openSettings();
       }
+    },
+  },
+  {
+    id: 'media_files',
+    title: 'Media & Files',
+    description:
+      'Access your photo library to pick a custom wallpaper for the block screen.',
+    whyNeeded:
+      'Only required for setting a custom background image on the block overlay. The default wallpaper works fine without it.',
+    brokenWithout: [
+      'Cannot pick a custom wallpaper for the block screen',
+      'The default built-in wallpaper is used instead',
+    ],
+    icon: 'images-outline',
+    deepLinkLabel: 'Allow Media Access',
+    optional: true,
+    check: async (): Promise<PermStatus> => {
+      try {
+        const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+        return status === 'granted' ? 'granted' : 'denied';
+      } catch {
+        return 'unknown';
+      }
+    },
+    open: () => {
+      ImagePicker.requestMediaLibraryPermissionsAsync().catch(() =>
+        Linking.openSettings()
+      );
     },
   },
   {
