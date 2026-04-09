@@ -181,6 +181,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // without switching tasks, so the blocked app is never visually accessible.
     private var wOverlayView: FrameLayout? = null
     private var wOverlayXBtn: TextView? = null
+    private var wOverlayNavRow: LinearLayout? = null
     private var wOverlayXRevealed = false
 
     // Handler for retry re-checks AND timed-allowance expiry — runs on main thread
@@ -1205,6 +1206,56 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         })
         root.addView(col)
 
+        // ── Bottom nav row: ↩ Back  ⌂ Home (revealed with X, minimal gap) ────
+        val navRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            alpha = 0f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(52)
+            }
+        }
+
+        fun navBtn(label: String, onClick: () -> Unit): TextView =
+            TextView(this).apply {
+                text = label; textSize = 15f; gravity = Gravity.CENTER
+                setTextColor(Color.parseColor("#AAAACC"))
+                setPadding(dp(22), dp(12), dp(22), dp(12))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(Color.parseColor("#22222E"))
+                    setStroke(dp(1), Color.parseColor("#44445A"))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(8) }
+                setOnClickListener { onClick() }
+            }
+
+        navRow.addView(navBtn("\u21A9  Back") {
+            prefs.edit()
+                .putBoolean(BlockOverlayActivity.PREF_OVERLAY_X_READY, false)
+                .putBoolean("block_cooldown_reset", true)
+                .apply()
+            dismissWindowOverlay()
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        })
+        navRow.addView(navBtn("\u2302  Home") {
+            prefs.edit()
+                .putBoolean(BlockOverlayActivity.PREF_OVERLAY_X_READY, false)
+                .putBoolean("block_cooldown_reset", true)
+                .apply()
+            dismissWindowOverlay()
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        })
+        wOverlayNavRow = navRow
+        root.addView(navRow)
+
         // ── X button (hidden until home confirmed) ────────────────────────────
         val xBtn = TextView(this).apply {
             text = "\u2715"; textSize = 20f
@@ -1249,21 +1300,32 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         } catch (_: Exception) { }
         wOverlayView = null
         wOverlayXBtn = null
+        wOverlayNavRow = null
         wOverlayXRevealed = false
     }
 
-    /** Fades in the ✕ button so the user can dismiss the window overlay. */
+    /** Fades in the ✕ button and the Back/Home nav row so the user can dismiss. */
     private fun revealWindowXButton() {
         if (wOverlayXRevealed) return
-        val btn = wOverlayXBtn ?: return
         wOverlayXRevealed = true
         handler.post {
-            btn.isClickable = true
-            btn.isFocusable = true
-            ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 400L
-                addUpdateListener { btn.alpha = it.animatedValue as Float }
-                start()
+            // ✕ close button
+            wOverlayXBtn?.let { btn ->
+                btn.isClickable = true
+                btn.isFocusable = true
+                ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 400L
+                    addUpdateListener { btn.alpha = it.animatedValue as Float }
+                    start()
+                }
+            }
+            // ↩ Back  ⌂ Home row
+            wOverlayNavRow?.let { row ->
+                ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = 400L
+                    addUpdateListener { row.alpha = it.animatedValue as Float }
+                    start()
+                }
             }
         }
     }
@@ -1341,11 +1403,24 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         } catch (_: Exception) { }
     }
 
+    /**
+     * Kicks the user out of [blockedPackage] using both BACK and HOME.
+     *
+     * BACK first — collapses any in-app dialog or deeplink navigation so the
+     * blocked app is fully dismissed from the task stack.
+     * HOME 150 ms later — forces the launcher to the foreground, which also
+     * triggers the overlay X-button / Back+Home nav row reveal signal.
+     *
+     * Installer packages (Play Store, MIUI installer, etc.) only get BACK
+     * because sending HOME during an install confirmation hides the dialog
+     * without cancelling, leaving a stale install in the background.
+     */
     private fun dismissPackage(blockedPackage: String) {
         if (INSTALLER_PACKAGES.any { blockedPackage.equals(it, ignoreCase = true) }) {
             performGlobalAction(GLOBAL_ACTION_BACK)
         } else {
-            performGlobalAction(GLOBAL_ACTION_HOME)
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 150L)
         }
     }
 
