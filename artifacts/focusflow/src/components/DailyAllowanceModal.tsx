@@ -124,22 +124,30 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
     const pkg = entry.packageName;
     return (
       <View style={[styles.configPanel, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+        {/* Locked read-only notice */}
+        {locked && (
+          <View style={styles.lockNotice}>
+            <Ionicons name="lock-closed-outline" size={12} color={COLORS.orange} />
+            <Text style={styles.lockNoticeText}>Values locked while block is active</Text>
+          </View>
+        )}
+
         {/* Mode picker */}
         <Text style={[styles.configLabel, { color: theme.muted }]}>ALLOWANCE MODE</Text>
         <View style={styles.modeRow}>
           {ALL_MODES.map((m) => (
             <TouchableOpacity
               key={m}
-              style={[styles.modeBtn, { borderColor: theme.border }, entry.mode === m && styles.modeBtnActive]}
-              onPress={() => updateEntry(pkg, { mode: m })}
-              activeOpacity={0.7}
+              style={[styles.modeBtn, { borderColor: theme.border }, entry.mode === m && styles.modeBtnActive, locked && styles.modeBtnDisabled]}
+              onPress={() => { if (!locked) updateEntry(pkg, { mode: m }); }}
+              activeOpacity={locked ? 1 : 0.7}
             >
               <Ionicons
                 name={MODE_ICONS[m]}
                 size={14}
-                color={entry.mode === m ? COLORS.orange : COLORS.muted}
+                color={entry.mode === m ? (locked ? COLORS.muted : COLORS.orange) : COLORS.muted}
               />
-              <Text style={[styles.modeBtnText, entry.mode === m && styles.modeBtnTextActive]}>
+              <Text style={[styles.modeBtnText, entry.mode === m && !locked && styles.modeBtnTextActive]}>
                 {MODE_LABELS[m]}
               </Text>
             </TouchableOpacity>
@@ -152,17 +160,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
             <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Opens per day</Text>
             <View style={styles.stepper}>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                onPress={() => updateEntry(pkg, { countPerDay: Math.max(1, (entry.countPerDay ?? 1) - 1) })}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                onPress={() => { if (!locked) updateEntry(pkg, { countPerDay: Math.max(1, (entry.countPerDay ?? 1) - 1) }); }}
+                disabled={locked}
               >
-                <Ionicons name="remove" size={16} color={COLORS.text} />
+                <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
-              <Text style={[styles.stepValue, { color: theme.text }]}>{entry.countPerDay ?? 1}</Text>
+              <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.countPerDay ?? 1}</Text>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                onPress={() => updateEntry(pkg, { countPerDay: Math.min(20, (entry.countPerDay ?? 1) + 1) })}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                onPress={() => { if (!locked) updateEntry(pkg, { countPerDay: Math.min(20, (entry.countPerDay ?? 1) + 1) }); }}
+                disabled={locked}
               >
-                <Ionicons name="add" size={16} color={COLORS.text} />
+                <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
             </View>
           </View>
@@ -173,17 +183,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
             <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Total minutes per day</Text>
             <View style={styles.stepper}>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                onPress={() => updateEntry(pkg, { budgetMinutes: Math.max(1, (entry.budgetMinutes ?? 30) - 5) })}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                onPress={() => { if (!locked) updateEntry(pkg, { budgetMinutes: Math.max(1, (entry.budgetMinutes ?? 30) - 5) }); }}
+                disabled={locked}
               >
-                <Ionicons name="remove" size={16} color={COLORS.text} />
+                <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
-              <Text style={[styles.stepValue, { color: theme.text }]}>{entry.budgetMinutes ?? 30} min</Text>
+              <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.budgetMinutes ?? 30} min</Text>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                onPress={() => updateEntry(pkg, { budgetMinutes: Math.min(480, (entry.budgetMinutes ?? 30) + 5) })}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                onPress={() => { if (!locked) updateEntry(pkg, { budgetMinutes: Math.min(480, (entry.budgetMinutes ?? 30) + 5) }); }}
+                disabled={locked}
               >
-                <Ionicons name="add" size={16} color={COLORS.text} />
+                <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
             </View>
           </View>
@@ -195,17 +207,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
               <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Minutes allowed per window</Text>
               <View style={styles.stepper}>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                  onPress={() => updateEntry(pkg, { intervalMinutes: Math.max(1, (entry.intervalMinutes ?? 5) - 1) })}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!locked) updateEntry(pkg, { intervalMinutes: Math.max(1, (entry.intervalMinutes ?? 5) - 1) }); }}
+                  disabled={locked}
                 >
-                  <Ionicons name="remove" size={16} color={COLORS.text} />
+                  <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
-                <Text style={[styles.stepValue, { color: theme.text }]}>{entry.intervalMinutes ?? 5} min</Text>
+                <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.intervalMinutes ?? 5} min</Text>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                  onPress={() => updateEntry(pkg, { intervalMinutes: Math.min(120, (entry.intervalMinutes ?? 5) + 1) })}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!locked) updateEntry(pkg, { intervalMinutes: Math.min(120, (entry.intervalMinutes ?? 5) + 1) }); }}
+                  disabled={locked}
                 >
-                  <Ionicons name="add" size={16} color={COLORS.text} />
+                  <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -213,17 +227,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
               <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Window size (hours)</Text>
               <View style={styles.stepper}>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                  onPress={() => updateEntry(pkg, { intervalHours: Math.max(1, (entry.intervalHours ?? 1) - 1) })}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!locked) updateEntry(pkg, { intervalHours: Math.max(1, (entry.intervalHours ?? 1) - 1) }); }}
+                  disabled={locked}
                 >
-                  <Ionicons name="remove" size={16} color={COLORS.text} />
+                  <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
-                <Text style={[styles.stepValue, { color: theme.text }]}>{entry.intervalHours ?? 1} hr</Text>
+                <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.intervalHours ?? 1} hr</Text>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }]}
-                  onPress={() => updateEntry(pkg, { intervalHours: Math.min(24, (entry.intervalHours ?? 1) + 1) })}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!locked) updateEntry(pkg, { intervalHours: Math.min(24, (entry.intervalHours ?? 1) + 1) }); }}
+                  disabled={locked}
                 >
-                  <Ionicons name="add" size={16} color={COLORS.text} />
+                  <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -545,6 +561,9 @@ const styles = StyleSheet.create({
     borderColor: COLORS.orange,
     backgroundColor: COLORS.orange + '15',
   },
+  modeBtnDisabled: {
+    opacity: 0.45,
+  },
   modeBtnText: {
     fontSize: FONT.xs,
     fontWeight: '600',
@@ -576,6 +595,20 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  stepBtnDisabled: {
+    opacity: 0.35,
+  },
+  lockNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  lockNoticeText: {
+    fontSize: FONT.xs,
+    color: COLORS.orange,
+    fontStyle: 'italic',
   },
   stepValue: {
     minWidth: 52,

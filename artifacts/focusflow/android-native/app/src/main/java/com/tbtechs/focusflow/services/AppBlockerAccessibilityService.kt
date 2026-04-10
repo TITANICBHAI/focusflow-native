@@ -432,16 +432,31 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // ── Daily allowance check (count / time_budget / interval modes) ──────
         // Each app can have its own allowance mode. If the allowance is available,
         // let the app through and start tracking for time-based modes.
+        //
+        // CRITICAL: Only call recordAllowanceOpen on the FIRST event per foreground
+        // session (i.e. when currentTimedPkg != pkg). Android fires many accessibility
+        // events per session — recording on every one would:
+        //   • count mode: exhaust opens in seconds instead of per true open
+        //   • timed modes: push sessionEndMs forward on each event so the timer
+        //     never fires, and reset currentTimedOpenAtMs so elapsed time is lost
         val allowanceEntry = findAllowanceEntry(pkg)
         if (allowanceEntry != null) {
             if (isAllowanceAvailable(pkg, allowanceEntry)) {
-                val sessionEndMs = recordAllowanceOpen(pkg, allowanceEntry)
-                if (allowanceEntry.mode != "count" && sessionEndMs > 0L) {
+                if (currentTimedPkg != pkg) {
+                    // App is newly in foreground — record this open and start tracking.
+                    val sessionEndMs = recordAllowanceOpen(pkg, allowanceEntry)
                     currentTimedPkg = pkg
                     currentTimedOpenAtMs = System.currentTimeMillis()
-                    currentTimedSessionEndMs = sessionEndMs
-                    scheduleTimedExpiry(pkg, sessionEndMs)
+                    if (allowanceEntry.mode != "count" && sessionEndMs > 0L) {
+                        currentTimedSessionEndMs = sessionEndMs
+                        scheduleTimedExpiry(pkg, sessionEndMs)
+                    } else {
+                        currentTimedSessionEndMs = 0L
+                        timedExpireRunnable?.let { handler.removeCallbacks(it) }
+                        timedExpireRunnable = null
+                    }
                 }
+                // else: same app still in foreground — already recorded, just let it through
                 lastBlockedPkg = null
                 return // Allowed — within allowance
             }
