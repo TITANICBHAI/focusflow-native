@@ -290,6 +290,41 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // Settings is always allowed at the package level but we intercept dangerous
         // sub-pages (accessibility settings, clear data, date/time) during focus.
         if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) {
+
+            // ── User explicit override ────────────────────────────────────────
+            // If the user deliberately added an ALWAYS_ALLOWED package (e.g. Settings)
+            // to their standalone blocked list or excluded it from their focus allowed
+            // list, honour that choice and bypass the protection entirely.
+            if (saActive) {
+                val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
+                if (parseJsonArray(saJson).any { it.equals(pkg, ignoreCase = true) }) {
+                    val samePackage = pkg == lastBlockedPkg
+                    val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
+                    if (!samePackage || cooldownExpired) {
+                        lastBlockedPkg = pkg
+                        lastBlockedAtMs = now
+                        handleBlockedApp(pkg)
+                        scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                    }
+                    return
+                }
+            }
+            if (focusActive) {
+                val allowedJson = prefs.getString(PREF_ALLOWED_PKG, "[]") ?: "[]"
+                val allowedList = parseJsonArray(allowedJson)
+                if (allowedList.isNotEmpty() && !allowedList.any { it.equals(pkg, ignoreCase = true) }) {
+                    val samePackage = pkg == lastBlockedPkg
+                    val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
+                    if (!samePackage || cooldownExpired) {
+                        lastBlockedPkg = pkg
+                        lastBlockedAtMs = now
+                        handleBlockedApp(pkg)
+                        scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                    }
+                    return
+                }
+            }
+
             if (focusActive || saActive) {
                 // Block uninstall dialogs — show overlay so user sees why they're blocked.
                 if (isUninstallDialog(event)) {
