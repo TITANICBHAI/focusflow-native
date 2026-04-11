@@ -255,7 +255,18 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null) return
+
+        // ── Multi-window / split-screen: scan ALL visible windows ────────────
+        // TYPE_WINDOWS_CHANGED fires when a new window appears (split pane, overlay,
+        // PiP frame, etc.). A blocked app may enter the foreground this way without
+        // ever becoming the "primary" window that triggers STATE_CHANGED.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            checkWindowsForBlockedApps()
+            return
+        }
+
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         val now = System.currentTimeMillis()
 
@@ -441,6 +452,18 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     handleBlockedApp(pkg)
                     return
                 }
+                // Block FocusFlow's own App Info page — prevents the user from pressing
+                // "Force Stop" on FocusFlow itself, which would kill the blocking service.
+                if (isFocusFlowAppInfoPage(event)) {
+                    handleBlockedApp(pkg)
+                    return
+                }
+                // Block the App Info page for any currently blocked app — prevents
+                // uninstalling blocked apps as a workaround during a session.
+                if (isBlockedAppInfoPage(event, focusActive, saActive)) {
+                    handleBlockedApp(pkg)
+                    return
+                }
             }
             return
         }
@@ -573,6 +596,52 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         lastBlockedPkg = null
         dismissWindowOverlay()
+    }
+
+    // ─── Multi-window / split-screen scan ─────────────────────────────────────
+
+    /**
+     * Scans ALL currently visible windows (split-screen panes, overlays, PiP frames)
+     * for blocked packages and dismisses the first offender found.
+     *
+     * Called on TYPE_WINDOWS_CHANGED — fires when a new window appears or disappears
+     * without necessarily triggering TYPE_WINDOW_STATE_CHANGED on the primary window.
+     * This is the main escape route for split-screen: the blocked app can be placed in
+     * the secondary pane while the primary pane stays on the launcher.
+     */
+    private fun checkWindowsForBlockedApps() {
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        if (!focusActive && !saActive) return
+
+        val now = System.currentTimeMillis()
+        try {
+            val allWindows = windows ?: return
+            for (window in allWindows) {
+                val root = window.root ?: continue
+                try {
+                    val pkg = root.packageName?.toString() ?: continue
+                    if (pkg == packageName) continue
+                    if (NEVER_BLOCK.any { it.equals(pkg, ignoreCase = true) }) continue
+                    if (ALWAYS_ALLOWED.any { it.equals(pkg, ignoreCase = true) }) continue
+                    // If app still has allowance quota, permit it through
+                    val allowanceEntry = findAllowanceEntry(pkg)
+                    if (allowanceEntry != null && isAllowanceAvailable(pkg, allowanceEntry)) continue
+                    if (isPackageBlocked(pkg, focusActive, saActive)) {
+                        val samePackage = pkg == lastBlockedPkg
+                        val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
+                        if (!samePackage || cooldownExpired) {
+                            lastBlockedPkg = pkg
+                            lastBlockedAtMs = now
+                            handleBlockedApp(pkg)
+                        }
+                        break // Dismiss one offender per event; next event handles any remaining
+                    }
+                } finally {
+                    root.recycle()
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     // ─── Retry mechanism ──────────────────────────────────────────────────────
@@ -965,6 +1034,93 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "special access" in nodeText &&
             ("appear on top" in nodeText || "install unknown apps" in nodeText ||
              "device admin apps" in nodeText || "all files access" in nodeText)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Returns true when the user has navigated to the App Info page for FocusFlow
+     * itself (com.tbtechs.focusflow). This page exposes a "Force stop" button that
+     * would kill the accessibility service and end all blocking.
+     *
+     * Detection strategy (layered for OEM robustness):
+     *   1. Activity class name contains a known App Info class name AND page content
+     *      references FocusFlow's package/display name.
+     *   2. Content-based fallback: page has both "force stop" AND a reference to
+     *      FocusFlow — works on Samsung and other OEMs with renamed activity classes.
+     */
+    private fun isFocusFlowAppInfoPage(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        val knownAppInfoClasses = listOf(
+            "installedappdetails",
+            "appdetailssettings",
+            "appinfobase",
+            "applicationdetailssettings",
+            "appinfodashboardactivity",   // AOSP / Pixel
+            "manageapplicationdetails",   // Samsung
+        )
+        val classMatchesAppInfo = knownAppInfoClasses.any { it in className }
+
+        val root = event.source ?: run {
+            // No root — fall back to event text
+            val eventText = buildString {
+                event.text.forEach { append(it); append(' ') }
+            }.lowercase()
+            return classMatchesAppInfo &&
+                   ("focusflow" in eventText || packageName.lowercase() in eventText)
+        }
+
+        return try {
+            val nodeText = collectNodeText(root).lowercase()
+            val hasFocusFlowRef = "focusflow" in nodeText ||
+                                  packageName.lowercase() in nodeText
+            if (!hasFocusFlowRef) return false
+            // Confirm we're on an App Info page — must have a "force stop" marker
+            // or the class name already told us so.
+            classMatchesAppInfo || "force stop" in nodeText || "force-stop" in nodeText
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Returns true when the user has navigated to the App Info page for any package
+     * that is currently blocked by the active session.
+     *
+     * Rationale: if the user can reach a blocked app's detail page they can clear
+     * its data, storage, or "Open by default" links — effectively circumventing the
+     * block's intent. They could also uninstall the app and reinstall a lookalike.
+     *
+     * Detection: page has "force stop" + matches a blocked package name in the content.
+     */
+    private fun isBlockedAppInfoPage(
+        event: AccessibilityEvent,
+        focusActive: Boolean,
+        saActive: Boolean
+    ): Boolean {
+        // Quick exit: gather the blocked package list
+        val saJson = if (saActive) prefs.getString(PREF_SA_PKGS, "[]") ?: "[]" else "[]"
+        val saList = if (saActive) parseJsonArray(saJson) else emptyList()
+
+        // Collect packages that ARE explicitly blocked in the standalone list.
+        // Focus-mode blocks everything NOT in the allowed list — we can't enumerate
+        // all blocked packages efficiently here, so we guard the standalone list only.
+        val blockedCandidates = mutableSetOf<String>()
+        if (saActive) blockedCandidates.addAll(saList)
+        blockedCandidates.remove(packageName) // Never mis-block our own page here
+
+        if (blockedCandidates.isEmpty()) return false
+
+        val root = event.source ?: return false
+        return try {
+            val nodeText = collectNodeText(root).lowercase()
+            // Must look like an App Info page
+            if ("force stop" !in nodeText && "force-stop" !in nodeText) return false
+            // Check if any blocked package name appears in the page text
+            blockedCandidates.any { pkg ->
+                pkg.lowercase() in nodeText
+            }
         } finally {
             root.recycle()
         }
