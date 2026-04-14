@@ -11,10 +11,19 @@ export interface AversionsSettings {
 
 const AversionsModule = {
   async getSettings(): Promise<AversionsSettings> {
+    if (!Aversions?.getSettings) {
+      return {
+        dimmerEnabled: false,
+        vibrateEnabled: false,
+        soundEnabled: false,
+        weeklyReportEnabled: false,
+      };
+    }
     return Aversions.getSettings();
   },
 
   async setSettings(settings: Partial<AversionsSettings>): Promise<void> {
+    if (!Aversions?.setSettings) return;
     return Aversions.setSettings(settings);
   },
 };

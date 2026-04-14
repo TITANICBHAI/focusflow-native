@@ -129,6 +129,22 @@ const initialState: AppState = {
   isDbReady: false,
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((e) => {
+        clearTimeout(timer);
+        console.error('[AppContext] timed operation failed', e);
+        resolve(fallback);
+      });
+  });
+}
+
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 interface AppContextValue {
@@ -174,14 +190,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function init() {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      await setupNotificationChannels();
-      await requestPermissions();
+      try {
+        await setupNotificationChannels();
+      } catch (e) {
+        console.warn('[AppContext] notification channel setup failed', e);
+      }
+      try {
+        await requestPermissions();
+      } catch (e) {
+        console.warn('[AppContext] notification permission request failed', e);
+      }
 
-      // Ensure the foreground service is always running from the first app open.
-      // This keeps the process alive so Android cannot kill the AccessibilityService.
-      await ForegroundServiceModule.startIdleService();
+      try {
+        await ForegroundServiceModule.startIdleService();
+      } catch (e) {
+        console.warn('[AppContext] idle foreground service start failed', e);
+      }
 
-      const settings = await dbGetSettings();
+      const settings = await withTimeout(dbGetSettings(), 8000, defaultSettings);
       dispatch({ type: 'SET_SETTINGS', payload: settings });
       dispatch({ type: 'SET_DB_READY' });
 
@@ -213,6 +239,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {
       console.error('[AppContext] init error', e);
+      dispatch({ type: 'SET_SETTINGS', payload: defaultSettings });
+      dispatch({ type: 'SET_DB_READY' });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -225,7 +253,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    */
   async function _syncDailyAllowance(settings: AppSettings): Promise<void> {
     const entries = settings.dailyAllowanceEntries ?? [];
-    await SharedPrefsModule.setDailyAllowanceConfig(entries);
+    try {
+      await SharedPrefsModule.setDailyAllowanceConfig(entries);
+    } catch (e) {
+      console.warn('[AppContext] daily allowance sync failed', e);
+    }
   }
 
   /**
@@ -234,7 +266,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    */
   async function _syncBlockedWords(settings: AppSettings): Promise<void> {
     const words = settings.blockedWords ?? [];
-    await SharedPrefsModule.setBlockedWords(words);
+    try {
+      await SharedPrefsModule.setBlockedWords(words);
+    } catch (e) {
+      console.warn('[AppContext] blocked words sync failed', e);
+    }
   }
 
   /**
@@ -249,7 +285,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         soundEnabled:        settings.aversionSoundEnabled   ?? false,
         weeklyReportEnabled: settings.weeklyReportEnabled    ?? false,
       });
-    } catch { /* module not available in bare Expo Go dev builds — ignore */ }
+    } catch (e) {
+      console.warn('[AppContext] aversions sync failed', e);
+    }
   }
 
   /**
@@ -259,7 +297,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function _syncGreyoutSchedule(settings: AppSettings): Promise<void> {
     try {
       await GreyoutModule.setSchedule(settings.greyoutSchedule ?? []);
-    } catch { /* module not available in bare Expo Go dev builds — ignore */ }
+    } catch (e) {
+      console.warn('[AppContext] greyout sync failed', e);
+    }
   }
 
   /**
@@ -270,18 +310,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const { standaloneBlockPackages, standaloneBlockUntil } = settings;
     const packages = standaloneBlockPackages ?? [];
     if (packages.length === 0 || !standaloneBlockUntil) {
-      await SharedPrefsModule.setStandaloneBlock(false, [], 0);
+      try {
+        await SharedPrefsModule.setStandaloneBlock(false, [], 0);
+      } catch (e) {
+        console.warn('[AppContext] standalone block clear failed', e);
+      }
       return;
     }
     const untilMs = new Date(standaloneBlockUntil).getTime();
     if (untilMs <= Date.now()) {
-      // Expired — clear from SharedPrefs and settings
-      await SharedPrefsModule.setStandaloneBlock(false, [], 0);
+      try {
+        await SharedPrefsModule.setStandaloneBlock(false, [], 0);
+      } catch (e) {
+        console.warn('[AppContext] expired standalone block clear failed', e);
+      }
       const cleared = { ...settings, standaloneBlockPackages: [], standaloneBlockUntil: null };
       await dbSaveSettings(cleared);
       dispatch({ type: 'SET_SETTINGS', payload: cleared });
     } else {
-      await SharedPrefsModule.setStandaloneBlock(true, packages, untilMs);
+      try {
+        await SharedPrefsModule.setStandaloneBlock(true, packages, untilMs);
+      } catch (e) {
+        console.warn('[AppContext] standalone block sync failed', e);
+      }
     }
   }
 

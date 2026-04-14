@@ -131,19 +131,46 @@ class ForegroundServiceModule(private val reactContext: ReactApplicationContext)
      */
     @ReactMethod
     fun requestBatteryOptimizationExemption(promise: Promise) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            promise.resolve(null)
+            return
+        }
         try {
             val pm = reactContext.getSystemService(android.content.Context.POWER_SERVICE) as PowerManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                !pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {
-                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:${reactContext.packageName}")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                reactContext.startActivity(intent)
+            if (pm.isIgnoringBatteryOptimizations(reactContext.packageName)) {
+                promise.resolve(null)
+                return
             }
+        } catch (_: Exception) {
             promise.resolve(null)
-        } catch (e: Exception) {
-            promise.reject("BATTERY_ERROR", e.message, e)
+            return
         }
+        val activity = reactContext.currentActivity
+        fun launch(intent: Intent): Boolean {
+            return try {
+                if (activity != null && !activity.isFinishing) {
+                    activity.startActivity(intent)
+                } else {
+                    reactContext.startActivity(intent.apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
+                }
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:${reactContext.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        if (launch(direct)) { promise.resolve(null); return }
+        val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        if (launch(list)) { promise.resolve(null); return }
+        val settings = Intent(Settings.ACTION_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        launch(settings)
+        promise.resolve(null)
     }
 }

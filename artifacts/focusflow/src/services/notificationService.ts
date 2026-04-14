@@ -10,6 +10,7 @@
 
 import * as Notifications from 'expo-notifications';
 import { SchedulableTriggerInputTypes } from 'expo-notifications';
+import { Platform } from 'react-native';
 import type { Task } from '@/data/types';
 import { formatTime, formatDuration, getRemainingMinutes } from './taskService';
 
@@ -27,6 +28,7 @@ export const REMINDER_CHANNEL_ID   = 'task-reminders';
 // ─── Permissions ──────────────────────────────────────────────────────────────
 
 export async function requestPermissions(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === 'granted') return true;
 
@@ -37,6 +39,7 @@ export async function requestPermissions(): Promise<boolean> {
 // ─── Android notification channels ───────────────────────────────────────────
 
 export async function setupNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
   // Task reminder channel — used for pre-start alerts, mid-session check-ins, and end notifications.
   // The persistent focus notification is owned entirely by the native ForegroundTaskService
   // (IMPORTANCE_LOW, setOngoing(true)) — no JS channel is needed for it.

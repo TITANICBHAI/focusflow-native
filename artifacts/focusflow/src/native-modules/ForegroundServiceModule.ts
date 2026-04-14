@@ -23,7 +23,11 @@ if (Platform.OS === 'android' && !ForegroundService) {
 export const ForegroundServiceModule = {
   async startIdleService(): Promise<void> {
     if (!ForegroundService) return;
-    return ForegroundService.startIdleService();
+    try {
+      return await ForegroundService.startIdleService();
+    } catch (e) {
+      console.warn('[ForegroundServiceModule] startIdleService failed', e);
+    }
   },
 
   async startService(taskId: string, taskName: string, endTimeMs: number, nextTaskName: string | null): Promise<void> {
@@ -43,6 +47,10 @@ export const ForegroundServiceModule = {
 
   async requestBatteryOptimizationExemption(): Promise<void> {
     if (!ForegroundService) return;
-    return ForegroundService.requestBatteryOptimizationExemption();
+    try {
+      return await ForegroundService.requestBatteryOptimizationExemption();
+    } catch (e) {
+      console.warn('[ForegroundServiceModule] requestBatteryOptimizationExemption failed', e);
+    }
   },
 };

@@ -20,24 +20,28 @@ if (Platform.OS === 'android' && !SharedPrefs) {
 
 export const isSharedPrefsAvailable = Platform.OS === 'android' && SharedPrefs != null;
 
+function hasSharedPrefsMethod(name: string): boolean {
+  return !!SharedPrefs && typeof SharedPrefs[name] === 'function';
+}
+
 export const SharedPrefsModule = {
   async setFocusActive(active: boolean): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setFocusActive')) return;
     return SharedPrefs.setFocusActive(active);
   },
 
   async setAllowedPackages(packages: string[]): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setAllowedPackages')) return;
     return SharedPrefs.setAllowedPackages(packages);
   },
 
   async setActiveTask(taskId: string, name: string, endMs: number, nextName: string | null): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setActiveTask')) return;
     return SharedPrefs.setActiveTask(taskId, name, endMs, nextName ?? null);
   },
 
   async setStandaloneBlock(active: boolean, packages: string[], untilMs: number): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setStandaloneBlock')) return;
     return SharedPrefs.setStandaloneBlock(active, packages, untilMs);
   },
 
@@ -48,22 +52,22 @@ export const SharedPrefsModule = {
    * Replaces the old setDailyAllowancePackages (string[]) method.
    */
   async setDailyAllowanceConfig(entries: DailyAllowanceEntry[]): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setDailyAllowanceConfig')) return;
     return SharedPrefs.setDailyAllowanceConfig(JSON.stringify(entries));
   },
 
   async resetDailyAllowanceUsage(packageName: string | null): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('resetDailyAllowanceUsage')) return;
     return SharedPrefs.resetDailyAllowanceUsage(packageName ?? null);
   },
 
   async setBlockedWords(words: string[]): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('setBlockedWords')) return;
     return SharedPrefs.setBlockedWords(words);
   },
 
   async putString(key: string, value: string): Promise<void> {
-    if (!SharedPrefs) return;
+    if (!hasSharedPrefsMethod('putString')) return;
     return SharedPrefs.putString(key, value);
   },
 };

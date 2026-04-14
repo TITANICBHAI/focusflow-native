@@ -21,7 +21,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
-import { StyleSheet, View, Text, Animated } from 'react-native';
+import { StyleSheet, View, Text, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, SPACING } from '@/styles/theme';
 
@@ -92,6 +92,7 @@ Notifications.addNotificationReceivedListener(async (notification) => {
 
 // ─── 7. Notification action categories ───────────────────────────────────────
 async function setupNotificationCategories() {
+  if (Platform.OS === 'web' || typeof Notifications.setNotificationCategoryAsync !== 'function') return;
   await Notifications.setNotificationCategoryAsync('task-active', [
     {
       identifier: 'COMPLETE',
@@ -166,14 +167,18 @@ function AppSplashOverlay() {
 
   // Fade out when DB is ready
   useEffect(() => {
-    if (state.isDbReady) {
+    if (state.isDbReady || !state.isLoading) {
+      if (Platform.OS === 'web') {
+        setVisible(false);
+        return;
+      }
       Animated.timing(opacity, {
         toValue: 0,
         duration: 400,
         useNativeDriver: true,
       }).start(() => setVisible(false));
     }
-  }, [state.isDbReady, opacity]);
+  }, [state.isDbReady, state.isLoading, opacity]);
 
   if (!visible) return null;
 
@@ -257,19 +262,22 @@ function OnboardingGuard() {
 export default function RootLayout() {
   useEffect(() => {
     async function bootstrap() {
-      await setupNotificationCategories();
-      await registerBackgroundFetch();
-      await registerOverrunCheckTask();
-      consumePendingTaskNavigation();
-
       try {
-        const { ForegroundServiceModule } = await import('@/native-modules/ForegroundServiceModule');
-        await ForegroundServiceModule.requestBatteryOptimizationExemption();
-      } catch {
-        // Native module not yet linked (dev build without EAS)
-      }
+        await SplashScreen.hideAsync().catch(() => {});
+        await setupNotificationCategories();
+        await registerBackgroundFetch();
+        await registerOverrunCheckTask();
+        consumePendingTaskNavigation();
 
-      setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 400);
+        try {
+          const { ForegroundServiceModule } = await import('@/native-modules/ForegroundServiceModule');
+          await ForegroundServiceModule.requestBatteryOptimizationExemption();
+        } catch {
+          // Native module not yet linked (dev build without EAS)
+        }
+      } finally {
+        setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 400);
+      }
     }
 
     bootstrap();

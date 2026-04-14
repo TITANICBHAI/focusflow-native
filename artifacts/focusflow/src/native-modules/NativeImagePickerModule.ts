@@ -14,6 +14,7 @@ export const NativeImagePickerModule = {
    */
   async pickImage(): Promise<string | null> {
     if (Platform.OS !== 'android') return null;
+    if (!NativeImagePicker?.pickImage) return null;
     return NativeImagePicker.pickImage();
   },
 
@@ -23,6 +24,7 @@ export const NativeImagePickerModule = {
    */
   async checkMediaPermission(): Promise<boolean> {
     if (Platform.OS !== 'android') return true;
+    if (!NativeImagePicker?.checkMediaPermission) return false;
     return NativeImagePicker.checkMediaPermission();
   },
 
