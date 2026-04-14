@@ -132,6 +132,7 @@ export default function FocusScreen() {
           visible={blockModalVisible}
           blockedPackages={settings.standaloneBlockPackages ?? []}
           blockUntil={settings.standaloneBlockUntil}
+          locked={standaloneActive}
           dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
           onSave={async (packages, untilMs, allowanceEntries) => {
             await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
@@ -341,6 +342,7 @@ export default function FocusScreen() {
         visible={blockModalVisible}
         blockedPackages={settings.standaloneBlockPackages ?? []}
         blockUntil={settings.standaloneBlockUntil}
+        locked={standaloneActive}
         dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
         onSave={async (packages, untilMs, allowanceEntries) => {
           await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
