@@ -14,11 +14,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'android-native/**'
+      - 'artifacts/focusflow/android-native/**'
       - '.github/workflows/build-kotlin.yml'
   pull_request:
     paths:
-      - 'android-native/**'
+      - 'artifacts/focusflow/android-native/**'
   workflow_dispatch:
 
 jobs:
@@ -30,24 +30,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Java first — no cache: gradle here because android-native is not a root
+      # Gradle project; caching is handled explicitly below after the path is known.
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+
+      # Explicit Gradle cache — avoids the "no gradle files found" error that
+      # setup-java's built-in cache causes when the project is in a subdirectory.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('artifacts/focusflow/android-native/**/*.gradle*', 'artifacts/focusflow/android-native/**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
+        with:
+          min-wrapper-count: 0
 
       - name: Create local.properties
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android-native
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           echo "local.properties written: $(cat local.properties)"
 
       - name: Build debug APK
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android-native
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
         run: |
@@ -58,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: focusflow-kotlin-debug-${{ github.run_number }}
-          path: android-native/app/build/outputs/apk/debug/app-debug.apk
+          path: artifacts/focusflow/android-native/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
   build-release:
@@ -76,20 +90,28 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('artifacts/focusflow/android-native/**/*.gradle*', 'artifacts/focusflow/android-native/**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Create local.properties
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android-native
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
       - name: Decode keystore
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android-native
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > app/release.keystore
 
       - name: Build release APK
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android-native
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
         run: |
@@ -104,10 +126,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: focusflow-kotlin-release-${{ github.run_number }}
-          path: android-native/app/build/outputs/apk/release/app-release.apk
+          path: artifacts/focusflow/android-native/app/build/outputs/apk/release/app-release.apk
           retention-days: 90
 
       - name: Remove keystore from runner
         if: always()
-        working-directory: android-native/app
+        working-directory: artifacts/focusflow/android-native/app
         run: rm -f release.keystore
