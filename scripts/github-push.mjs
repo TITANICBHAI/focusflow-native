@@ -28,7 +28,6 @@ const EXCLUDE_PATTERNS = [
   /\.DS_Store$/,
   /Thumbs\.db$/,
   /\.tsbuildinfo$/,
-  /pnpm-lock\.yaml$/,
   /tbtechs-release\.keystore/,
 ];
 
