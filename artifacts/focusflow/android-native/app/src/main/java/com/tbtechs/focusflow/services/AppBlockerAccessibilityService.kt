@@ -472,7 +472,13 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 // from SystemUI, so we must catch it independently.
                 val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
                 if (isSamsungPowerKey) {
-                    // Long-press side button opened Samsung power menu — dismiss it
+                    // Long-press side button opened Samsung power menu — dismiss it.
+                    // Three-layer approach for maximum OEM coverage:
+                    //   1. ACTION_CLOSE_SYSTEM_DIALOGS broadcast — works on Android ≤ 11,
+                    //      silently ignored / no-op on Android 12+ (system restriction).
+                    //   2. GLOBAL_ACTION_BACK — closes the dialog on all API levels.
+                    //   3. GLOBAL_ACTION_HOME — guaranteed return to home on all OEMs.
+                    closeSystemDialogsBroadcast()
                     handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
                     handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
                     return
@@ -483,20 +489,21 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     pkg == "com.samsung.android.systemui"
                 if (isSystemUiPkg) {
                     if (isPowerMenu(ev)) {
-                        // Power off / restart dialog opened — dismiss it
+                        // Power off / restart dialog opened — dismiss it.
+                        // Same three-layer approach as Samsung power key above.
+                        closeSystemDialogsBroadcast()
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
                         return
                     }
                     if (isNotificationPanelExpanded(ev)) {
                         // Notification bar or quick-settings pulled down.
-                        // Primary: try StatusBarManager reflection (works on AOSP).
-                        // Fallback: GLOBAL_ACTION_HOME reliably collapses any panel
-                        //           on all OEMs including Samsung One UI.
+                        // Layer 1: ACTION_CLOSE_SYSTEM_DIALOGS (Android ≤ 11 only).
+                        // Layer 2: StatusBarManager reflection (AOSP; silently fails elsewhere).
+                        // Layer 3: GLOBAL_ACTION_HOME — guaranteed on all OEMs.
+                        closeSystemDialogsBroadcast()
                         handler.postDelayed({
                             collapseStatusBarPanel()
-                            // Guaranteed fallback — fires 300 ms later even if
-                            // reflection succeeded, harmless if panel already closed.
                             handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300L)
                         }, 80L)
                         return
@@ -816,6 +823,26 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // This catches OEM-specific classes we have not enumerated above.
         // Collapsing when nothing is open is a harmless no-op.
         return event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+    }
+
+    /**
+     * Sends ACTION_CLOSE_SYSTEM_DIALOGS broadcast as a best-effort first layer
+     * to close any open system dialog (power menu, notification panel, etc.).
+     *
+     * Works on Android ≤ 11 (API 30). On Android 12+ (API 31) the system silently
+     * ignores this broadcast from non-system apps — we eat the SecurityException and
+     * fall back to GLOBAL_ACTION_BACK + GLOBAL_ACTION_HOME.
+     */
+    @Suppress("DEPRECATION")
+    private fun closeSystemDialogsBroadcast() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            try {
+                @Suppress("InlinedApi")
+                sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            } catch (_: Exception) {
+                // Silently ignored — broadcast disallowed on this ROM/API level
+            }
+        }
     }
 
     /**
