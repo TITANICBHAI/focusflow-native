@@ -324,17 +324,21 @@ export async function dbGetStreak(): Promise<number> {
     `SELECT date, completed, total FROM daily_completions ORDER BY date DESC LIMIT 60`,
   );
   let streak = 0;
-  let checkDate = new Date();
-  checkDate.setHours(0, 0, 0, 0);
+  // Use local date parts to avoid UTC-midnight parsing shifting the date by one day
+  // in timezones west of UTC (e.g. new Date('2024-01-15') = Dec 14 23:00 in UTC-1).
+  const now = new Date();
+  let checkYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   for (const row of rows) {
-    const rowDate = new Date(row.date);
-    const diffDays = Math.round((checkDate.getTime() - rowDate.getTime()) / 86400000);
-    if (diffDays > 1) break; // gap in streak
+    const rowYMD = row.date.slice(0, 10);
+    if (rowYMD !== checkYMD) break; // gap in streak
     // Count day as "active" if at least 50% completion
     if (row.total > 0 && row.completed / row.total >= 0.5) {
       streak++;
-      checkDate = rowDate;
+      // Move checkYMD back one calendar day
+      const prev = new Date(now.getTime());
+      prev.setDate(prev.getDate() - streak);
+      checkYMD = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
     } else {
       break;
     }

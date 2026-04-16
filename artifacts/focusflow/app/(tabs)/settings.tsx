@@ -19,6 +19,7 @@ import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
 import { formatDuration } from '@/services/taskService';
+import { dbGetAllTasks } from '@/data/database';
 import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
 import { DailyAllowanceModal } from '@/components/DailyAllowanceModal';
@@ -91,14 +92,15 @@ export default function SettingsScreen() {
   };
 
   const handleClearAllTasks = () => {
-    Alert.alert('Clear All Tasks', 'This will delete ALL tasks. Are you sure?', [
+    Alert.alert('Clear All Tasks', 'This will delete ALL tasks across all days. Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear All',
         style: 'destructive',
         onPress: async () => {
           await cancelAllReminders();
-          for (const task of state.tasks) {
+          const allTasks = await dbGetAllTasks();
+          for (const task of allTasks) {
             await deleteTask(task.id);
           }
           await refreshTasks();

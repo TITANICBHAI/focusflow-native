@@ -31,6 +31,7 @@ import {
   scheduleTaskReminders,
   fireLateStartWarning,
   dismissPersistentNotification,
+  REMINDER_CHANNEL_ID,
 } from '@/services/notificationService';
 import { navigateToTask } from '@/navigation/navigationRef';
 
@@ -106,7 +107,9 @@ TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
         title: '⏱ Task extended automatically',
         body: `"${task.title}" ran over — extended by ${DEFAULT_EXTENSION_MINUTES} min. Later tasks shifted.`,
         data: { type: 'overrun-info', taskId: task.id },
-      },
+        sound: 'default',
+        channelId: REMINDER_CHANNEL_ID,
+      } as any,
       trigger: null,
     });
 
