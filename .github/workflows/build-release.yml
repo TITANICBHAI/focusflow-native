@@ -201,6 +201,21 @@ jobs:
           echo "" >> gradle.properties
           echo "android.enableR8.fullMode=true" >> gradle.properties
 
+      # ABI splits must be disabled for AAB builds.
+      # When splits { abi { enable true } } is active alongside bundleRelease + R8,
+      # Gradle creates one shrunk-resources file per ABI and then fails to merge them.
+      # See: https://issuetracker.google.com/402800800
+      - name: Disable ABI splits for AAB build
+        working-directory: artifacts/focusflow/android
+        run: |
+          # Patch build.gradle — disable the abi splits block entirely
+          sed -i '/splits\s*{/,/^[[:space:]]*}/ {
+            s/enable\s*true/enable false/g
+          }' app/build.gradle || true
+          # Belt-and-suspenders: gradle property override
+          echo "android.splits.abi.enable=false" >> gradle.properties
+          echo "android.splits.density.enable=false" >> gradle.properties
+
       - name: Decode release keystore
         working-directory: artifacts/focusflow/android
         run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
