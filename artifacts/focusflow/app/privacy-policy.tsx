@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
@@ -10,6 +10,8 @@ import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 export default function PrivacyPolicyScreen() {
   const { state, updateSettings } = useApp();
   const { theme } = useTheme();
+  const navigation = useNavigation();
+  const isRevisit = navigation.canGoBack();
 
   const handleAccept = async () => {
     await updateSettings({ ...state.settings, privacyAccepted: true });
@@ -18,6 +20,15 @@ export default function PrivacyPolicyScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]}>
+      {isRevisit && (
+        <View style={[styles.topBar, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+            <Ionicons name="arrow-back" size={22} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.topTitle, { color: theme.text }]}>Privacy Policy</Text>
+          <View style={{ width: 40 }} />
+        </View>
+      )}
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.logoCircle}>
@@ -47,10 +58,17 @@ export default function PrivacyPolicyScreen() {
           You can change permissions in Android Settings and manage FocusFlow’s app settings at any time. Removing app data deletes your local FocusFlow data.
         </PolicyCard>
 
-        <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept} activeOpacity={0.85}>
-          <Text style={styles.acceptText}>I Understand and Continue</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" />
-        </TouchableOpacity>
+        {isRevisit ? (
+          <TouchableOpacity style={styles.backBtnBottom} onPress={() => router.back()} activeOpacity={0.8}>
+            <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
+            <Text style={styles.backBtnText}>Back to Settings</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept} activeOpacity={0.85}>
+            <Text style={styles.acceptText}>I Understand and Continue</Text>
+            <Ionicons name="arrow-forward" size={18} color="#fff" />
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -73,6 +91,37 @@ function PolicyCard({ title, icon, children }: { title: string; icon: keyof type
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topTitle: {
+    fontSize: FONT.md,
+    fontWeight: '700',
+  },
+  backBtnBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  backBtnText: {
+    color: COLORS.primary,
+    fontSize: FONT.md,
+    fontWeight: '700',
+  },
   content: {
     padding: SPACING.lg,
     paddingBottom: 48,

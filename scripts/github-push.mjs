@@ -3,7 +3,7 @@ import { join, relative } from 'path';
 
 const TOKEN = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
 const OWNER = 'TITANICBHAI';
-const REPO = 'focusflow-android';
+const REPO = 'focusflow-native';
 const BRANCH = 'main';
 const BASE = '/home/runner/workspace';
 const CONCURRENCY = 10;

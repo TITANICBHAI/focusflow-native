@@ -113,9 +113,7 @@ export function getTodayTasks(tasks: Task[]): Task[] {
   return tasks
     .filter((t) => {
       const s = dayjs(t.startTime);
-      // Use !isBefore (>=) instead of isAfter (>) so tasks scheduled at
-      // exactly midnight (00:00:00) are not silently excluded.
-      return !s.isBefore(startOfDay) && s.isBefore(endOfDay);
+      return s.isAfter(startOfDay) && s.isBefore(endOfDay);
     })
     .sort((a, b) => dayjs(a.startTime).unix() - dayjs(b.startTime).unix());
 }
@@ -155,7 +153,13 @@ export function getRemainingMinutes(endIso: string): number {
 }
 
 // ─── NLP-style quick input parser ────────────────────────────────────────────
-// Parses strings like "Call Bob at 3pm for 30m" or "Meeting 14:00 1h"
+// Parses strings like:
+//   "Call Bob at 3pm for 30m"
+//   "Meeting tomorrow 14:00 1h"
+//   "Gym tonight for 45m"
+//   "Review docs this morning"
+//   "Stand-up in 15 minutes"
+//   "Lunch 12:30 1h"
 
 export interface ParsedTask {
   title: string;
@@ -169,7 +173,57 @@ export function parseQuickInput(input: string): ParsedTask {
   let startTime: string | undefined;
   let durationMinutes = 60;
 
-  // Duration: "for 30m", "30min", "1h30m", "1.5h"
+  // ── Day offset keywords ─────────────────────────────────────────────────────
+  // "tomorrow", "today" — shifts the base day for time parsing
+  let dayOffset = 0;
+  if (/\btomorrow\b/i.test(title)) {
+    dayOffset = 1;
+    title = title.replace(/\btomorrow\b/gi, '').trim();
+  } else if (/\btoday\b/i.test(title)) {
+    title = title.replace(/\btoday\b/gi, '').trim();
+  }
+  const baseDay = now.add(dayOffset, 'day');
+
+  // ── "in X minutes/hours" ───────────────────────────────────────────────────
+  // e.g. "in 30 minutes", "in 2 hours", "in 1h"
+  const inRegex = /\bin\s+(\d+(?:\.\d+)?)\s*(h(?:ours?)?|m(?:in(?:utes?)?)?)\b/i;
+  const inMatch = title.match(inRegex);
+  if (inMatch) {
+    const val = parseFloat(inMatch[1]);
+    const unit = inMatch[2].toLowerCase();
+    const addMins = unit.startsWith('h') ? Math.round(val * 60) : Math.round(val);
+    startTime = now.add(addMins, 'minute').second(0).millisecond(0).toISOString();
+    title = title.replace(inMatch[0], '').trim();
+  }
+
+  // ── Named time-of-day keywords ─────────────────────────────────────────────
+  // Only applied if no explicit time found yet
+  if (!startTime) {
+    const timeOfDayMap: Record<string, number> = {
+      'morning':    8,
+      'this morning': 8,
+      'noon':       12,
+      'lunch':      12,
+      'afternoon':  14,
+      'this afternoon': 14,
+      'evening':    18,
+      'this evening': 18,
+      'tonight':    20,
+      'night':      21,
+      'midnight':   0,
+    };
+    for (const [keyword, hour] of Object.entries(timeOfDayMap)) {
+      const re = new RegExp(`\\b${keyword}\\b`, 'i');
+      if (re.test(title)) {
+        startTime = baseDay.hour(hour).minute(0).second(0).millisecond(0).toISOString();
+        title = title.replace(re, '').trim();
+        break;
+      }
+    }
+  }
+
+  // ── Duration: "for 30m", "30min", "1h30m", "1.5h" ─────────────────────────
+  // Must run before the bare-number time check to avoid ambiguity
   const durRegex = /\b(?:for\s+)?(\d+(?:\.\d+)?)\s*(h(?:ours?)?|m(?:in(?:utes?)?)?)\b/i;
   const durMatch = title.match(durRegex);
   if (durMatch) {
@@ -179,21 +233,51 @@ export function parseQuickInput(input: string): ParsedTask {
     title = title.replace(durMatch[0], '').trim();
   }
 
-  // Time: "at 3pm", "at 14:00", "3:30pm", "9am"
-  const timeRegex = /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i;
-  const timeMatch = title.match(timeRegex);
-  if (timeMatch) {
-    let hour = parseInt(timeMatch[1], 10);
-    const min = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-    const meridiem = timeMatch[3]?.toLowerCase();
-    if (meridiem === 'pm' && hour < 12) hour += 12;
-    if (meridiem === 'am' && hour === 12) hour = 0;
-    startTime = now.hour(hour).minute(min).second(0).millisecond(0).toISOString();
-    title = title.replace(timeMatch[0], '').trim();
+  // ── Explicit time: "at 3pm", "at 14:00", "3:30pm", "9am", "14:30" ─────────
+  if (!startTime) {
+    // With "at" keyword
+    const atTimeRegex = /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i;
+    const atMatch = title.match(atTimeRegex);
+    if (atMatch) {
+      let hour = parseInt(atMatch[1], 10);
+      const min = atMatch[2] ? parseInt(atMatch[2], 10) : 0;
+      const meridiem = atMatch[3]?.toLowerCase();
+      if (meridiem === 'pm' && hour < 12) hour += 12;
+      if (meridiem === 'am' && hour === 12) hour = 0;
+      startTime = baseDay.hour(hour).minute(min).second(0).millisecond(0).toISOString();
+      title = title.replace(atMatch[0], '').trim();
+    } else {
+      // Bare time: "9am", "3:30pm", "14:00" (must have am/pm OR colon for 24h)
+      const bareTimeRegex = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b([01]?\d|2[0-3]):([0-5]\d)\b/i;
+      const bareMatch = title.match(bareTimeRegex);
+      if (bareMatch) {
+        let hour: number;
+        let min = 0;
+        if (bareMatch[3]) {
+          // 12-hour format with am/pm
+          hour = parseInt(bareMatch[1], 10);
+          min = bareMatch[2] ? parseInt(bareMatch[2], 10) : 0;
+          const meridiem = bareMatch[3].toLowerCase();
+          if (meridiem === 'pm' && hour < 12) hour += 12;
+          if (meridiem === 'am' && hour === 12) hour = 0;
+        } else {
+          // 24-hour format with colon
+          hour = parseInt(bareMatch[4], 10);
+          min = parseInt(bareMatch[5], 10);
+        }
+        startTime = baseDay.hour(hour).minute(min).second(0).millisecond(0).toISOString();
+        title = title.replace(bareMatch[0], '').trim();
+      }
+    }
   }
 
-  // Clean up trailing/leading "at", commas, etc.
-  title = title.replace(/\bat\b/gi, '').replace(/,/g, '').replace(/\s+/g, ' ').trim();
+  // ── Clean up leftover noise ─────────────────────────────────────────────────
+  title = title
+    .replace(/\bat\b/gi, '')
+    .replace(/\bfor\b/gi, '')
+    .replace(/,/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   return { title: title || 'New Task', startTime, durationMinutes };
 }

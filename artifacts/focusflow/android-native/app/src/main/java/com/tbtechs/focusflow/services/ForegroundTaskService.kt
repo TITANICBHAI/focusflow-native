@@ -5,7 +5,6 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -197,29 +196,11 @@ class ForegroundTaskService : Service() {
         }
     }
 
-    /**
-     * Calls startForeground() with the correct API signature for each OS version.
-     *
-     * Android 14 (API 34+) requires that the foregroundServiceType passed to
-     * startForeground() matches the type declared in AndroidManifest.xml.
-     * Passing no type on API 34+ causes a SecurityException that crashes the service
-     * before it can call startForeground(), triggering Android's 5-second ANR timer
-     * and killing the whole app.
-     */
-    private fun startForegroundCompat(id: Int, notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // API 34+ — must pass foregroundServiceType matching the manifest declaration
-            startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(id, notification)
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         blockPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         createNotificationChannel()
-        startForegroundCompat(NOTIFICATION_ID, buildIdleNotification())
+        startForeground(NOTIFICATION_ID, buildIdleNotification())
         // Start the fallback blocker poll — it self-disables instantly when
         // accessibility is active, so there is zero overhead in the normal path.
         handler.postDelayed(fallbackPollRunnable, FALLBACK_POLL_MS)
@@ -270,7 +251,7 @@ class ForegroundTaskService : Service() {
                     }
 
                     val notification = buildActiveNotification(endMs - System.currentTimeMillis())
-                    startForegroundCompat(NOTIFICATION_ID, notification)
+                    startForeground(NOTIFICATION_ID, notification)
 
                     // Acquire wake lock so the CPU stays alive during the session even
                     // when the screen turns off — prevents OEM schedulers from throttling
@@ -300,7 +281,7 @@ class ForegroundTaskService : Service() {
                             isActiveMode = true
 
                             val notification = buildActiveNotification(restoredEndMs - System.currentTimeMillis())
-                            startForegroundCompat(NOTIFICATION_ID, notification)
+                            startForeground(NOTIFICATION_ID, notification)
                             WakeLockManager.acquire(this)
                             handler.removeCallbacks(tickRunnable)
                             handler.post(tickRunnable)

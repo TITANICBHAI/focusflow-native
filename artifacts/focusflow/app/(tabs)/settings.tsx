@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,7 +18,6 @@ import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
 import { formatDuration } from '@/services/taskService';
-import { dbGetAllTasks } from '@/data/database';
 import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
 import { DailyAllowanceModal } from '@/components/DailyAllowanceModal';
@@ -27,7 +25,6 @@ import { BlockedWordsModal } from '@/components/BlockedWordsModal';
 import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
 import { WeeklyReportModal } from '@/components/WeeklyReportModal';
 import { OverlayAppearanceModal } from '@/components/OverlayAppearanceModal';
-import { LauncherSetupModal } from '@/components/LauncherSetupModal';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
 const DURATION_OPTIONS = [30, 45, 60, 90, 120];
@@ -44,7 +41,6 @@ export default function SettingsScreen() {
   const [greyoutModalVisible, setGreyoutModalVisible] = useState(false);
   const [weeklyReportVisible, setWeeklyReportVisible] = useState(false);
   const [overlayAppearanceVisible, setOverlayAppearanceVisible] = useState(false);
-  const [launcherModalVisible, setLauncherModalVisible] = useState(false);
 
   if (!state.isDbReady) {
     return (
@@ -92,15 +88,14 @@ export default function SettingsScreen() {
   };
 
   const handleClearAllTasks = () => {
-    Alert.alert('Clear All Tasks', 'This will delete ALL tasks across all days. Are you sure?', [
+    Alert.alert('Clear All Tasks', 'This will delete ALL tasks. Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear All',
         style: 'destructive',
         onPress: async () => {
           await cancelAllReminders();
-          const allTasks = await dbGetAllTasks();
-          for (const task of allTasks) {
+          for (const task of state.tasks) {
             await deleteTask(task.id);
           }
           await refreshTasks();
@@ -115,11 +110,6 @@ export default function SettingsScreen() {
     if (state.focusSession?.isActive) {
       await SharedPrefsModule.setAllowedPackages(packages);
     }
-  };
-
-  const handleSaveLauncherApps = async (packages: string[]) => {
-    await update({ launcherApps: packages });
-    await SharedPrefsModule.setLauncherApps(packages);
   };
 
   const handleViewReport = () => {
@@ -240,8 +230,8 @@ export default function SettingsScreen() {
             label="Manage Blocked Keywords"
             description={
               (settings.blockedWords ?? []).length === 0
-                ? 'No keywords set — add words to trigger home redirect'
-                : `${(settings.blockedWords ?? []).length} keyword${(settings.blockedWords ?? []).length !== 1 ? 's' : ''} — matched against on-screen text`
+                ? 'No keywords set — blocked in URLs, searches & on-screen text'
+                : `${(settings.blockedWords ?? []).length} keyword${(settings.blockedWords ?? []).length !== 1 ? 's' : ''} — blocked in URLs, searches & on-screen text`
             }
             onPress={() => setWordsModalVisible(true)}
           />
@@ -350,30 +340,6 @@ export default function SettingsScreen() {
           )}
         </Section>
 
-        {/* ── Focus Launcher ── */}
-        <Section title="Focus Launcher">
-          <SettingButton
-            icon="swap-horizontal-outline"
-            label="Set as Default Home App"
-            description="Opens Android's home app chooser — select FocusFlow to activate the launcher"
-            onPress={() => {
-              Linking.sendIntent('android.settings.HOME_SETTINGS').catch(() =>
-                Linking.openSettings()
-              );
-            }}
-          />
-          <SettingButton
-            icon="apps-outline"
-            label="Manage Launcher Apps"
-            description={
-              (settings.launcherApps ?? []).length === 0
-                ? 'Choose which apps appear in the grid — once a block starts you can only remove, not add'
-                : `${(settings.launcherApps ?? []).length} app${(settings.launcherApps ?? []).length !== 1 ? 's' : ''} in grid — add apps before starting a block, remove any time`
-            }
-            onPress={() => setLauncherModalVisible(true)}
-          />
-        </Section>
-
         {/* ── Permissions ── */}
         <Section title="Permissions">
           <SettingButton
@@ -392,6 +358,27 @@ export default function SettingsScreen() {
             description="Permanently delete all scheduled tasks"
             danger
             onPress={handleClearAllTasks}
+          />
+        </Section>
+
+        <Section title="About">
+          <SettingButton
+            icon="rocket-outline"
+            label="What's New"
+            description="Changelog — features, fixes, and improvements"
+            onPress={() => router.push('/changelog')}
+          />
+          <SettingButton
+            icon="shield-checkmark-outline"
+            label="Privacy Policy"
+            description="How FocusFlow handles your data"
+            onPress={() => router.push('/privacy-policy')}
+          />
+          <SettingButton
+            icon="document-text-outline"
+            label="Terms of Service"
+            description="Rules and conditions for using FocusFlow"
+            onPress={() => router.push('/terms-of-service')}
           />
         </Section>
 
@@ -449,13 +436,6 @@ export default function SettingsScreen() {
       <OverlayAppearanceModal
         visible={overlayAppearanceVisible}
         onClose={() => setOverlayAppearanceVisible(false)}
-      />
-
-      <LauncherSetupModal
-        visible={launcherModalVisible}
-        onClose={() => setLauncherModalVisible(false)}
-        currentLauncherApps={settings.launcherApps ?? []}
-        onSave={handleSaveLauncherApps}
       />
     </SafeAreaView>
   );

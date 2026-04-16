@@ -39,11 +39,6 @@ mkdir -p "$PKG_DIR/widget"
 cp "$SCRIPT_DIR/app/src/main/java/com/tbtechs/focusflow/widget/"*.kt "$PKG_DIR/widget/"
 echo "   ✓ widget/ Kotlin files copied"
 
-# Launcher
-mkdir -p "$PKG_DIR/launcher"
-cp "$SCRIPT_DIR/app/src/main/java/com/tbtechs/focusflow/launcher/"*.kt "$PKG_DIR/launcher/"
-echo "   ✓ launcher/ Kotlin files copied"
-
 echo "🖼   Copying resource files..."
 
 # XML config files
@@ -119,9 +114,7 @@ patch_permission "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
 patch_permission "android.permission.BIND_ACCESSIBILITY_SERVICE"  ' tools:ignore="ProtectedPermissions"'
 patch_permission "android.permission.KILL_BACKGROUND_PROCESSES"
 patch_permission "android.permission.USE_FULL_SCREEN_INTENT"
-# READ_PHONE_STATE — used by AppBlockerAccessibilityService to detect active calls
-# before dismissing the power menu, so emergency power-off is never blocked.
-patch_permission "android.permission.READ_PHONE_STATE"
+patch_permission "android.permission.EXPAND_STATUS_BAR"
 
 # ── ForegroundTaskService ─────────────────────────────────────────────────────
 
@@ -178,24 +171,6 @@ if ! grep -q "NotificationActionReceiver" "$MANIFEST"; then
   echo "   ✓ NotificationActionReceiver registered"
 else
   echo "   ✓ NotificationActionReceiver already registered"
-fi
-
-# ── FocusLauncherActivity ─────────────────────────────────────────────────────
-# Custom locked-down home screen.  Declared with CATEGORY_HOME + CATEGORY_DEFAULT
-# so Android lists it as a home app in the "Choose default home app" dialog.
-#
-# Key attributes:
-#   exported="true"            — required for the system launcher chooser
-#   launchMode singleTask      — only one instance; re-uses existing via onNewIntent()
-#   excludeFromRecents="true"  — never appears in the recent-apps list
-#   noHistory="false"          — stays in back stack so pressing HOME re-opens it
-#   screenOrientation portrait — launcher UI is portrait-only
-
-if ! grep -q "FocusLauncherActivity" "$MANIFEST"; then
-  sed -i 's|</application>|        <activity\n            android:name="com.tbtechs.focusflow.launcher.FocusLauncherActivity"\n            android:exported="true"\n            android:launchMode="singleTask"\n            android:excludeFromRecents="true"\n            android:noHistory="false"\n            android:screenOrientation="portrait"\n            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.HOME" />\n                <category android:name="android.intent.category.DEFAULT" />\n            </intent-filter>\n        </activity>\n    </application>|' "$MANIFEST"
-  echo "   ✓ FocusLauncherActivity registered"
-else
-  echo "   ✓ FocusLauncherActivity already registered"
 fi
 
 echo ""

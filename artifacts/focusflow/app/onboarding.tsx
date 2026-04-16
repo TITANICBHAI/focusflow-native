@@ -50,21 +50,6 @@ interface PermItem {
 
 const PERMISSIONS: PermItem[] = [
   {
-    id: 'launcher',
-    icon: 'home-outline',
-    title: 'Default Home App',
-    description: 'Set FocusFlow as your Android launcher so the Home button always returns you here.',
-    whyNeeded:
-      'Without this, pressing Home takes you to your old launcher — bypassing every focus restriction completely. This is the most critical step.',
-    brokenWithout: [
-      'Pressing Home escapes to your old launcher freely',
-      'All app blocking can be bypassed by tapping Home',
-      'The restricted app grid will never appear',
-    ],
-    deepLinkLabel: 'Set as Default Home App',
-    grantAction: 'manual',
-  },
-  {
     id: 'media',
     icon: 'images-outline',
     title: 'Media & Files',
@@ -157,11 +142,6 @@ const PERMISSIONS: PermItem[] = [
 async function checkStatus(id: string): Promise<PermStatus> {
   try {
     switch (id) {
-      case 'launcher': {
-        // No JS API to read the default home app — always show as needing action
-        // so the user is prompted to set it during onboarding.
-        return 'denied';
-      }
       case 'media': {
         const granted = await NativeImagePickerModule.checkMediaPermission();
         return granted ? 'granted' : 'denied';
@@ -230,13 +210,7 @@ export default function OnboardingScreen() {
     if (statuses[perm.id] === 'granted') return;
     setActionLoading(perm.id);
     try {
-      if (perm.id === 'launcher') {
-        if (Platform.OS === 'android') {
-          await Linking.sendIntent('android.settings.HOME_SETTINGS').catch(() =>
-            Linking.openSettings()
-          );
-        }
-      } else if (perm.id === 'media') {
+      if (perm.id === 'media') {
         const granted = await NativeImagePickerModule.requestMediaPermission();
         setStatuses((prev) => ({ ...prev, media: granted ? 'granted' : 'denied' }));
       } else if (perm.id === 'notifications') {

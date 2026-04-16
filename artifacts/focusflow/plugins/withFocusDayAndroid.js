@@ -521,19 +521,6 @@ function withFocusDayBuildConfig(config) {
         console.log('[withFocusDayAndroid] Added ABI splits (arm64-v8a, armeabi-v7a + universal).');
       }
 
-      // ── Add RecyclerView dependency (required by FocusLauncherActivity) ──
-      // expo prebuild does not know about our custom Kotlin sources, so it
-      // never adds recyclerview to the generated build.gradle. We must inject
-      // it here so the compiler can resolve RecyclerView / GridLayoutManager.
-      if (!content.includes('androidx.recyclerview:recyclerview')) {
-        // Find the dependencies block and append our implementation line
-        content = content.replace(
-          /(\bdependencies\s*\{)/,
-          `$1\n    implementation "androidx.recyclerview:recyclerview:1.3.2"`
-        );
-        console.log('[withFocusDayAndroid] Injected androidx.recyclerview:recyclerview:1.3.2 dependency.');
-      }
-
       fs.writeFileSync(buildGradlePath, content, 'utf8');
       return cfg;
     },

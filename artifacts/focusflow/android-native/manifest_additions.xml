@@ -49,6 +49,7 @@
     SCHEDULE_EXACT_ALARM        (for weekly temptation report alarm; optional, falls back to inexact)
     KILL_BACKGROUND_PROCESSES   (terminate the blocked app process after HOME press)
     USE_FULL_SCREEN_INTENT      (required to launch BlockOverlayActivity via full-screen notification)
+    EXPAND_STATUS_BAR           (allows collapsing the notification panel via StatusBarManager)
 
   AndroidManifest.xml components (patched automatically):
 
@@ -137,54 +138,6 @@
             <action android:name="android.net.VpnService" />
         </intent-filter>
     </service>
-
-    <!--
-      FocusLauncherActivity — custom locked-down home screen (launcher).
-
-      Registered with CATEGORY_HOME + CATEGORY_DEFAULT so Android's "Choose
-      default home app" picker lists it.  When set as default:
-
-        UNLOCKED state (no active focus/standalone block):
-          - Shows the user-selected app grid and the permanent dock.
-          - "All Apps" button opens a full alphabetical drawer with live search —
-            the user can launch any installed app freely.
-          - "Edit Grid" button lets the user add/remove apps from the curated grid.
-          - Long-press power key passes through to the system (normal behaviour).
-
-        LOCKED state (focus_active OR standalone_block_active is true):
-          - Identical UI but without the gear/edit button.
-          - "🔒 Locked until HH:MM" banner shown.
-          - Long-press power key is consumed → power menu cannot open.
-          - Grid/dock apps can still be launched (they are the user's approved list).
-
-      Permanent dock apps (Phone, WhatsApp, VLC, Settings) are always shown
-      regardless of lock state.  They are resolved from a candidate list
-      of OEM package variants at runtime so they work on any Android device.
-
-      Key attributes:
-        exported="true"           — required for system launcher chooser dialog
-        launchMode singleTask     — prevents duplicate instances on HOME press
-        excludeFromRecents="true" — hidden from recent apps list
-        theme NoTitleBar.Fullscreen — full-screen immersive launcher UI
-
-      Additional manifest requirements (added by install.sh):
-        READ_PHONE_STATE permission — read telephony call state to avoid
-          dismissing the power menu during an active emergency call.
-    -->
-    <activity
-        android:name="...launcher.FocusLauncherActivity"
-        android:exported="true"
-        android:launchMode="singleTask"
-        android:excludeFromRecents="true"
-        android:noHistory="false"
-        android:screenOrientation="portrait"
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-        <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.HOME" />
-            <category android:name="android.intent.category.DEFAULT" />
-        </intent-filter>
-    </activity>
 
   ══════════════════════════════════════════════════════════════════════════════
   ONE MANUAL STEP (cannot be scripted safely — edit the file directly)

@@ -89,17 +89,10 @@ export async function dbGetAllTasks(): Promise<Task[]> {
 
 export async function dbGetTasksForDate(dateISO: string): Promise<Task[]> {
   const db = await getDb();
-  // Use LOCAL date boundaries so tasks at 11pm local are not missed for UTC-offset
-  // users and tasks at 1am local are found for UTC+ users.
-  // new Date(dateISO) gives the local representation of the timestamp, then we
-  // build midnight..23:59:59 in LOCAL time and convert back to UTC ISO for the
-  // SQL comparison (task start_time values are always stored as UTC ISO strings).
-  const ref = new Date(dateISO);
-  const startOfLocal = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 0, 0, 0, 0);
-  const endOfLocal   = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 23, 59, 59, 999);
+  const day = dateISO.slice(0, 10);
   const rows = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT * FROM tasks WHERE start_time >= ? AND start_time <= ? ORDER BY start_time ASC`,
-    [startOfLocal.toISOString(), endOfLocal.toISOString()],
+    `SELECT * FROM tasks WHERE date(start_time) = ? ORDER BY start_time ASC`,
+    [day],
   );
   return rows.map(rowToTask);
 }
@@ -157,11 +150,6 @@ export async function dbDeleteTask(taskId: string): Promise<void> {
   await db.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
 }
 
-function safeParseJson<T>(raw: unknown, fallback: T): T {
-  if (typeof raw !== 'string' || raw === '') return fallback;
-  try { return JSON.parse(raw) as T; } catch { return fallback; }
-}
-
 function rowToTask(row: Record<string, unknown>): Task {
   const rawFap = row.focus_allowed_packages as string | null | undefined;
   return {
@@ -173,11 +161,11 @@ function rowToTask(row: Record<string, unknown>): Task {
     durationMinutes: row.duration_minutes as number,
     status: row.status as Task['status'],
     priority: row.priority as Task['priority'],
-    tags: safeParseJson<string[]>(row.tags, []),
-    reminders: safeParseJson<Task['reminders']>(row.reminders, []),
+    tags: JSON.parse(row.tags as string) as string[],
+    reminders: JSON.parse(row.reminders as string) as Task['reminders'],
     color: row.color as string,
     focusMode: (row.focus_mode as number) === 1,
-    focusAllowedPackages: rawFap ? safeParseJson<string[]>(rawFap, undefined as unknown as string[]) : undefined,
+    focusAllowedPackages: rawFap ? (JSON.parse(rawFap) as string[]) : undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -318,11 +306,7 @@ export async function dbGetTodayOverrideCount(): Promise<number> {
 
 export async function dbRecordDayCompletion(completed: number, total: number): Promise<void> {
   const db = await getDb();
-  // Use LOCAL date parts — .toISOString() gives the UTC date which is ahead of
-  // local date for UTC− users in the evening, causing dbGetStreak to never find
-  // today's record (it compares against the local date).
-  const now = new Date();
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   await db.runAsync(
     `INSERT OR REPLACE INTO daily_completions (date, completed, total) VALUES (?, ?, ?)`,
     [date, completed, total],
@@ -335,21 +319,17 @@ export async function dbGetStreak(): Promise<number> {
     `SELECT date, completed, total FROM daily_completions ORDER BY date DESC LIMIT 60`,
   );
   let streak = 0;
-  // Use local date parts to avoid UTC-midnight parsing shifting the date by one day
-  // in timezones west of UTC (e.g. new Date('2024-01-15') = Dec 14 23:00 in UTC-1).
-  const now = new Date();
-  let checkYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  let checkDate = new Date();
+  checkDate.setHours(0, 0, 0, 0);
 
   for (const row of rows) {
-    const rowYMD = row.date.slice(0, 10);
-    if (rowYMD !== checkYMD) break; // gap in streak
+    const rowDate = new Date(row.date);
+    const diffDays = Math.round((checkDate.getTime() - rowDate.getTime()) / 86400000);
+    if (diffDays > 1) break; // gap in streak
     // Count day as "active" if at least 50% completion
     if (row.total > 0 && row.completed / row.total >= 0.5) {
       streak++;
-      // Move checkYMD back one calendar day
-      const prev = new Date(now.getTime());
-      prev.setDate(prev.getDate() - streak);
-      checkYMD = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`;
+      checkDate = rowDate;
     } else {
       break;
     }

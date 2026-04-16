@@ -160,68 +160,6 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
     }
 
     /**
-     * Writes the list of blocked domain patterns to SharedPreferences.
-     * The NetworkBlockerVpnService DNS proxy reads this to decide which DNS queries
-     * to answer with NXDOMAIN.  The AccessibilityService URL-bar scanner also reads
-     * it to block browser navigation to matching domains.
-     *
-     * Supports exact match and subdomain matching — "reddit.com" blocks both
-     * "reddit.com" and "www.reddit.com".  Pass an empty array to disable domain blocking.
-     *
-     * @param domains  ReadableArray of domain pattern strings (e.g. "reddit.com")
-     */
-    @ReactMethod
-    fun setBlockedDomains(domains: ReadableArray, promise: Promise) {
-        val list = (0 until domains.size()).map { "\"${domains.getString(it)}\"" }
-        val json = "[${list.joinToString(",")}]"
-        prefs().edit()
-            .putString(AppBlockerAccessibilityService.PREF_BLOCKED_DOMAINS, json)
-            .apply()
-        promise.resolve(null)
-    }
-
-    /**
-     * Writes the set of active keyword category names to SharedPreferences.
-     * The AccessibilityService merges the keywords of each active category with the
-     * user's own blocked_words list at runtime.
-     *
-     * Available category keys: "social_media", "gambling", "adult", "shopping",
-     * "news", "gaming", "entertainment".
-     *
-     * @param categoriesJson  JSON array string of category name strings
-     *                        e.g. "[\"social_media\",\"gaming\"]"
-     */
-    @ReactMethod
-    fun setKeywordCategories(categoriesJson: String, promise: Promise) {
-        prefs().edit()
-            .putString(AppBlockerAccessibilityService.PREF_KEYWORD_CATS, categoriesJson)
-            .apply()
-        promise.resolve(null)
-    }
-
-    /**
-     * Writes the user's selected launcher app list to SharedPreferences.
-     *
-     * FocusLauncherActivity reads this to populate the scrollable app grid.
-     * Pinned dock apps (Phone, WhatsApp, VLC, Settings) are always shown
-     * by the launcher regardless of this list — this only controls the
-     * user-selected apps shown in the main grid.
-     *
-     * Pass an empty array to clear the grid (only pinned apps will be shown).
-     *
-     * @param packages  ReadableArray of package names selected by the user
-     */
-    @ReactMethod
-    fun setLauncherApps(packages: ReadableArray, promise: Promise) {
-        val list = (0 until packages.size()).map { "\"${packages.getString(it)}\"" }
-        val json = "[${list.joinToString(",")}]"
-        prefs().edit()
-            .putString("launcher_apps", json)
-            .apply()
-        promise.resolve(null)
-    }
-
-    /**
      * Generic key/value string setter — lets JS write arbitrary overlay config keys
      * (e.g. block_overlay_wallpaper, block_overlay_quotes) directly to SharedPreferences
      * without needing a dedicated typed method for each one.

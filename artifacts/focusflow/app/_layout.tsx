@@ -14,7 +14,7 @@
 // ─── 1. Register all background tasks with the OS ────────────────────────────
 import '@/tasks/backgroundTasks';
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -133,64 +133,66 @@ function AppSplashOverlay() {
   const { state } = useApp();
   const opacity = useRef(new Animated.Value(1)).current;
   const pulse = useRef(new Animated.Value(1)).current;
+  const logoScale = useRef(new Animated.Value(0.6)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslate = useRef(new Animated.Value(20)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = React.useState(true);
-  const dismissedRef = useRef(false);
 
-  const dismiss = useCallback(() => {
-    if (dismissedRef.current) return;
-    dismissedRef.current = true;
-    if (Platform.OS === 'web') {
-      setVisible(false);
-      return;
-    }
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: 350,
-      useNativeDriver: true,
-    }).start();
-    // Always hide after the animation duration — never rely solely on .start() callback
-    setTimeout(() => setVisible(false), 400);
-  }, [opacity]);
+  // Entrance animation: logo springs in, then text fades up
+  useEffect(() => {
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(logoScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 8 }),
+        Animated.timing(logoOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(textOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.timing(textTranslate, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [logoScale, logoOpacity, textOpacity, textTranslate]);
 
   // Pulsing logo animation while loading
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.12, duration: 850, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 850, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
       ])
     );
-    loop.start();
-    return () => loop.stop();
+    const timeout = setTimeout(() => loop.start(), 500);
+    return () => { clearTimeout(timeout); loop.stop(); };
   }, [pulse]);
 
-  // Dismiss when DB is ready or loading finishes
+  // Fade out when DB is ready
   useEffect(() => {
     if (state.isDbReady || !state.isLoading) {
-      dismiss();
+      if (Platform.OS === 'web') {
+        setVisible(false);
+        return;
+      }
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => setVisible(false));
     }
-  }, [state.isDbReady, state.isLoading, dismiss]);
-
-  // Hard failsafe: dismiss after 4 s no matter what
-  useEffect(() => {
-    const t = setTimeout(dismiss, 4_000);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state.isDbReady, state.isLoading, opacity]);
 
   if (!visible) return null;
 
   return (
     <Animated.View style={[splashStyles.overlay, { opacity }]} pointerEvents="none">
-      <Animated.View style={{ transform: [{ scale: pulse }] }}>
+      <Animated.View style={{ transform: [{ scale: Animated.multiply(logoScale, pulse) }], opacity: logoOpacity }}>
         <View style={splashStyles.logoCircle}>
           <Ionicons name="shield-checkmark" size={52} color="#fff" />
         </View>
       </Animated.View>
-      <View style={{ alignItems: 'center', gap: 6 }}>
+      <Animated.View style={{ opacity: textOpacity, transform: [{ translateY: textTranslate }], alignItems: 'center', gap: 6 }}>
         <Text style={splashStyles.name}>FocusFlow</Text>
         <Text style={splashStyles.tagline}>Your discipline operating system</Text>
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -291,6 +293,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
             <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
             <Stack.Screen name="permissions" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />

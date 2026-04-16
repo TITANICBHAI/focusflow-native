@@ -86,106 +86,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         const val PREF_DAILY_ALLOWANCE_PKGS  = "daily_allowance_packages"  // legacy — no longer written
         const val PREF_DAILY_ALLOWANCE_USED  = "daily_allowance_used"
 
-        const val PREF_BLOCKED_WORDS   = "blocked_words"
-        const val PREF_BLOCKED_DOMAINS = "blocked_domains"
-        const val PREF_KEYWORD_CATS    = "keyword_categories"
-
-        /** Minimum ms between repeated content-changed keyword checks for the same package. */
-        private const val CONTENT_DEBOUNCE_MS = 1500L
-        /** Minimum ms between repeated text-changed checks for the same package. */
-        private const val TEXT_DEBOUNCE_MS = 800L
-
-        /**
-         * Known accessibility view IDs for the URL/address bar in popular Android browsers.
-         * Used to extract the current URL and match it against the blocked-domains list.
-         */
-        private val BROWSER_URL_BAR_IDS: Map<String, List<String>> = mapOf(
-            "com.android.chrome"              to listOf("com.android.chrome:id/url_bar",
-                                                         "com.android.chrome:id/search_box_text",
-                                                         "com.android.chrome:id/omnibox_text"),
-            "com.chrome.beta"                 to listOf("com.chrome.beta:id/url_bar"),
-            "com.chrome.dev"                  to listOf("com.chrome.dev:id/url_bar"),
-            "com.chrome.canary"               to listOf("com.chrome.canary:id/url_bar"),
-            "org.mozilla.firefox"             to listOf("org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
-                                                         "org.mozilla.firefox:id/url_bar_layout",
-                                                         "org.mozilla.firefox:id/url_edit_text"),
-            "org.mozilla.fenix"               to listOf("org.mozilla.fenix:id/mozac_browser_toolbar_url_view",
-                                                         "org.mozilla.fenix:id/url_bar_layout"),
-            "org.mozilla.focus"               to listOf("org.mozilla.focus:id/mozac_browser_toolbar_url_view"),
-            "com.sec.android.app.sbrowser"    to listOf("com.sec.android.app.sbrowser:id/location_bar_edit_text",
-                                                         "com.sec.android.app.sbrowser:id/sb_url_input_layout"),
-            "com.microsoft.emmx"              to listOf("com.microsoft.emmx:id/address_bar_edit_text",
-                                                         "com.microsoft.emmx:id/url_bar"),
-            "com.opera.browser"               to listOf("com.opera.browser:id/url_field"),
-            "com.opera.mini.native"           to listOf("com.opera.mini.native:id/url_field"),
-            "com.brave.browser"               to listOf("com.brave.browser:id/url_bar",
-                                                         "com.brave.browser:id/url_bar_text"),
-            "com.duckduckgo.mobile.android"   to listOf("com.duckduckgo.mobile.android:id/omnibarTextInput",
-                                                         "com.duckduckgo.mobile.android:id/browserToolbarUrlView"),
-            "com.vivaldi.browser"             to listOf("com.vivaldi.browser:id/url_bar"),
-            "com.kiwibrowser.browser"         to listOf("com.kiwibrowser.browser:id/url_bar"),
-        )
-
-        /** All browser package names — used to decide whether to do URL-bar scanning. */
-        private val KNOWN_BROWSERS: Set<String> = BROWSER_URL_BAR_IDS.keys.toSet()
-
-        /**
-         * Adaptive scan depths for known apps with deeply-nested content.
-         * Default for unlisted apps is 3 (set in containsBlockedWord).
-         */
-        private val ADAPTIVE_SCAN_DEPTHS: Map<String, Int> = mapOf(
-            "com.reddit.frontpage"               to 7,
-            "com.zhiliaoapp.musically"           to 7,  // TikTok
-            "com.instagram.android"              to 6,
-            "com.twitter.android"                to 6,
-            "com.x.android"                      to 6,
-            "com.facebook.katana"                to 6,
-            "com.facebook.lite"                  to 6,
-            "com.snapchat.android"               to 5,
-            "com.google.android.youtube"         to 5,
-            "com.linkedin.android"               to 5,
-            "com.pinterest"                      to 5,
-            "com.tumblr"                         to 5,
-            "com.discord"                        to 6,
-            "org.telegram.messenger"             to 5,
-            "com.telegram.messenger"             to 5,
-            "com.android.chrome"                 to 5,
-            "org.mozilla.firefox"                to 5,
-            "org.mozilla.fenix"                  to 5,
-            "com.microsoft.emmx"                 to 5,
-            "com.sec.android.app.sbrowser"       to 5,
-            "com.brave.browser"                  to 5,
-            "com.duckduckgo.mobile.android"      to 5,
-        )
-
-        /**
-         * Pre-built keyword categories. JS can activate any subset by writing their names
-         * to SharedPrefs key "keyword_categories" as a JSON string array.
-         * These are merged with user-defined blocked_words at runtime.
-         */
-        private val KEYWORD_CATEGORIES: Map<String, List<String>> = mapOf(
-            "social_media"  to listOf("facebook", "instagram", "twitter", "tiktok", "snapchat",
-                                      "reddit", "linkedin", "pinterest", "tumblr", "discord",
-                                      "reels", "stories", "explore", "trending", "fyp",
-                                      "for you", "suggested posts", "share", "like", "follow"),
-            "gambling"      to listOf("bet", "casino", "poker", "slots", "jackpot", "wager",
-                                      "odds", "roulette", "blackjack", "lottery", "bookie",
-                                      "sportsbook", "stake", "spin", "free spins", "bet365"),
-            "adult"         to listOf("onlyfans", "pornhub", "xvideos", "xhamster",
-                                      "nsfw", "nude", "explicit", "18+", "adult content"),
-            "shopping"      to listOf("add to cart", "buy now", "checkout", "flash sale",
-                                      "deal", "discount", "limited offer", "promo code",
-                                      "order now", "best seller", "today only"),
-            "news"          to listOf("breaking news", "headlines", "latest news",
-                                      "top stories", "trending now", "live updates",
-                                      "just in", "developing story"),
-            "gaming"        to listOf("free fire", "pubg", "fortnite", "minecraft", "roblox",
-                                      "clash of clans", "clash royale", "gaming", "twitch",
-                                      "esports", "battle royale", "new match", "squad up"),
-            "entertainment" to listOf("netflix", "watch now", "new episode", "trailer",
-                                      "binge", "season", "now streaming", "hulu", "prime video",
-                                      "disney plus", "autoplay"),
-        )
+        const val PREF_BLOCKED_WORDS = "blocked_words"
 
         /** Notification channel used to launch the block overlay via full-screen intent. */
         private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
@@ -220,8 +121,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.huawei.android.launcher",
             "com.oppo.launcher",
             "com.bbk.launcher2",                     // Vivo
-            // FocusFlow itself — always accessible so the user can manage or end a session
-            "com.tbtechs.focusflow",
             // Phone / dialer (emergency access)
             "com.android.phone",
             "com.android.dialer",
@@ -313,6 +212,54 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         private const val MAX_RETRY_ATTEMPTS = 5
         /** Interval between retry checks in milliseconds. */
         private const val RETRY_INTERVAL_MS = 300L
+
+        // ── Keyword blocker: URL / search field detection ─────────────────────
+
+        /** Debounce for TYPE_VIEW_TEXT_CHANGED — avoids firing on every keystroke. */
+        private const val TEXT_DEBOUNCE_MS = 400L
+
+        /** Throttle for TYPE_WINDOW_CONTENT_CHANGED per package — very noisy event. */
+        private const val CONTENT_SCAN_THROTTLE_MS = 2_000L
+
+        /**
+         * View ID substrings that identify URL bars and search input fields.
+         * Checked case-insensitively against event.source.viewIdResourceName.
+         */
+        private val URL_BAR_VIEW_IDS = listOf(
+            "url_bar", "url_edit", "url_field", "address_bar", "address_text",
+            "location_bar", "location_edit", "omnibar_text", "omnibox_text",
+            "search_src_text", "search_box", "search_bar", "search_edit",
+            "query", "mozac_browser_toolbar_url_view", "toolbar_edit_text"
+        )
+
+        /**
+         * Known browser and search-capable packages.
+         * Used to trigger full deep-scan + URL substring matching in
+         * TYPE_WINDOW_STATE_CHANGED events so that page URLs are caught.
+         */
+        val BROWSER_PACKAGES: Set<String> = setOf(
+            "com.android.chrome",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "com.chrome.canary",
+            "com.google.android.googlequicksearchbox",   // Google Search / Discover
+            "org.mozilla.firefox",
+            "org.mozilla.fenix",
+            "org.mozilla.firefox_beta",
+            "com.sec.android.app.sbrowser",              // Samsung Internet
+            "com.samsung.android.sbrowser",
+            "com.brave.browser",
+            "com.brave.browser_beta",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.microsoft.emmx",                        // Edge
+            "com.UCMobile.intl",                         // UC Browser
+            "com.kiwibrowser.browser",
+            "com.vivaldi.browser",
+            "com.duckduckgo.mobile.android",
+            "com.cloudmosa.puffinFree",
+            "com.uc.browser.en"
+        )
     }
 
     /** Data class parsed from the daily_allowance_config JSON. */
@@ -344,11 +291,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // Handler for retry re-checks AND timed-allowance expiry — runs on main thread
     private val handler = Handler(Looper.getMainLooper())
 
-    // ── Debounce maps for content-changed / text-changed events ──────────────
-    // Keyed by package name → last-check epoch ms. Prevents scanning the same
-    // app more than once per debounce window on rapidly-firing events.
-    private val contentDebounceMap = HashMap<String, Long>()
-    private val textDebounceMap    = HashMap<String, Long>()
+    // ── Keyword blocker: debounce + throttle state ────────────────────────────
+    // Text-changed events fire on every keystroke — we debounce the keyword check
+    // so it only runs 400 ms after the user stops typing.
+    private var textDebounceRunnable: Runnable? = null
+    // Content-changed events fire on every layout pass — throttled per package.
+    private val lastContentScanMs = mutableMapOf<String, Long>()
 
     // ── Timed allowance tracking (time_budget / interval modes) ──────────────
     // Tracks the app currently open under a time-limited allowance so we can
@@ -363,17 +311,19 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        event ?: return
-        when (event.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                handleContentOrTextChanged(event, debounceMs = CONTENT_DEBOUNCE_MS, debounceMap = contentDebounceMap)
-                return
-            }
+        val ev = event ?: return
+
+        // ── Route non-window-state events to specialised handlers ─────────────
+        when (ev.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
-                handleContentOrTextChanged(event, debounceMs = TEXT_DEBOUNCE_MS, debounceMap = textDebounceMap)
+                handleTextChanged(ev)
                 return
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> { /* fall through to existing logic */ }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                handleContentChanged(ev)
+                return
+            }
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> { /* handled below */ }
             else -> return
         }
 
@@ -409,7 +359,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             lastBlockedAtMs = 0L
         }
 
-        val pkg = event.packageName?.toString() ?: return
+        val pkg = ev.packageName?.toString() ?: return
 
         // Update foreground package tracker so retries can guard against
         // pressing Home when the user has already switched to an allowed app.
@@ -439,36 +389,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // event (e.g. coming to the foreground after the HOME press) we must
         // not mistake it for "the blocked app has left" and reveal the X early.
         if (pkg == packageName) return
-
-        // ── Power menu suppression (GlobalActionsDialog) ──────────────────────
-        // During ANY active block session (task focus OR standalone), dismiss
-        // the Android power menu the instant it appears by pressing BACK.
-        //
-        // This prevents the user from rebooting or powering off the device to
-        // bypass an active focus session.  The power menu appears as a window
-        // event from com.android.systemui with a class name that contains
-        // "GlobalActions" or "globalactions" (OEM-specific class naming varies).
-        //
-        // Emergency carve-out: if the telephony stack reports an active or
-        // ringing call (OFFHOOK / RINGING), we leave the power menu alone so
-        // the user can reboot during a genuine emergency.
-        if ((focusActive || saActive) && pkg == "com.android.systemui") {
-            val className = event.className?.toString() ?: ""
-            val isPowerMenu = className.contains("globalactions", ignoreCase = true) ||
-                              className.contains("GlobalActionsDialog", ignoreCase = false) ||
-                              className.contains("PowerMenuDialog", ignoreCase = false)
-            if (isPowerMenu) {
-                val tm = getSystemService(android.content.Context.TELEPHONY_SERVICE)
-                    as? android.telephony.TelephonyManager
-                val isOnCall = tm != null &&
-                    (tm.callState == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK ||
-                     tm.callState == android.telephony.TelephonyManager.CALL_STATE_RINGING)
-                if (!isOnCall) {
-                    performGlobalAction(GLOBAL_ACTION_BACK)
-                }
-                return
-            }
-        }
 
         // ── Overlay X-button: signal when the blocked app leaves foreground ──
         // When the AccessibilityService presses HOME after blocking, the next
@@ -541,53 +461,103 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             }
 
             if (focusActive || saActive) {
+                // ── System UI: block notification panel + power menu ──────────
+                // When SystemUI packages fire a window event during a blocking
+                // session, check if it is the notification panel/quick-settings
+                // or the power-off dialog (GlobalActions).  Both are collapsed /
+                // dismissed immediately so the user cannot bypass the session.
+                //
+                // Samsung-specific: the power menu on One UI fires from the
+                // separate package com.samsung.android.app.powerkey rather than
+                // from SystemUI, so we must catch it independently.
+                val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
+                if (isSamsungPowerKey) {
+                    // Long-press side button opened Samsung power menu — dismiss it.
+                    // Three-layer approach for maximum OEM coverage:
+                    //   1. ACTION_CLOSE_SYSTEM_DIALOGS broadcast — works on Android ≤ 11,
+                    //      silently ignored / no-op on Android 12+ (system restriction).
+                    //   2. GLOBAL_ACTION_BACK — closes the dialog on all API levels.
+                    //   3. GLOBAL_ACTION_HOME — guaranteed return to home on all OEMs.
+                    closeSystemDialogsBroadcast()
+                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
+                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
+                    return
+                }
+
+                val isSystemUiPkg = pkg == "com.android.systemui" ||
+                    pkg == "com.sec.android.app.systemui" ||
+                    pkg == "com.samsung.android.systemui"
+                if (isSystemUiPkg) {
+                    if (isPowerMenu(ev)) {
+                        // Power off / restart dialog opened — dismiss it.
+                        // Same three-layer approach as Samsung power key above.
+                        closeSystemDialogsBroadcast()
+                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
+                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
+                        return
+                    }
+                    if (isNotificationPanelExpanded(ev)) {
+                        // Notification bar or quick-settings pulled down.
+                        // Layer 1: ACTION_CLOSE_SYSTEM_DIALOGS (Android ≤ 11 only).
+                        // Layer 2: StatusBarManager reflection (AOSP; silently fails elsewhere).
+                        // Layer 3: GLOBAL_ACTION_HOME — guaranteed on all OEMs.
+                        closeSystemDialogsBroadcast()
+                        handler.postDelayed({
+                            collapseStatusBarPanel()
+                            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300L)
+                        }, 80L)
+                        return
+                    }
+                    return
+                }
+
                 // Block uninstall dialogs — show overlay so user sees why they're blocked.
-                if (isUninstallDialog(event)) {
+                if (isUninstallDialog(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block accessibility settings to prevent disabling this service mid-session.
-                if (isAccessibilitySettingsPage(event)) {
+                if (isAccessibilitySettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block "Clear data / Clear storage" dialogs in Settings during any block session.
-                if (isClearDataDialog(event)) {
+                if (isClearDataDialog(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block date/time settings to prevent clock manipulation.
-                if (isDateTimeSettingsPage(event)) {
+                if (isDateTimeSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Usage Access settings to prevent revoking usage permission.
-                if (isUsageAccessSettingsPage(event)) {
+                if (isUsageAccessSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Battery Optimization settings to prevent killing the blocking service.
-                if (isBatteryOptimizationSettingsPage(event)) {
+                if (isBatteryOptimizationSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Device Admin settings to prevent deactivating admin rights.
-                if (isDeviceAdminSettingsPage(event)) {
+                if (isDeviceAdminSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Developer Options to prevent ADB, "Don't keep activities", etc.
-                if (isDeveloperOptionsPage(event)) {
+                if (isDeveloperOptionsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Reset settings pages — would disable accessibility service or wipe the phone.
-                if (isResetSettingsPage(event)) {
+                if (isResetSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Special Access page — gateway to device admin, overlay, usage access, etc.
-                if (isSpecialAccessPage(event)) {
+                if (isSpecialAccessPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
@@ -595,31 +565,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
-        // ── URL domain check (browsers, TYPE_WINDOW_STATE_CHANGED) ──────────
-        // Catches the initial page load when a user opens a browser to a blocked domain.
-        // Dynamic navigation is caught by handleContentOrTextChanged above.
-        if ((focusActive || saActive) && KNOWN_BROWSERS.contains(pkg)) {
-            val blockedDomains = getBlockedDomains()
-            if (blockedDomains.isNotEmpty()) {
-                val root = event.source
-                if (root != null) {
-                    val url = try { extractBrowserUrl(root, pkg) } finally { root.recycle() }
-                    if (url != null && isBlockedDomain(url, blockedDomains)) {
+        // ── Word blocking ─────────────────────────────────────────────────────
+        // During any active blocking session, if the current window content contains
+        // a user-defined blocked word, show the overlay and redirect immediately.
+        //
+        // For browser packages: also extract the URL bar text and do a substring
+        // (non-whole-word) match, so "gaming" catches "gaming.com/news" in the URL.
+        if (focusActive || saActive) {
+            val blockedWords = getBlockedWords()
+            if (blockedWords.isNotEmpty()) {
+                val isBrowser = BROWSER_PACKAGES.contains(pkg)
+                if (isBrowser) {
+                    // Deep full scan for browsers + also extract URL bar specifically
+                    if (containsBlockedWordBrowser(ev, blockedWords)) {
+                        handleBlockedApp(pkg)
+                        return
+                    }
+                } else {
+                    if (containsBlockedWord(ev, blockedWords)) {
                         handleBlockedApp(pkg)
                         return
                     }
                 }
-            }
-        }
-
-        // ── Word blocking ─────────────────────────────────────────────────────
-        // During any active blocking session, if the current window content contains
-        // a user-defined blocked word, show the overlay and redirect immediately.
-        if (focusActive || saActive) {
-            val blockedWords = getBlockedWords()
-            if (blockedWords.isNotEmpty() && containsBlockedWord(event, blockedWords)) {
-                handleBlockedApp(pkg)
-                return
             }
         }
 
@@ -744,6 +711,154 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 scheduleRetryCheck(pkg, attempt + 1, focusActive, saActive)
             }
         }, RETRY_INTERVAL_MS * attempt)
+    }
+
+    // ─── System UI: notification panel + power menu detection ────────────────
+
+    /**
+     * Returns true when the SystemUI window event represents the power-off /
+     * restart / emergency-mode dialog (GlobalActions).
+     *
+     * Covers AOSP GlobalActionsDialog, Samsung SecGlobalActions, and the generic
+     * system dialog that appears on most OEMs when the power button is held.
+     */
+    private fun isPowerMenu(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString() ?: ""
+        val classLower = className.lowercase()
+        val powerKeywords = listOf(
+            // AOSP / stock Android
+            "globalactions",
+            "globalactionsdialog",
+            "globalactionslayout",      // Android 14+ on some devices
+            "globalpowermenulayout",
+            // Samsung One UI
+            "secglobalactions",
+            "secglobalactionsdialog",
+            // Generic OEM names
+            "powermenudialog",
+            "powermenu",
+            "power_menu",
+            "poweroffdialog",
+            "rebootdialog",
+            "shutdowndialog",
+            "shutdown",
+            // MIUI / HyperOS
+            "miuiglobalactionsdialog",
+            "miuipowermenudialog",
+        )
+        if (powerKeywords.any { classLower.contains(it) }) return true
+
+        // Text-based fallback — some OEMs render the power dialog as a plain
+        // android.app.Dialog with no distinctive class name.
+        // Require only ONE matching keyword (previously 2 — too strict; some OEMs
+        // show "Power off" + "Emergency call" which only matched "power off").
+        val textLower = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it) }
+        }.lowercase()
+        val powerTextKeywords = listOf(
+            "power off",
+            "power down",
+            "restart",
+            "reboot",
+            "emergency mode",
+            "emergency call",    // added — shown instead of "emergency mode" on many OEMs
+            "safe mode",
+            "shut down",
+        )
+        return powerTextKeywords.any { it in textLower }
+    }
+
+    /**
+     * Returns true when the SystemUI window event represents an expanded
+     * notification panel or quick-settings panel.
+     *
+     * Covers:
+     *   • AOSP:          NotificationPanelView, QSPanel, NotificationShadeWindowView
+     *   • Samsung One UI: CentralSurfaces, StatusBarWindowView, SamsungPhoneStatusBar,
+     *                     SamsungQSPanel, SamsungShadeViewController
+     *   • MIUI:          MiuiNotificationPanelViewController
+     *   • OnePlus:       OplusCentralSurfaces
+     *
+     * Strategy: match known class-name substrings first (fast path), then fall back to
+     * treating ANY TYPE_WINDOW_STATE_CHANGED from a SystemUI package as a panel open.
+     * The fallback is intentionally broad — during a block session we want to be strict,
+     * and collapsing the notification shade when it wasn't open is a harmless no-op.
+     */
+    private fun isNotificationPanelExpanded(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString() ?: ""
+        val classLower = className.lowercase()
+
+        val panelKeywords = listOf(
+            // AOSP
+            "notificationpanel",
+            "notificationshade",
+            "notificationshadedeprecatedview",
+            "notificationshadewindowview",
+            "expandedview",
+            "qspanel",
+            "quicksettings",
+            "quicksettingscontroller",
+            "statusbar",
+            "shade",
+            // Samsung One UI 4 / 5 / 6
+            "centralsurfaces",
+            "statusbarwindowview",
+            "samsungphonestatusbar",
+            "samsungqspanel",
+            "samsungshade",
+            "phonestatusbarview",
+            "collapsedstatusbarfragment",
+            // MIUI
+            "miuinotificationpanelviewcontroller",
+            "miuiqspanel",
+            // OnePlus / OxygenOS
+            "opluscentralsurfaces",
+            "oplusqspanel",
+        )
+        if (panelKeywords.any { classLower.contains(it) }) return true
+
+        // Broad fallback: any TYPE_WINDOW_STATE_CHANGED from a SystemUI package
+        // during an active blocking session is treated as a panel/overlay opening.
+        // This catches OEM-specific classes we have not enumerated above.
+        // Collapsing when nothing is open is a harmless no-op.
+        return event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+    }
+
+    /**
+     * Sends ACTION_CLOSE_SYSTEM_DIALOGS broadcast as a best-effort first layer
+     * to close any open system dialog (power menu, notification panel, etc.).
+     *
+     * Works on Android ≤ 11 (API 30). On Android 12+ (API 31) the system silently
+     * ignores this broadcast from non-system apps — we eat the SecurityException and
+     * fall back to GLOBAL_ACTION_BACK + GLOBAL_ACTION_HOME.
+     */
+    @Suppress("DEPRECATION")
+    private fun closeSystemDialogsBroadcast() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            try {
+                @Suppress("InlinedApi")
+                sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            } catch (_: Exception) {
+                // Silently ignored — broadcast disallowed on this ROM/API level
+            }
+        }
+    }
+
+    /**
+     * Collapses the status bar / notification panel using StatusBarManager
+     * reflection.  This is the same call used by BlockOverlayActivity.
+     * Falls back silently on ROMs where reflection fails.
+     */
+    private fun collapseStatusBarPanel() {
+        try {
+            @Suppress("WrongConstant")
+            val sbService = getSystemService("statusbar") ?: return
+            val sbClass = Class.forName("android.app.StatusBarManager")
+            sbClass.getMethod("collapsePanels").invoke(sbService)
+        } catch (_: Exception) {
+            // Silently ignore — not all ROMs expose this API
+        }
     }
 
     // ─── Uninstall dialog detection ───────────────────────────────────────────
@@ -1790,156 +1905,216 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ─── Word blocking helpers ────────────────────────────────────────────────
+    // ─── Keyword blocker: text-changed + content-changed handlers ────────────
 
     /**
-     * Returns the merged list of blocked words: user-defined words PLUS any words from
-     * the active keyword categories stored in "keyword_categories" SharedPrefs key.
-     */
-    private fun getBlockedWords(): List<String> {
-        val userWords = run {
-            val json = prefs.getString(PREF_BLOCKED_WORDS, "[]") ?: "[]"
-            parseJsonArray(json).map { it.trim() }.filter { it.isNotBlank() }
-        }
-        val categoryWords = run {
-            val catsJson = prefs.getString(PREF_KEYWORD_CATS, "[]") ?: "[]"
-            parseJsonArray(catsJson).flatMap { cat -> KEYWORD_CATEGORIES[cat] ?: emptyList() }
-        }
-        return (userWords + categoryWords).distinct()
-    }
-
-    /** Returns the list of blocked domain patterns from SharedPreferences. */
-    private fun getBlockedDomains(): List<String> {
-        val json = prefs.getString(PREF_BLOCKED_DOMAINS, "[]") ?: "[]"
-        return parseJsonArray(json).map { it.trim().lowercase() }.filter { it.isNotBlank() }
-    }
-
-    /**
-     * Returns the appropriate node-tree scan depth for [pkg].
-     * Apps with deeply-nested content (social feeds, browsers) use a larger depth
-     * so their feed posts and inline text are scanned. Unknown apps default to 3
-     * to avoid false positives from background list items or notification text.
-     */
-    private fun adaptiveScanDepth(pkg: String): Int = ADAPTIVE_SCAN_DEPTHS[pkg] ?: 3
-
-    /**
-     * Returns true if [url] matches any pattern in [blocked].
-     * Supports exact domain match AND subdomain match (e.g. "reddit.com" blocks "www.reddit.com").
-     * The url may be a full URL (https://...) or just a hostname.
-     */
-    private fun isBlockedDomain(url: String, blocked: List<String>): Boolean {
-        val host = url.removePrefix("https://").removePrefix("http://")
-            .substringBefore("/").substringBefore("?").lowercase().trim()
-        if (host.isBlank()) return false
-        return blocked.any { pattern ->
-            host == pattern || host.endsWith(".$pattern")
-        }
-    }
-
-    /**
-     * Attempts to read the current URL from the address bar of a known browser.
-     * Tries each known view ID for [pkg] in order, returning the first non-blank text found.
-     * Returns null if the URL bar cannot be located or the text is empty.
+     * Handles TYPE_VIEW_TEXT_CHANGED events.
      *
-     * NOTE: Caller is responsible for recycling [root] if desired; this method does NOT
-     * recycle nodes returned by findAccessibilityNodeInfosByViewId.
-     */
-    private fun extractBrowserUrl(root: AccessibilityNodeInfo, pkg: String): String? {
-        val viewIds = BROWSER_URL_BAR_IDS[pkg] ?: return null
-        for (viewId in viewIds) {
-            val nodes = try { root.findAccessibilityNodeInfosByViewId(viewId) } catch (_: Exception) { null }
-            if (nodes.isNullOrEmpty()) continue
-            val text = nodes[0].text?.toString()?.trim()
-            nodes.forEach { runCatching { it.recycle() } }
-            if (!text.isNullOrBlank()) return text
-        }
-        return null
-    }
-
-    /**
-     * Handles TYPE_WINDOW_CONTENT_CHANGED and TYPE_VIEW_TEXT_CHANGED events.
+     * Fires when the user types in ANY EditText — URL bars, search boxes, comment
+     * fields, etc.  We debounce the check by [TEXT_DEBOUNCE_MS] ms so the
+     * keyword test only runs after the user pauses typing, not on every character.
      *
-     * Steps:
-     *  1. Verify a blocking session is active.
-     *  2. Debounce: skip if this package was already checked within [debounceMs].
-     *  3. For browsers: extract the URL bar text and check against blocked domains.
-     *  4. Check on-screen text against the full blocked-words list (adaptive depth).
+     * Matching uses substring (no word boundaries) for URL/search context — a
+     * keyword like "gaming" will match "gaming.com" or "best+gaming+laptops".
      */
-    private fun handleContentOrTextChanged(
-        event: AccessibilityEvent,
-        debounceMs: Long,
-        debounceMap: HashMap<String, Long>
-    ) {
+    private fun handleTextChanged(event: AccessibilityEvent) {
         val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
         val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
         if (!focusActive && !saActive) return
 
+        val words = getBlockedWords()
+        if (words.isEmpty()) return
+
         val pkg = event.packageName?.toString() ?: return
+        // Never intercept our own app or the always-allowed emergency set.
+        if (pkg == packageName || NEVER_BLOCK.any { it.equals(pkg, ignoreCase = true) }) return
+
+        // Collect the text being typed
+        val text = buildString {
+            event.text?.forEach { t -> t?.let { append(it) } }
+            // Also pull from the source node for cases where event.text is empty
+            event.source?.let { node ->
+                try {
+                    node.text?.let { append(it) }
+                    // Also get the view ID so we know if this is a URL bar
+                    val viewId = node.viewIdResourceName?.lowercase() ?: ""
+                    // For URL bars in browsers: also collect placeholder (url hint text)
+                    if (URL_BAR_VIEW_IDS.any { it in viewId } && node.hintText != null) {
+                        append(' '); append(node.hintText)
+                    }
+                } finally {
+                    node.recycle()
+                }
+            }
+        }.trim()
+
+        if (text.isBlank()) return
+
+        // Debounce — cancel any pending check and schedule a new one
+        textDebounceRunnable?.let { handler.removeCallbacks(it) }
+        val captured = text
+        val capturedPkg = pkg
+        val runnable = Runnable {
+            val stillFocusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+            val stillSaActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+            if (!stillFocusActive && !stillSaActive) return@Runnable
+            val currentWords = getBlockedWords()
+            if (currentWords.isEmpty()) return@Runnable
+            if (containsBlockedWordSubstring(captured, currentWords)) {
+                handleBlockedApp(capturedPkg)
+            }
+        }
+        textDebounceRunnable = runnable
+        handler.postDelayed(runnable, TEXT_DEBOUNCE_MS)
+    }
+
+    /**
+     * Handles TYPE_WINDOW_CONTENT_CHANGED events.
+     *
+     * This event fires on every layout pass — it is extremely noisy.  We only
+     * process it for browser packages (to catch lazy-loaded page content and URL
+     * bar updates that don't trigger WINDOW_STATE_CHANGED), and we throttle it to
+     * at most once every [CONTENT_SCAN_THROTTLE_MS] ms per package.
+     */
+    private fun handleContentChanged(event: AccessibilityEvent) {
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        if (!focusActive && !saActive) return
+
+        val words = getBlockedWords()
+        if (words.isEmpty()) return
+
+        val pkg = event.packageName?.toString() ?: return
+        // Only process browser packages — too noisy for general apps
+        if (!BROWSER_PACKAGES.contains(pkg)) return
         if (pkg == packageName) return
-        if (NEVER_BLOCK.any { pkg.equals(it, ignoreCase = true) }) return
-        if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) return
 
-        // Debounce: don't hammer the same package on every rapid event
         val now = System.currentTimeMillis()
-        val lastCheck = debounceMap[pkg] ?: 0L
-        if (now - lastCheck < debounceMs) return
-        debounceMap[pkg] = now
+        val lastScan = lastContentScanMs[pkg] ?: 0L
+        if (now - lastScan < CONTENT_SCAN_THROTTLE_MS) return
+        lastContentScanMs[pkg] = now
 
-        var root: AccessibilityNodeInfo? = null
-        try {
-            root = event.source
-
-            // ── URL-bar domain check (browsers only) ─────────────────────────
-            val blockedDomains = getBlockedDomains()
-            if (blockedDomains.isNotEmpty() && KNOWN_BROWSERS.contains(pkg) && root != null) {
-                val url = extractBrowserUrl(root, pkg)
-                if (url != null && isBlockedDomain(url, blockedDomains)) {
-                    handleBlockedApp(pkg)
-                    return
-                }
+        // Scan the URL bar specifically (fast path) then fall back to shallow scan
+        val urlText = extractUrlBarText(event)
+        if (urlText.isNotBlank() && containsBlockedWordSubstring(urlText, words)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        // Also do a shallow node scan for visible page content
+        val corpus = buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.source?.let { root ->
+                try { append(collectNodeTextShallow(root, maxDepth = 4)) }
+                finally { root.recycle() }
             }
-
-            // ── Keyword / category check (all apps) ──────────────────────────
-            val blockedWords = getBlockedWords()
-            if (blockedWords.isNotEmpty()) {
-                val corpus = buildString {
-                    event.text?.forEach { t -> t?.let { append(it); append(' ') } }
-                    event.contentDescription?.let { append(it); append(' ') }
-                    root?.let { append(collectNodeTextShallow(it, maxDepth = adaptiveScanDepth(pkg))) }
-                }.lowercase()
-                if (corpus.isNotBlank()) {
-                    val hit = blockedWords.any { word ->
-                        Regex("\\b${Regex.escape(word.lowercase())}\\b").containsMatchIn(corpus)
-                    }
-                    if (hit) {
-                        handleBlockedApp(pkg)
-                        return
-                    }
-                }
-            }
-        } finally {
-            root?.recycle()
+        }.lowercase()
+        if (corpus.isNotBlank() && containsBlockedWordSubstring(corpus, words)) {
+            handleBlockedApp(pkg)
         }
     }
 
     /**
+     * Extracts text from the URL bar / address bar node for the given event.
+     *
+     * Walks the root node tree looking for a node whose view resource ID matches
+     * one of the known URL bar patterns.  Returns an empty string if not found.
+     */
+    private fun extractUrlBarText(event: AccessibilityEvent): String {
+        val root = event.source ?: return ""
+        return try {
+            findUrlBarText(root) ?: ""
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findUrlBarText(node: AccessibilityNodeInfo): String? {
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        if (URL_BAR_VIEW_IDS.any { it in viewId }) {
+            val text = node.text?.toString()
+            if (!text.isNullOrBlank()) return text
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                val found = findUrlBarText(child)
+                if (found != null) return found
+            } finally {
+                child.recycle()
+            }
+        }
+        return null
+    }
+
+    // ─── Keyword matching helpers ─────────────────────────────────────────────
+
+    /**
+     * Case-insensitive SUBSTRING match — no word boundaries.
+     *
+     * Used for URL bars and search fields where keywords are part of a continuous
+     * string (e.g. "gaming" inside "gaming.com" or "search?q=gaming+news").
+     */
+    private fun containsBlockedWordSubstring(text: String, words: List<String>): Boolean {
+        val lower = text.lowercase()
+        return words.any { it.lowercase() in lower }
+    }
+
+    /**
+     * Browser-specific word checker for TYPE_WINDOW_STATE_CHANGED events.
+     *
+     * 1. Extracts URL bar text and does a substring match (catches the full URL).
+     * 2. Falls back to a full deep node-tree scan of the page content.
+     * 3. Also does whole-word matching on the page title / visible text so that
+     *    a legitimate word in an article title is still caught.
+     */
+    private fun containsBlockedWordBrowser(event: AccessibilityEvent, words: List<String>): Boolean {
+        // ① Check URL bar first — substring match (no word boundaries needed)
+        val urlText = extractUrlBarText(event)
+        if (urlText.isNotBlank() && containsBlockedWordSubstring(urlText, words)) return true
+
+        // ② Build a full corpus from the visible node tree (deep scan for browsers)
+        val corpus = buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.contentDescription?.let { append(it); append(' ') }
+            event.source?.let { root ->
+                try { append(collectNodeTextShallow(root, maxDepth = 8)) }
+                finally { root.recycle() }
+            }
+        }.lowercase()
+        if (corpus.isBlank()) return false
+
+        // ③ Substring match on full corpus (catches query strings, path segments)
+        if (containsBlockedWordSubstring(corpus, words)) return true
+
+        // ④ Also whole-word match — catches article titles where partial substrings
+        //    would cause false positives (e.g. "game" matching "games" in sports news)
+        return words.any { word ->
+            Regex("\\b${Regex.escape(word.lowercase())}\\b").containsMatchIn(corpus)
+        }
+    }
+
+    private fun getBlockedWords(): List<String> {
+        val json = prefs.getString(PREF_BLOCKED_WORDS, "[]") ?: "[]"
+        return parseJsonArray(json).map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    /**
      * Returns true if any blocked word appears as a whole word in the event title text
-     * or in the node tree up to [adaptiveScanDepth] levels deep.
+     * or in the shallow node tree (max 5 levels deep).
      *
      * Matching is case-insensitive and whole-word only — prevents "short" from
-     * matching "shortage" etc. Depth is now adaptive per app so deep-content apps
-     * (Reddit, Twitter, TikTok) are scanned more thoroughly while low-risk apps
-     * stay at 3 levels to avoid false positives.
+     * matching "shortage" in shopping apps, etc.
+     *
+     * For browser packages, use [containsBlockedWordBrowser] instead which also
+     * checks the URL bar with substring matching.
      */
     private fun containsBlockedWord(event: AccessibilityEvent, words: List<String>): Boolean {
-        val pkg = event.packageName?.toString() ?: ""
-        val depth = adaptiveScanDepth(pkg)
         val corpus = buildString {
             event.text?.forEach { t -> t?.let { append(it); append(' ') } }
             event.contentDescription?.let { append(it); append(' ') }
             event.source?.let { root ->
                 try {
-                    append(collectNodeTextShallow(root, maxDepth = depth))
+                    append(collectNodeTextShallow(root, maxDepth = 5))
                 } finally {
                     root.recycle()
                 }

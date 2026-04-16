@@ -97,7 +97,4 @@ export interface AppSettings {
   // Block overlay appearance
   overlayWallpaper?: string;        // Absolute path to custom background image (empty = use gradient)
   overlayQuotes?: string[];         // Custom quote pool (empty = use built-in quotes)
-  // Locked launcher — package names shown in the FocusFlow launcher grid
-  // (separate from the always-present pinned dock: Phone, WhatsApp, VLC, Settings)
-  launcherApps?: string[];
 }

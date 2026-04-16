@@ -1,24 +1,28 @@
-name: Build Production (APK + AAB)
+name: Build Release (APK × 3 + AAB)
 
-# Builds a signed release APK and AAB for production / Play Store.
+# Two independent jobs:
+#   apks  — expo prebuild → assembleRelease with ABI splits
+#           produces arm64-v8a APK, armeabi-v7a APK, universal APK
+#   aab   — expo prebuild → bundleRelease (no ABI splits needed)
+#           produces AAB for Play Store
+#
+# Running them as separate jobs means each gets its own clean workspace
+# and build directory, so there are no conflicts between the split-APK
+# intermediates and the AAB bundle task.
+#
+# Optimisations applied to both jobs:
+#   • R8 full-mode minification + obfuscation (expo-build-properties)
+#   • Resource shrinking
+#   • Hermes JS engine (RN 0.81 default — bytecode pre-compiled)
+#   • zipalign + apksigner (applied automatically by Gradle signed release)
+#
 # Manual trigger only — requires keystore secrets to be configured.
 #
 # ── Required secrets ──────────────────────────────────────────────────────────
-# Add these in:
-#   GitHub repo → Settings → Secrets and variables → Actions → New secret
-#
 #   RELEASE_KEYSTORE_BASE64   base64-encoded .jks keystore file
 #   RELEASE_STORE_PASSWORD    keystore store password
 #   RELEASE_KEY_ALIAS         key alias inside the keystore
 #   RELEASE_KEY_PASSWORD      key password
-#
-# Generate a keystore once (keep the .jks file safe — you need it forever):
-#   keytool -genkeypair -v -keystore release.keystore \
-#     -alias focusflow -keyalg RSA -keysize 2048 -validity 10000
-#
-# Encode it for the secret:
-#   Linux:  base64 -w0 release.keystore
-#   macOS:  base64 release.keystore | pbcopy
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -29,16 +33,15 @@ env:
   EXPO_ROUTER_APP_ROOT: app
 
 jobs:
-  build:
-    name: Production APK + AAB
+  # ── Job 1: ABI-split APKs (arm64 + arm32 + universal) ─────────────────────
+  apks:
+    name: Release APKs (arm64 + arm32 + universal)
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Source ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Toolchain ───────────────────────────────────────────────────────
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -55,7 +58,6 @@ jobs:
         with:
           version: 9
 
-      # ── 3. Caches ──────────────────────────────────────────────────────────
       - name: Get pnpm store path
         id: pnpm-cache
         run: echo "STORE=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
@@ -76,25 +78,31 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # ── 4. JS dependencies ─────────────────────────────────────────────────
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
-      # ── 5. Expo Prebuild ───────────────────────────────────────────────────
       - name: Expo Prebuild
         working-directory: artifacts/focusflow
         run: npx expo prebuild --platform android --clean --no-install
 
-      # ── 6. Decode keystore ─────────────────────────────────────────────────
-      - name: Decode release keystore
+      - name: Inject ProGuard rules
+        working-directory: artifacts/focusflow
+        run: cp proguard-rules.pro android/app/proguard-rules.pro
+
+      - name: Enable R8 full mode
         working-directory: artifacts/focusflow/android
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
-          echo "Keystore decoded: $(du -sh release.keystore)"
+          echo "" >> gradle.properties
+          echo "android.enableR8.fullMode=true" >> gradle.properties
 
-      # ── 7. Build release APK ───────────────────────────────────────────────
-      - name: Build release APK
+      - name: Decode release keystore
         working-directory: artifacts/focusflow/android
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+
+      - name: Build release APKs (arm64 + arm32 + universal)
+        working-directory: artifacts/focusflow/android
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
         run: |
           ./gradlew assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
@@ -102,9 +110,120 @@ jobs:
             -Pandroid.injected.signing.key.alias="${{ secrets.RELEASE_KEY_ALIAS }}" \
             -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
 
-      # ── 8. Build release AAB ───────────────────────────────────────────────
+          echo "── APK outputs ──"
+          find app/build/outputs/apk/release/ -name "*.apk" -exec ls -lh {} \;
+
+      - name: Upload arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: focusflow-arm64-v8a-release-${{ github.run_number }}
+          path: artifacts/focusflow/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          retention-days: 30
+
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: focusflow-armeabi-v7a-release-${{ github.run_number }}
+          path: artifacts/focusflow/android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          retention-days: 30
+
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: focusflow-universal-release-${{ github.run_number }}
+          path: artifacts/focusflow/android/app/build/outputs/apk/release/app-universal-release.apk
+          retention-days: 30
+
+      - name: Remove keystore from runner
+        if: always()
+        working-directory: artifacts/focusflow/android
+        run: rm -f release.keystore
+
+  # ── Job 2: AAB for Play Store ──────────────────────────────────────────────
+  aab:
+    name: Release AAB (Play Store)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo Prebuild
+        working-directory: artifacts/focusflow
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Inject ProGuard rules
+        working-directory: artifacts/focusflow
+        run: cp proguard-rules.pro android/app/proguard-rules.pro
+
+      - name: Enable R8 full mode
+        working-directory: artifacts/focusflow/android
+        run: |
+          echo "" >> gradle.properties
+          echo "android.enableR8.fullMode=true" >> gradle.properties
+
+      # ABI splits must be disabled for AAB builds.
+      # When splits { abi { enable true } } is active alongside bundleRelease + R8,
+      # Gradle creates one shrunk-resources file per ABI and then fails to merge them.
+      # See: https://issuetracker.google.com/402800800
+      - name: Disable ABI splits for AAB build
+        working-directory: artifacts/focusflow/android
+        run: |
+          # Patch build.gradle — disable the abi splits block entirely
+          sed -i '/splits\s*{/,/^[[:space:]]*}/ {
+            s/enable\s*true/enable false/g
+          }' app/build.gradle || true
+          # Belt-and-suspenders: gradle property override
+          echo "android.splits.abi.enable=false" >> gradle.properties
+          echo "android.splits.density.enable=false" >> gradle.properties
+
+      - name: Decode release keystore
+        working-directory: artifacts/focusflow/android
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+
       - name: Build release AAB
         working-directory: artifacts/focusflow/android
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
         run: |
           ./gradlew bundleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
@@ -112,22 +231,16 @@ jobs:
             -Pandroid.injected.signing.key.alias="${{ secrets.RELEASE_KEY_ALIAS }}" \
             -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
 
-      # ── 9. Upload artifacts ────────────────────────────────────────────────
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: focusflow-release-apk-${{ github.run_number }}
-          path: artifacts/focusflow/android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
+          echo "── AAB output ──"
+          find app/build/outputs/bundle/release/ -name "*.aab" -exec ls -lh {} \;
 
-      - name: Upload release AAB
+      - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: focusflow-release-aab-${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
 
-      # ── 10. Cleanup keystore ───────────────────────────────────────────────
       - name: Remove keystore from runner
         if: always()
         working-directory: artifacts/focusflow/android

@@ -66,46 +66,6 @@ export const SharedPrefsModule = {
     return SharedPrefs.setBlockedWords(words);
   },
 
-  /**
-   * Writes a list of domain patterns to SharedPreferences.
-   * The VPN DNS proxy returns NXDOMAIN for matching domains; the accessibility
-   * service URL-bar scanner also blocks navigation to them inside browsers.
-   * Supports exact match and subdomain match ("reddit.com" → blocks www.reddit.com).
-   *
-   * @param domains  Array of domain pattern strings, e.g. ["reddit.com", "twitter.com"]
-   */
-  async setBlockedDomains(domains: string[]): Promise<void> {
-    if (!hasSharedPrefsMethod('setBlockedDomains')) return;
-    return SharedPrefs.setBlockedDomains(domains);
-  },
-
-  /**
-   * Activates one or more pre-built keyword categories.
-   * Active category keywords are merged with the user's own blocked_words list at runtime.
-   *
-   * Available keys: "social_media" | "gambling" | "adult" | "shopping" |
-   *                 "news" | "gaming" | "entertainment"
-   *
-   * @param categories  Array of category key strings to activate
-   */
-  async setKeywordCategories(categories: string[]): Promise<void> {
-    if (!hasSharedPrefsMethod('setKeywordCategories')) return;
-    return SharedPrefs.setKeywordCategories(JSON.stringify(categories));
-  },
-
-  /**
-   * Writes the user's selected launcher app package list to SharedPreferences.
-   * FocusLauncherActivity reads this to populate its scrollable app grid.
-   * Pinned dock apps (Phone, WhatsApp, VLC, Settings) are always shown
-   * by the launcher regardless of this list.
-   *
-   * @param packages  Array of package name strings the user has selected for the launcher
-   */
-  async setLauncherApps(packages: string[]): Promise<void> {
-    if (!hasSharedPrefsMethod('setLauncherApps')) return;
-    return SharedPrefs.setLauncherApps(packages);
-  },
-
   async putString(key: string, value: string): Promise<void> {
     if (!hasSharedPrefsMethod('putString')) return;
     return SharedPrefs.putString(key, value);

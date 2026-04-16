@@ -24,7 +24,7 @@ import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 
 type PermStatus = 'granted' | 'denied' | 'unknown';
-type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay' | 'media_files' | 'home_launcher';
+type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay' | 'media_files';
 
 interface PermissionItem {
   id: PermissionId;
@@ -239,37 +239,6 @@ const PERMISSIONS: PermissionItem[] = [
     },
     open: () => {
       ForegroundLaunchModule.requestOverlayPermission().catch(() =>
-        Linking.openSettings()
-      );
-    },
-  },
-  {
-    id: 'home_launcher',
-    title: 'Default Home App',
-    description:
-      'Sets FocusFlow as your Android home screen. During any active block or focus session the launcher locks you to only your approved apps.',
-    whyNeeded:
-      'Without this, a user can press HOME and freely switch to any app — completely bypassing the blocker.',
-    brokenWithout: [
-      'HOME button exits to the system launcher during focus sessions',
-      'Blocked apps are accessible via the normal app drawer',
-      'Power menu suppression has no effect from the home screen',
-    ],
-    icon: 'home-outline',
-    deepLinkLabel: 'Set as Default Home App',
-    optional: true,
-    check: async (): Promise<PermStatus> => {
-      // There is no JS-only way to query the default launcher package without
-      // a native call. We return 'unknown' so the card always renders as a
-      // neutral setup step — the user can see whether it worked by whether
-      // the FocusFlow home screen appears when they press HOME.
-      return 'unknown';
-    },
-    open: () => {
-      // android.settings.HOME_SETTINGS opens "Default apps → Home app" directly.
-      // Falls back to the general app settings page on older OEMs that don't
-      // support this action string.
-      Linking.sendIntent('android.settings.HOME_SETTINGS').catch(() =>
         Linking.openSettings()
       );
     },

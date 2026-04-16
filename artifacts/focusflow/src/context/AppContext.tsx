@@ -118,7 +118,6 @@ const defaultSettings: AppSettings = {
   greyoutSchedule: [],
   overlayWallpaper: '',
   overlayQuotes: [],
-  launcherApps: [],
 };
 
 const initialState: AppState = {
@@ -191,37 +190,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function init() {
     dispatch({ type: 'SET_LOADING', payload: true });
     try {
-      // ── Step 1: Open DB and dispatch SET_DB_READY immediately ──────────────
-      // This MUST be the very first async step so the splash overlay clears as
-      // fast as possible. requestPermissions() can show an Android system dialog
-      // and block indefinitely on first install — never gate SET_DB_READY on it.
-      const settings = await withTimeout(dbGetSettings(), 8000, defaultSettings);
-      dispatch({ type: 'SET_SETTINGS', payload: settings });
-      dispatch({ type: 'SET_DB_READY' });
-
-      // ── Step 2: Notification channel setup (fast, no dialog) ───────────────
-      // Must run before any notifications are scheduled, but does NOT block the
-      // splash since SET_DB_READY was already dispatched above.
       try {
         await setupNotificationChannels();
       } catch (e) {
         console.warn('[AppContext] notification channel setup failed', e);
       }
-
-      // ── Step 3: Permission request — fire-and-forget ───────────────────────
-      // requestPermissions() calls Notifications.requestPermissionsAsync() which
-      // shows a system dialog on Android 13+. We must NEVER await it before
-      // SET_DB_READY or the app appears stuck on the splash screen. Running it
-      // as a detached promise means the dialog can appear after the app is visible.
-      void requestPermissions().catch((e) => {
+      try {
+        await requestPermissions();
+      } catch (e) {
         console.warn('[AppContext] notification permission request failed', e);
-      });
+      }
 
-      // ── Step 4: Start foreground service (fire-and-forget) ─────────────────
-      // Wrapped in withTimeout so a hung native Promise can never re-freeze the app.
-      withTimeout(ForegroundServiceModule.startIdleService(), 5000, undefined).catch((e) => {
+      try {
+        await ForegroundServiceModule.startIdleService();
+      } catch (e) {
         console.warn('[AppContext] idle foreground service start failed', e);
-      });
+      }
+
+      const settings = await withTimeout(dbGetSettings(), 8000, defaultSettings);
+      dispatch({ type: 'SET_SETTINGS', payload: settings });
+      dispatch({ type: 'SET_DB_READY' });
 
       // Re-apply standalone block from persisted settings on startup.
       await _syncStandaloneBlock(settings);
@@ -381,13 +369,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const active = getActiveTask(stateRef.current.tasks);
     if (active && active.focusMode && stateRef.current.focusSession === null && !isFocusActive()) {
-      const autoAllowed =
-        active.focusAllowedPackages !== undefined
-          ? active.focusAllowedPackages
-          : stateRef.current.settings.allowedInFocus;
       void _startFocusMode(
         active,
-        autoAllowed,
+        stateRef.current.settings.allowedInFocus,
         (app) => {
           dispatch({ type: 'SET_FOCUS_VIOLATION', payload: app });
           setTimeout(() => dispatch({ type: 'SET_FOCUS_VIOLATION', payload: null }), 4000);
@@ -398,7 +382,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           taskId: active.id,
           startedAt: new Date().toISOString(),
           isActive: true,
-          allowedPackages: autoAllowed,
+          allowedPackages: stateRef.current.settings.allowedInFocus,
         };
         dispatch({ type: 'SET_FOCUS_SESSION', payload: session });
       }).catch(() => {});
@@ -417,10 +401,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const unsubAppBlocked = EventBridge.subscribe('APP_BLOCKED', (event) => {
       dispatch({ type: 'SET_FOCUS_VIOLATION', payload: event.blockedApp ?? null });
-      // Auto-clear the overlay after 4 s so it never gets permanently stuck.
-      // The other two violation paths (standalone-block polling and startFocusMode
-      // callback) already had this timeout; the native event path was missing it.
-      setTimeout(() => dispatch({ type: 'SET_FOCUS_VIOLATION', payload: null }), 4000);
     });
 
     return () => {
@@ -591,9 +571,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const startFocusMode = useCallback(
     async (taskId: string) => {
-      // Read from stateRef so this callback never holds a stale closure and
-      // does not need to be recreated on every task list change.
-      const task = stateRef.current.tasks.find((t) => t.id === taskId);
+      const task = state.tasks.find((t) => t.id === taskId);
       if (!task) return;
 
       // Task-specific allowed packages take priority over the global setting.
@@ -601,7 +579,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const allowedPackages =
         task.focusAllowedPackages !== undefined
           ? task.focusAllowedPackages
-          : stateRef.current.settings.allowedInFocus;
+          : state.settings.allowedInFocus;
 
       await _startFocusMode(task, allowedPackages, (app) => {
         dispatch({ type: 'SET_FOCUS_VIOLATION', payload: app });
@@ -616,9 +594,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
       dispatch({ type: 'SET_FOCUS_SESSION', payload: session });
     },
-    // stateRef is a stable ref — no deps needed; reads always get current state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    [state.tasks, state.settings.allowedInFocus],
   );
 
   const stopFocusMode = useCallback(async () => {
