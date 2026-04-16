@@ -717,27 +717,49 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      */
     private fun isPowerMenu(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString() ?: ""
+        val classLower = className.lowercase()
         val powerKeywords = listOf(
+            // AOSP / stock Android
             "globalactions",
             "globalactionsdialog",
+            "globalactionslayout",      // Android 14+ on some devices
+            "globalpowermenulayout",
+            // Samsung One UI
             "secglobalactions",
+            "secglobalactionsdialog",
+            // Generic OEM names
             "powermenudialog",
             "powermenu",
             "power_menu",
-            "shutdown",
+            "poweroffdialog",
             "rebootdialog",
-            "poweroffdialog"
+            "shutdowndialog",
+            "shutdown",
+            // MIUI / HyperOS
+            "miuiglobalactionsdialog",
+            "miuipowermenudialog",
         )
-        if (powerKeywords.any { className.lowercase().contains(it) }) return true
+        if (powerKeywords.any { classLower.contains(it) }) return true
 
-        // Also check visible text — some OEMs render the power dialog as a plain
-        // system Dialog whose class is just "android.app.Dialog".
+        // Text-based fallback — some OEMs render the power dialog as a plain
+        // android.app.Dialog with no distinctive class name.
+        // Require only ONE matching keyword (previously 2 — too strict; some OEMs
+        // show "Power off" + "Emergency call" which only matched "power off").
         val textLower = buildString {
             event.text.forEach { append(it); append(' ') }
             event.contentDescription?.let { append(it) }
         }.lowercase()
-        val powerTextKeywords = listOf("power off", "restart", "emergency mode", "reboot")
-        return powerTextKeywords.count { it in textLower } >= 2
+        val powerTextKeywords = listOf(
+            "power off",
+            "power down",
+            "restart",
+            "reboot",
+            "emergency mode",
+            "emergency call",    // added — shown instead of "emergency mode" on many OEMs
+            "safe mode",
+            "shut down",
+        )
+        return powerTextKeywords.any { it in textLower }
     }
 
     /**
