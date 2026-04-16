@@ -14,6 +14,7 @@ const CONCURRENCY = 10;
 
 const EXCLUDE_PATTERNS = [
   /node_modules/,
+  /\/android\//,
   /\.cache\//,
   /\.local\//,
   /\.expo/,
@@ -31,8 +32,13 @@ const EXCLUDE_PATTERNS = [
   /tbtechs-release\.keystore/,
 ];
 
+const MUST_INCLUDE_PATTERNS = [
+  /^artifacts\/focusflow\/android-native\//,
+];
+
 function shouldExclude(filePath) {
   const rel = relative(BASE, filePath);
+  if (MUST_INCLUDE_PATTERNS.some(p => p.test(rel))) return false;
   return EXCLUDE_PATTERNS.some(p => p.test(rel) || p.test(filePath));
 }
 
@@ -118,13 +124,10 @@ async function run() {
   console.log(`\nGetting current branch ref...`);
   const refData = await ghFetch(`/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}`);
   const latestSha = refData.object.sha;
-  const commitData = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits/${latestSha}`);
-  const baseTreeSha = commitData.tree.sha;
   console.log('Base commit:', latestSha);
 
-  console.log(`Creating new tree with ${treeItems.length} entries...`);
+  console.log(`Creating replacement tree with ${treeItems.length} entries...`);
   const newTree = await ghFetch(`/repos/${OWNER}/${REPO}/git/trees`, 'POST', {
-    base_tree: baseTreeSha,
     tree: treeItems,
   });
 
