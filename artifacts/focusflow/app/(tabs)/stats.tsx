@@ -59,6 +59,7 @@ export default function StatsScreen() {
     const todayTasks = tasks.filter((t) => dayjs(t.startTime).isAfter(today));
     const completed = todayTasks.filter((t) => t.status === 'completed');
     const skipped = todayTasks.filter((t) => t.status === 'skipped');
+    const overdue = todayTasks.filter((t) => t.status === 'overdue');
     const scheduled = todayTasks.filter((t) => t.status === 'scheduled' || t.status === 'active');
     const totalMinutesScheduled = todayTasks.reduce((s, t) => s + t.durationMinutes, 0);
     const totalMinutesCompleted = completed.reduce((s, t) => s + t.durationMinutes, 0);
@@ -68,6 +69,7 @@ export default function StatsScreen() {
       total: todayTasks.length,
       completed: completed.length,
       skipped: skipped.length,
+      overdue: overdue.length,
       remaining: scheduled.length,
       completionRate,
       totalMinutesScheduled,
@@ -231,6 +233,9 @@ export default function StatsScreen() {
                 <StatItem icon="checkmark-circle" color={COLORS.green} label="Completed" value={todayStats.completed} />
                 <StatItem icon="play-skip-forward" color={COLORS.muted} label="Skipped" value={todayStats.skipped} />
                 <StatItem icon="time-outline" color={COLORS.blue} label="Remaining" value={todayStats.remaining} />
+                {todayStats.overdue > 0 && (
+                  <StatItem icon="alert-circle" color={COLORS.red} label="Overdue" value={todayStats.overdue} />
+                )}
               </View>
             </View>
           </View>

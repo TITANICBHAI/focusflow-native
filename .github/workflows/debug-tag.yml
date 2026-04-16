@@ -1,8 +1,8 @@
 name: Debug Release (Tag)
 
-# Builds a debug APK and publishes it as a pre-release on GitHub
-# whenever a debug tag is pushed (e.g. v1.0.0-debug).
-# No secrets required.
+# Builds a debug APK via Expo Prebuild and publishes it as a pre-release
+# on GitHub whenever a debug tag is pushed (e.g. v1.0.0-debug).
+# No signing secrets required — debug builds are unsigned.
 #
 # ── How to trigger ────────────────────────────────────────────────────────────
 #   git tag v1.0.0-debug
@@ -16,6 +16,10 @@ on:
 
 permissions:
   contents: write
+
+env:
+  NPM_CONFIG_NODE_LINKER: hoisted
+  EXPO_ROUTER_APP_ROOT: app
 
 jobs:
   debug-release:
@@ -31,16 +35,46 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Create local.properties
-        working-directory: android-native
-        run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "local.properties written: $(cat local.properties)"
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo Prebuild
+        working-directory: artifacts/focusflow
+        run: npx expo prebuild --platform android --clean --no-install
 
       - name: Build debug APK
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
         run: |
@@ -49,7 +83,7 @@ jobs:
 
       - name: Verify APK was produced
         run: |
-          APK="android-native/app/build/outputs/apk/debug/app-debug.apk"
+          APK="artifacts/focusflow/android/app/build/outputs/apk/debug/app-debug.apk"
           if [ -f "$APK" ]; then
             echo "APK built successfully: $(du -sh $APK)"
           else
@@ -58,7 +92,7 @@ jobs:
 
       - name: Rename build output
         run: |
-          cp android-native/app/build/outputs/apk/debug/app-debug.apk \
+          cp artifacts/focusflow/android/app/build/outputs/apk/debug/app-debug.apk \
              focusflow-${{ github.ref_name }}.apk
 
       - name: Create GitHub Release

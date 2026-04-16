@@ -361,6 +361,21 @@ export default function SettingsScreen() {
           />
         </Section>
 
+        <Section title="About">
+          <SettingButton
+            icon="shield-checkmark-outline"
+            label="Privacy Policy"
+            description="How FocusFlow handles your data"
+            onPress={() => router.push('/privacy-policy')}
+          />
+          <SettingButton
+            icon="document-text-outline"
+            label="Terms of Service"
+            description="Rules and conditions for using FocusFlow"
+            onPress={() => router.push('/terms-of-service')}
+          />
+        </Section>
+
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: theme.muted }]}>FocusFlow v1.0.0</Text>
           <Text style={[styles.footerText, { color: theme.muted }]}>All data stored locally on device</Text>

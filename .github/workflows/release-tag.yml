@@ -1,7 +1,7 @@
 name: Release (Tag)
 
-# Builds a signed release APK + AAB and publishes a GitHub Release
-# whenever a version tag is pushed (e.g. v1.0.0).
+# Builds a signed release APK + AAB via Expo Prebuild and publishes a
+# GitHub Release whenever a version tag is pushed (e.g. v1.0.0).
 # Skips automatically if the tag ends with -debug (those go to debug-tag.yml).
 #
 # ── How to trigger ────────────────────────────────────────────────────────────
@@ -24,6 +24,10 @@ on:
 permissions:
   contents: write
 
+env:
+  NPM_CONFIG_NODE_LINKER: hoisted
+  EXPO_ROUTER_APP_ROOT: app
+
 jobs:
   release:
     name: Release ${{ github.ref_name }}
@@ -42,22 +46,65 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Create local.properties
-        working-directory: android-native
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo Prebuild
+        working-directory: artifacts/focusflow
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Inject ProGuard rules
+        working-directory: artifacts/focusflow
         run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "local.properties written: $(cat local.properties)"
+          if [ -f proguard-rules.pro ]; then
+            cp proguard-rules.pro android/app/proguard-rules.pro
+          fi
+
+      - name: Enable R8 full mode
+        working-directory: artifacts/focusflow/android
+        run: |
+          echo "" >> gradle.properties
+          echo "android.enableR8.fullMode=true" >> gradle.properties
 
       - name: Decode release keystore
-        working-directory: android-native/app
+        working-directory: artifacts/focusflow/android/app
         run: |
           echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
           echo "Keystore size: $(du -sh release.keystore)"
 
       - name: Build release APK
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
         run: |
@@ -69,7 +116,7 @@ jobs:
             -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
 
       - name: Build release AAB
-        working-directory: android-native
+        working-directory: artifacts/focusflow/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
         run: |
@@ -81,9 +128,9 @@ jobs:
 
       - name: Rename build outputs
         run: |
-          cp android-native/app/build/outputs/apk/release/app-release.apk \
+          cp artifacts/focusflow/android/app/build/outputs/apk/release/app-release.apk \
              focusflow-${{ github.ref_name }}.apk
-          cp android-native/app/build/outputs/bundle/release/app-release.aab \
+          cp artifacts/focusflow/android/app/build/outputs/bundle/release/app-release.aab \
              focusflow-${{ github.ref_name }}.aab
 
       - name: Create GitHub Release
@@ -100,7 +147,7 @@ jobs:
 
       - name: Remove keystore from runner
         if: always()
-        working-directory: android-native/app
+        working-directory: artifacts/focusflow/android/app
         run: rm -f release.keystore
 
       - name: Notify Slack

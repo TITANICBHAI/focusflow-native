@@ -293,6 +293,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+            <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
             <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
             <Stack.Screen name="permissions" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
