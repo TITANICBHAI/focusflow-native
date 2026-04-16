@@ -212,6 +212,54 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         private const val MAX_RETRY_ATTEMPTS = 5
         /** Interval between retry checks in milliseconds. */
         private const val RETRY_INTERVAL_MS = 300L
+
+        // ── Keyword blocker: URL / search field detection ─────────────────────
+
+        /** Debounce for TYPE_VIEW_TEXT_CHANGED — avoids firing on every keystroke. */
+        private const val TEXT_DEBOUNCE_MS = 400L
+
+        /** Throttle for TYPE_WINDOW_CONTENT_CHANGED per package — very noisy event. */
+        private const val CONTENT_SCAN_THROTTLE_MS = 2_000L
+
+        /**
+         * View ID substrings that identify URL bars and search input fields.
+         * Checked case-insensitively against event.source.viewIdResourceName.
+         */
+        private val URL_BAR_VIEW_IDS = listOf(
+            "url_bar", "url_edit", "url_field", "address_bar", "address_text",
+            "location_bar", "location_edit", "omnibar_text", "omnibox_text",
+            "search_src_text", "search_box", "search_bar", "search_edit",
+            "query", "mozac_browser_toolbar_url_view", "toolbar_edit_text"
+        )
+
+        /**
+         * Known browser and search-capable packages.
+         * Used to trigger full deep-scan + URL substring matching in
+         * TYPE_WINDOW_STATE_CHANGED events so that page URLs are caught.
+         */
+        val BROWSER_PACKAGES: Set<String> = setOf(
+            "com.android.chrome",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "com.chrome.canary",
+            "com.google.android.googlequicksearchbox",   // Google Search / Discover
+            "org.mozilla.firefox",
+            "org.mozilla.fenix",
+            "org.mozilla.firefox_beta",
+            "com.sec.android.app.sbrowser",              // Samsung Internet
+            "com.samsung.android.sbrowser",
+            "com.brave.browser",
+            "com.brave.browser_beta",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.microsoft.emmx",                        // Edge
+            "com.UCMobile.intl",                         // UC Browser
+            "com.kiwibrowser.browser",
+            "com.vivaldi.browser",
+            "com.duckduckgo.mobile.android",
+            "com.cloudmosa.puffinFree",
+            "com.uc.browser.en"
+        )
     }
 
     /** Data class parsed from the daily_allowance_config JSON. */
@@ -243,6 +291,13 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // Handler for retry re-checks AND timed-allowance expiry — runs on main thread
     private val handler = Handler(Looper.getMainLooper())
 
+    // ── Keyword blocker: debounce + throttle state ────────────────────────────
+    // Text-changed events fire on every keystroke — we debounce the keyword check
+    // so it only runs 400 ms after the user stops typing.
+    private var textDebounceRunnable: Runnable? = null
+    // Content-changed events fire on every layout pass — throttled per package.
+    private val lastContentScanMs = mutableMapOf<String, Long>()
+
     // ── Timed allowance tracking (time_budget / interval modes) ──────────────
     // Tracks the app currently open under a time-limited allowance so we can
     // accumulate usage time when the user switches away to another app.
@@ -256,7 +311,21 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val ev = event ?: return
+
+        // ── Route non-window-state events to specialised handlers ─────────────
+        when (ev.eventType) {
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                handleTextChanged(ev)
+                return
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                handleContentChanged(ev)
+                return
+            }
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> { /* handled below */ }
+            else -> return
+        }
 
         val now = System.currentTimeMillis()
 
@@ -290,7 +359,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             lastBlockedAtMs = 0L
         }
 
-        val pkg = event.packageName?.toString() ?: return
+        val pkg = ev.packageName?.toString() ?: return
 
         // Update foreground package tracker so retries can guard against
         // pressing Home when the user has already switched to an allowed app.
@@ -401,12 +470,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     pkg == "com.sec.android.app.systemui" ||
                     pkg == "com.samsung.android.systemui"
                 if (isSystemUiPkg) {
-                    if (isPowerMenu(event)) {
+                    if (isPowerMenu(ev)) {
                         // Power off / restart dialog opened — dismiss it
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
                         return
                     }
-                    if (isNotificationPanelExpanded(event)) {
+                    if (isNotificationPanelExpanded(ev)) {
                         // Notification bar or quick-settings pulled down — collapse it
                         handler.postDelayed({ collapseStatusBarPanel() }, 80L)
                         return
@@ -415,52 +484,52 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 }
 
                 // Block uninstall dialogs — show overlay so user sees why they're blocked.
-                if (isUninstallDialog(event)) {
+                if (isUninstallDialog(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block accessibility settings to prevent disabling this service mid-session.
-                if (isAccessibilitySettingsPage(event)) {
+                if (isAccessibilitySettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block "Clear data / Clear storage" dialogs in Settings during any block session.
-                if (isClearDataDialog(event)) {
+                if (isClearDataDialog(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block date/time settings to prevent clock manipulation.
-                if (isDateTimeSettingsPage(event)) {
+                if (isDateTimeSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Usage Access settings to prevent revoking usage permission.
-                if (isUsageAccessSettingsPage(event)) {
+                if (isUsageAccessSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Battery Optimization settings to prevent killing the blocking service.
-                if (isBatteryOptimizationSettingsPage(event)) {
+                if (isBatteryOptimizationSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Device Admin settings to prevent deactivating admin rights.
-                if (isDeviceAdminSettingsPage(event)) {
+                if (isDeviceAdminSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Developer Options to prevent ADB, "Don't keep activities", etc.
-                if (isDeveloperOptionsPage(event)) {
+                if (isDeveloperOptionsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Reset settings pages — would disable accessibility service or wipe the phone.
-                if (isResetSettingsPage(event)) {
+                if (isResetSettingsPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
                 // Block Special Access page — gateway to device admin, overlay, usage access, etc.
-                if (isSpecialAccessPage(event)) {
+                if (isSpecialAccessPage(ev)) {
                     handleBlockedApp(pkg)
                     return
                 }
@@ -471,11 +540,25 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // ── Word blocking ─────────────────────────────────────────────────────
         // During any active blocking session, if the current window content contains
         // a user-defined blocked word, show the overlay and redirect immediately.
+        //
+        // For browser packages: also extract the URL bar text and do a substring
+        // (non-whole-word) match, so "gaming" catches "gaming.com/news" in the URL.
         if (focusActive || saActive) {
             val blockedWords = getBlockedWords()
-            if (blockedWords.isNotEmpty() && containsBlockedWord(event, blockedWords)) {
-                handleBlockedApp(pkg)
-                return
+            if (blockedWords.isNotEmpty()) {
+                val isBrowser = BROWSER_PACKAGES.contains(pkg)
+                if (isBrowser) {
+                    // Deep full scan for browsers + also extract URL bar specifically
+                    if (containsBlockedWordBrowser(ev, blockedWords)) {
+                        handleBlockedApp(pkg)
+                        return
+                    }
+                } else {
+                    if (containsBlockedWord(ev, blockedWords)) {
+                        handleBlockedApp(pkg)
+                        return
+                    }
+                }
             }
         }
 
@@ -1716,7 +1799,193 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ─── Word blocking helpers ────────────────────────────────────────────────
+    // ─── Keyword blocker: text-changed + content-changed handlers ────────────
+
+    /**
+     * Handles TYPE_VIEW_TEXT_CHANGED events.
+     *
+     * Fires when the user types in ANY EditText — URL bars, search boxes, comment
+     * fields, etc.  We debounce the check by [TEXT_DEBOUNCE_MS] ms so the
+     * keyword test only runs after the user pauses typing, not on every character.
+     *
+     * Matching uses substring (no word boundaries) for URL/search context — a
+     * keyword like "gaming" will match "gaming.com" or "best+gaming+laptops".
+     */
+    private fun handleTextChanged(event: AccessibilityEvent) {
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        if (!focusActive && !saActive) return
+
+        val words = getBlockedWords()
+        if (words.isEmpty()) return
+
+        val pkg = event.packageName?.toString() ?: return
+        // Never intercept our own app or the always-allowed emergency set.
+        if (pkg == packageName || NEVER_BLOCK.any { it.equals(pkg, ignoreCase = true) }) return
+
+        // Collect the text being typed
+        val text = buildString {
+            event.text?.forEach { t -> t?.let { append(it) } }
+            // Also pull from the source node for cases where event.text is empty
+            event.source?.let { node ->
+                try {
+                    node.text?.let { append(it) }
+                    // Also get the view ID so we know if this is a URL bar
+                    val viewId = node.viewIdResourceName?.lowercase() ?: ""
+                    // For URL bars in browsers: also collect placeholder (url hint text)
+                    if (URL_BAR_VIEW_IDS.any { it in viewId } && node.hintText != null) {
+                        append(' '); append(node.hintText)
+                    }
+                } finally {
+                    node.recycle()
+                }
+            }
+        }.trim()
+
+        if (text.isBlank()) return
+
+        // Debounce — cancel any pending check and schedule a new one
+        textDebounceRunnable?.let { handler.removeCallbacks(it) }
+        val captured = text
+        val capturedPkg = pkg
+        val runnable = Runnable {
+            val stillFocusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+            val stillSaActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+            if (!stillFocusActive && !stillSaActive) return@Runnable
+            val currentWords = getBlockedWords()
+            if (currentWords.isEmpty()) return@Runnable
+            if (containsBlockedWordSubstring(captured, currentWords)) {
+                handleBlockedApp(capturedPkg)
+            }
+        }
+        textDebounceRunnable = runnable
+        handler.postDelayed(runnable, TEXT_DEBOUNCE_MS)
+    }
+
+    /**
+     * Handles TYPE_WINDOW_CONTENT_CHANGED events.
+     *
+     * This event fires on every layout pass — it is extremely noisy.  We only
+     * process it for browser packages (to catch lazy-loaded page content and URL
+     * bar updates that don't trigger WINDOW_STATE_CHANGED), and we throttle it to
+     * at most once every [CONTENT_SCAN_THROTTLE_MS] ms per package.
+     */
+    private fun handleContentChanged(event: AccessibilityEvent) {
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        if (!focusActive && !saActive) return
+
+        val words = getBlockedWords()
+        if (words.isEmpty()) return
+
+        val pkg = event.packageName?.toString() ?: return
+        // Only process browser packages — too noisy for general apps
+        if (!BROWSER_PACKAGES.contains(pkg)) return
+        if (pkg == packageName) return
+
+        val now = System.currentTimeMillis()
+        val lastScan = lastContentScanMs[pkg] ?: 0L
+        if (now - lastScan < CONTENT_SCAN_THROTTLE_MS) return
+        lastContentScanMs[pkg] = now
+
+        // Scan the URL bar specifically (fast path) then fall back to shallow scan
+        val urlText = extractUrlBarText(event)
+        if (urlText.isNotBlank() && containsBlockedWordSubstring(urlText, words)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        // Also do a shallow node scan for visible page content
+        val corpus = buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.source?.let { root ->
+                try { append(collectNodeTextShallow(root, maxDepth = 4)) }
+                finally { root.recycle() }
+            }
+        }.lowercase()
+        if (corpus.isNotBlank() && containsBlockedWordSubstring(corpus, words)) {
+            handleBlockedApp(pkg)
+        }
+    }
+
+    /**
+     * Extracts text from the URL bar / address bar node for the given event.
+     *
+     * Walks the root node tree looking for a node whose view resource ID matches
+     * one of the known URL bar patterns.  Returns an empty string if not found.
+     */
+    private fun extractUrlBarText(event: AccessibilityEvent): String {
+        val root = event.source ?: return ""
+        return try {
+            findUrlBarText(root) ?: ""
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findUrlBarText(node: AccessibilityNodeInfo): String? {
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+        if (URL_BAR_VIEW_IDS.any { it in viewId }) {
+            val text = node.text?.toString()
+            if (!text.isNullOrBlank()) return text
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                val found = findUrlBarText(child)
+                if (found != null) return found
+            } finally {
+                child.recycle()
+            }
+        }
+        return null
+    }
+
+    // ─── Keyword matching helpers ─────────────────────────────────────────────
+
+    /**
+     * Case-insensitive SUBSTRING match — no word boundaries.
+     *
+     * Used for URL bars and search fields where keywords are part of a continuous
+     * string (e.g. "gaming" inside "gaming.com" or "search?q=gaming+news").
+     */
+    private fun containsBlockedWordSubstring(text: String, words: List<String>): Boolean {
+        val lower = text.lowercase()
+        return words.any { it.lowercase() in lower }
+    }
+
+    /**
+     * Browser-specific word checker for TYPE_WINDOW_STATE_CHANGED events.
+     *
+     * 1. Extracts URL bar text and does a substring match (catches the full URL).
+     * 2. Falls back to a full deep node-tree scan of the page content.
+     * 3. Also does whole-word matching on the page title / visible text so that
+     *    a legitimate word in an article title is still caught.
+     */
+    private fun containsBlockedWordBrowser(event: AccessibilityEvent, words: List<String>): Boolean {
+        // ① Check URL bar first — substring match (no word boundaries needed)
+        val urlText = extractUrlBarText(event)
+        if (urlText.isNotBlank() && containsBlockedWordSubstring(urlText, words)) return true
+
+        // ② Build a full corpus from the visible node tree (deep scan for browsers)
+        val corpus = buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.contentDescription?.let { append(it); append(' ') }
+            event.source?.let { root ->
+                try { append(collectNodeTextShallow(root, maxDepth = 8)) }
+                finally { root.recycle() }
+            }
+        }.lowercase()
+        if (corpus.isBlank()) return false
+
+        // ③ Substring match on full corpus (catches query strings, path segments)
+        if (containsBlockedWordSubstring(corpus, words)) return true
+
+        // ④ Also whole-word match — catches article titles where partial substrings
+        //    would cause false positives (e.g. "game" matching "games" in sports news)
+        return words.any { word ->
+            Regex("\\b${Regex.escape(word.lowercase())}\\b").containsMatchIn(corpus)
+        }
+    }
 
     private fun getBlockedWords(): List<String> {
         val json = prefs.getString(PREF_BLOCKED_WORDS, "[]") ?: "[]"
@@ -1725,31 +1994,27 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     /**
      * Returns true if any blocked word appears as a whole word in the event title text
-     * or in the shallow node tree (max 3 levels deep).
+     * or in the shallow node tree (max 5 levels deep).
      *
      * Matching is case-insensitive and whole-word only — prevents "short" from
-     * matching "shortage", "shortage" in shopping apps, etc.
+     * matching "shortage" in shopping apps, etc.
      *
-     * Node traversal is deliberately depth-limited to avoid picking up deep content
-     * like notification text, search suggestions, or background list items that the
-     * user is not actively viewing, which was the primary source of false positives.
+     * For browser packages, use [containsBlockedWordBrowser] instead which also
+     * checks the URL bar with substring matching.
      */
     private fun containsBlockedWord(event: AccessibilityEvent, words: List<String>): Boolean {
         val corpus = buildString {
             event.text?.forEach { t -> t?.let { append(it); append(' ') } }
             event.contentDescription?.let { append(it); append(' ') }
-            // Only scan the top 3 levels of the node tree to avoid deep content
-            // (notifications, list item descriptions, background elements).
             event.source?.let { root ->
                 try {
-                    append(collectNodeTextShallow(root, maxDepth = 3))
+                    append(collectNodeTextShallow(root, maxDepth = 5))
                 } finally {
                     root.recycle()
                 }
             }
         }.lowercase()
         if (corpus.isBlank()) return false
-        // Use whole-word matching: wrap the word in word boundaries via regex.
         return words.any { word ->
             val pattern = Regex("\\b${Regex.escape(word.lowercase())}\\b")
             pattern.containsMatchIn(corpus)

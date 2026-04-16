@@ -230,8 +230,8 @@ export default function SettingsScreen() {
             label="Manage Blocked Keywords"
             description={
               (settings.blockedWords ?? []).length === 0
-                ? 'No keywords set — add words to trigger home redirect'
-                : `${(settings.blockedWords ?? []).length} keyword${(settings.blockedWords ?? []).length !== 1 ? 's' : ''} — matched against on-screen text`
+                ? 'No keywords set — blocked in URLs, searches & on-screen text'
+                : `${(settings.blockedWords ?? []).length} keyword${(settings.blockedWords ?? []).length !== 1 ? 's' : ''} — blocked in URLs, searches & on-screen text`
             }
             onPress={() => setWordsModalVisible(true)}
           />

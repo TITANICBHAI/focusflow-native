@@ -170,7 +170,7 @@ export function BlockedWordsModal({ visible, words, locked = false, onSave, onCl
             ListHeaderComponent={
               localWords.length > 0 ? (
                 <Text style={[styles.countLabel, { color: theme.textSecondary }]}>
-                  {localWords.length} keyword{localWords.length !== 1 ? 's' : ''} — matched against on-screen text
+                  {localWords.length} keyword{localWords.length !== 1 ? 's' : ''} — blocked in URLs, searches & on-screen text
                 </Text>
               ) : null
             }
