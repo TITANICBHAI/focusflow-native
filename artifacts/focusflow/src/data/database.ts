@@ -318,7 +318,11 @@ export async function dbGetTodayOverrideCount(): Promise<number> {
 
 export async function dbRecordDayCompletion(completed: number, total: number): Promise<void> {
   const db = await getDb();
-  const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  // Use LOCAL date parts — .toISOString() gives the UTC date which is ahead of
+  // local date for UTC− users in the evening, causing dbGetStreak to never find
+  // today's record (it compares against the local date).
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   await db.runAsync(
     `INSERT OR REPLACE INTO daily_completions (date, completed, total) VALUES (?, ?, ?)`,
     [date, completed, total],
