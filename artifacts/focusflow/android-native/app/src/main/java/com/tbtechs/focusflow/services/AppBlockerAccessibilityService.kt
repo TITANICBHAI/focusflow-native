@@ -392,6 +392,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             }
 
             if (focusActive || saActive) {
+                // ── System UI: block notification panel + power menu ──────────
+                // When SystemUI packages fire a window event during a blocking
+                // session, check if it is the notification panel/quick-settings
+                // or the power-off dialog (GlobalActions).  Both are collapsed /
+                // dismissed immediately so the user cannot bypass the session.
+                val isSystemUiPkg = pkg == "com.android.systemui" ||
+                    pkg == "com.sec.android.app.systemui" ||
+                    pkg == "com.samsung.android.systemui"
+                if (isSystemUiPkg) {
+                    if (isPowerMenu(event)) {
+                        // Power off / restart dialog opened — dismiss it
+                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
+                        return
+                    }
+                    if (isNotificationPanelExpanded(event)) {
+                        // Notification bar or quick-settings pulled down — collapse it
+                        handler.postDelayed({ collapseStatusBarPanel() }, 80L)
+                        return
+                    }
+                    return
+                }
+
                 // Block uninstall dialogs — show overlay so user sees why they're blocked.
                 if (isUninstallDialog(event)) {
                     handleBlockedApp(pkg)
@@ -578,6 +600,76 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 scheduleRetryCheck(pkg, attempt + 1, focusActive, saActive)
             }
         }, RETRY_INTERVAL_MS * attempt)
+    }
+
+    // ─── System UI: notification panel + power menu detection ────────────────
+
+    /**
+     * Returns true when the SystemUI window event represents the power-off /
+     * restart / emergency-mode dialog (GlobalActions).
+     *
+     * Covers AOSP GlobalActionsDialog, Samsung SecGlobalActions, and the generic
+     * system dialog that appears on most OEMs when the power button is held.
+     */
+    private fun isPowerMenu(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString() ?: ""
+        val powerKeywords = listOf(
+            "globalactions",
+            "globalactionsdialog",
+            "secglobalactions",
+            "powermenudialog",
+            "powermenu",
+            "power_menu",
+            "shutdown",
+            "rebootdialog",
+            "poweroffdialog"
+        )
+        if (powerKeywords.any { className.lowercase().contains(it) }) return true
+
+        // Also check visible text — some OEMs render the power dialog as a plain
+        // system Dialog whose class is just "android.app.Dialog".
+        val textLower = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it) }
+        }.lowercase()
+        val powerTextKeywords = listOf("power off", "restart", "emergency mode", "reboot")
+        return powerTextKeywords.count { it in textLower } >= 2
+    }
+
+    /**
+     * Returns true when the SystemUI window event represents an expanded
+     * notification panel or quick-settings panel.
+     *
+     * Covers AOSP NotificationPanelView, QSPanel, and Samsung equivalents.
+     */
+    private fun isNotificationPanelExpanded(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString() ?: ""
+        val panelKeywords = listOf(
+            "notificationpanel",
+            "notificationshade",
+            "expandedview",
+            "qspanel",
+            "quicksettings",
+            "statusbar",
+            "shade"
+        )
+        return panelKeywords.any { className.lowercase().contains(it) }
+    }
+
+    /**
+     * Collapses the status bar / notification panel using StatusBarManager
+     * reflection.  This is the same call used by BlockOverlayActivity.
+     * Falls back silently on ROMs where reflection fails.
+     */
+    private fun collapseStatusBarPanel() {
+        try {
+            @Suppress("WrongConstant")
+            val sbService = getSystemService("statusbar") ?: return
+            val sbClass = Class.forName("android.app.StatusBarManager")
+            sbClass.getMethod("collapsePanels").invoke(sbService)
+        } catch (_: Exception) {
+            // Silently ignore — not all ROMs expose this API
+        }
     }
 
     // ─── Uninstall dialog detection ───────────────────────────────────────────

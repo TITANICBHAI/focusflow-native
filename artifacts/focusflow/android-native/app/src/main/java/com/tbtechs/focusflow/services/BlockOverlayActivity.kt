@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -126,6 +127,52 @@ class BlockOverlayActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         // Intentionally do nothing — back is completely ignored
+    }
+
+    // ─── Power button: block power-off menu during session ────────────────────
+    //
+    // Intercepts the power key short-press so the screen-off / power menu cannot
+    // be triggered while the overlay is on screen.
+    // Note: The OS long-press power menu is handled at the system level; we also
+    // watch for the GlobalActions dialog from the AccessibilityService and dismiss
+    // it immediately there (see AppBlockerAccessibilityService.handleSystemUiBlock).
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_POWER) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_POWER) {
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    // ─── Notification bar: collapse when overlay loses focus ─────────────────
+    //
+    // If the user swipes down the notification / quick-settings panel, the
+    // Activity momentarily loses window focus.  We immediately collapse the
+    // status bar so the panel is never accessible during a blocking session.
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus && !intentionalFinish && !isFinishing) {
+            collapseStatusBar()
+        }
+    }
+
+    private fun collapseStatusBar() {
+        try {
+            @Suppress("WrongConstant")
+            val sbService = getSystemService("statusbar") ?: return
+            val sbClass = Class.forName("android.app.StatusBarManager")
+            sbClass.getMethod("collapsePanels").invoke(sbService)
+        } catch (_: Exception) {
+            // Reflection may fail on some ROMs — silently ignore
+        }
     }
 
     // ─── Re-raise guard ───────────────────────────────────────────────────────
