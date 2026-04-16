@@ -39,3 +39,9 @@ yarn-error.*
 .vercel
 
 .env
+
+# Android signing secrets — never commit
+credentials.json
+*.keystore
+*.jks
+*.p12

@@ -151,7 +151,18 @@ function AppSplashOverlay() {
         Animated.timing(textTranslate, { toValue: 0, duration: 350, useNativeDriver: true }),
       ]),
     ]).start();
-  }, [logoScale, logoOpacity, textOpacity, textTranslate]);
+
+    // Content failsafe: if animations don't fire within 1.5 s (very rare on native),
+    // force content to full opacity so the user never sees a blank blue screen.
+    const contentFallback = setTimeout(() => {
+      logoOpacity.setValue(1);
+      logoScale.setValue(1);
+      textOpacity.setValue(1);
+      textTranslate.setValue(0);
+    }, 1500);
+    return () => clearTimeout(contentFallback);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pulsing logo animation while loading
   useEffect(() => {
@@ -180,15 +191,15 @@ function AppSplashOverlay() {
     }
   }, [state.isDbReady, state.isLoading, opacity]);
 
-  // Hard failsafe: dismiss the splash after 10 s no matter what.
+  // Hard failsafe: dismiss the splash after 6 s no matter what.
   // Prevents permanent stuck-on-splash if any native initialisation hangs.
+  // (Reduced from 10 s — DB init + channel setup should never take this long.)
   useEffect(() => {
     const t = setTimeout(() => {
-      if (!visible) return;
       Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(
         () => setVisible(false)
       );
-    }, 10_000);
+    }, 6_000);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
