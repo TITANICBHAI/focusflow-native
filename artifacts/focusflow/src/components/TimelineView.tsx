@@ -4,7 +4,7 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import dayjs from 'dayjs';
 import type { Task } from '@/data/types';
@@ -46,7 +46,8 @@ export default function TimelineView({ tasks, onTaskPress }: Props) {
     return (h - TIMELINE_START_HOUR) * HOUR_HEIGHT;
   };
 
-  const containerWidth = Dimensions.get('window').width - 64 - SPACING.lg * 2;
+  const { width: windowWidth } = useWindowDimensions();
+  const containerWidth = windowWidth - 64 - SPACING.lg * 2;
 
   return (
     <ScrollView

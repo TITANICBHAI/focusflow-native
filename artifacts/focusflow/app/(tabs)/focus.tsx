@@ -330,7 +330,7 @@ export default function FocusScreen() {
         <View style={styles.allowedRow}>
           <Text style={[styles.allowedLabel, { color: theme.textSecondary }]}>Allowed: </Text>
           <Text style={[styles.allowedApps, { color: theme.muted }]}>
-            {state.settings.allowedInFocus.join(', ')}
+            {(state.focusSession?.allowedPackages ?? state.settings.allowedInFocus).join(', ')}
           </Text>
         </View>
       )}

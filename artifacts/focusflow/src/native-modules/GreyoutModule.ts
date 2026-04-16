@@ -1,6 +1,6 @@
-import { NativeModules } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
-const { Greyout } = NativeModules;
+const Greyout = Platform.OS === 'android' ? NativeModules.Greyout : null;
 
 export interface GreyoutWindow {
   pkg: string;

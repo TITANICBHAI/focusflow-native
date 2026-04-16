@@ -56,7 +56,7 @@ export default function StatsScreen() {
 
   const todayStats = useMemo(() => {
     const today = dayjs().startOf('day');
-    const todayTasks = tasks.filter((t) => dayjs(t.startTime).isAfter(today));
+    const todayTasks = tasks.filter((t) => !dayjs(t.startTime).isBefore(today));
     const completed = todayTasks.filter((t) => t.status === 'completed');
     const skipped = todayTasks.filter((t) => t.status === 'skipped');
     const scheduled = todayTasks.filter((t) => t.status === 'scheduled' || t.status === 'active');
@@ -84,9 +84,11 @@ export default function StatsScreen() {
   }, [tasks]);
 
   useEffect(() => {
-    if (todayStats.total > 0) {
+    if (todayStats.total === 0) return;
+    const timer = setTimeout(() => {
       void dbRecordDayCompletion(todayStats.completed, todayStats.total);
-    }
+    }, 3000);
+    return () => clearTimeout(timer);
   }, [todayStats.completed, todayStats.total]);
 
   const productivityColor =

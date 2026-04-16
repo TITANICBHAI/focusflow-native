@@ -82,6 +82,34 @@ TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
       if (t.status !== 'skipped') await scheduleTaskReminders(t);
     }
 
+    // Update the native foreground service notification so its countdown
+    // reflects the new end time (FF-007).
+    try {
+      const { ForegroundServiceModule } = await import('@/native-modules/ForegroundServiceModule');
+      const extendedTask = updatedSchedule.find((t) => t.id === task.id);
+      if (extendedTask) {
+        const endMs = new Date(extendedTask.endTime).getTime();
+        const nextTask = updatedSchedule.find(
+          (t) => t.id !== extendedTask.id && t.status === 'scheduled',
+        );
+        await ForegroundServiceModule.updateNotification(
+          extendedTask.id, extendedTask.title, endMs, nextTask?.title ?? null,
+        );
+      }
+    } catch {
+      // Native module not available in headless context — safe to ignore.
+    }
+
+    // Inform the user their task was auto-extended (FF-009).
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⏱ Task extended automatically',
+        body: `"${task.title}" ran over — extended by ${DEFAULT_EXTENSION_MINUTES} min. Later tasks shifted.`,
+        data: { type: 'overrun-info', taskId: task.id },
+      },
+      trigger: null,
+    });
+
     console.log('[BgTask] OVERRUN_CHECK: rebalanced', updatedSchedule.length, 'tasks');
   } catch (e) {
     console.warn('[BgTask] OVERRUN_CHECK handler failed:', e);

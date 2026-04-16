@@ -150,6 +150,11 @@ export async function dbDeleteTask(taskId: string): Promise<void> {
   await db.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
 }
 
+function safeParseJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string' || raw === '') return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   const rawFap = row.focus_allowed_packages as string | null | undefined;
   return {
@@ -161,11 +166,11 @@ function rowToTask(row: Record<string, unknown>): Task {
     durationMinutes: row.duration_minutes as number,
     status: row.status as Task['status'],
     priority: row.priority as Task['priority'],
-    tags: JSON.parse(row.tags as string) as string[],
-    reminders: JSON.parse(row.reminders as string) as Task['reminders'],
+    tags: safeParseJson<string[]>(row.tags, []),
+    reminders: safeParseJson<Task['reminders']>(row.reminders, []),
     color: row.color as string,
     focusMode: (row.focus_mode as number) === 1,
-    focusAllowedPackages: rawFap ? (JSON.parse(rawFap) as string[]) : undefined,
+    focusAllowedPackages: rawFap ? safeParseJson<string[]>(rawFap, undefined as unknown as string[]) : undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
