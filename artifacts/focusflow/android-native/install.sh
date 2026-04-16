@@ -114,6 +114,7 @@ patch_permission "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
 patch_permission "android.permission.BIND_ACCESSIBILITY_SERVICE"  ' tools:ignore="ProtectedPermissions"'
 patch_permission "android.permission.KILL_BACKGROUND_PROCESSES"
 patch_permission "android.permission.USE_FULL_SCREEN_INTENT"
+patch_permission "android.permission.EXPAND_STATUS_BAR"
 
 # ── ForegroundTaskService ─────────────────────────────────────────────────────
 

@@ -466,6 +466,18 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 // session, check if it is the notification panel/quick-settings
                 // or the power-off dialog (GlobalActions).  Both are collapsed /
                 // dismissed immediately so the user cannot bypass the session.
+                //
+                // Samsung-specific: the power menu on One UI fires from the
+                // separate package com.samsung.android.app.powerkey rather than
+                // from SystemUI, so we must catch it independently.
+                val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
+                if (isSamsungPowerKey) {
+                    // Long-press side button opened Samsung power menu — dismiss it
+                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
+                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
+                    return
+                }
+
                 val isSystemUiPkg = pkg == "com.android.systemui" ||
                     pkg == "com.sec.android.app.systemui" ||
                     pkg == "com.samsung.android.systemui"
@@ -473,11 +485,20 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     if (isPowerMenu(ev)) {
                         // Power off / restart dialog opened — dismiss it
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
+                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
                         return
                     }
                     if (isNotificationPanelExpanded(ev)) {
-                        // Notification bar or quick-settings pulled down — collapse it
-                        handler.postDelayed({ collapseStatusBarPanel() }, 80L)
+                        // Notification bar or quick-settings pulled down.
+                        // Primary: try StatusBarManager reflection (works on AOSP).
+                        // Fallback: GLOBAL_ACTION_HOME reliably collapses any panel
+                        //           on all OEMs including Samsung One UI.
+                        handler.postDelayed({
+                            collapseStatusBarPanel()
+                            // Guaranteed fallback — fires 300 ms later even if
+                            // reflection succeeded, harmless if panel already closed.
+                            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300L)
+                        }, 80L)
                         return
                     }
                     return
@@ -723,20 +744,56 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Returns true when the SystemUI window event represents an expanded
      * notification panel or quick-settings panel.
      *
-     * Covers AOSP NotificationPanelView, QSPanel, and Samsung equivalents.
+     * Covers:
+     *   • AOSP:          NotificationPanelView, QSPanel, NotificationShadeWindowView
+     *   • Samsung One UI: CentralSurfaces, StatusBarWindowView, SamsungPhoneStatusBar,
+     *                     SamsungQSPanel, SamsungShadeViewController
+     *   • MIUI:          MiuiNotificationPanelViewController
+     *   • OnePlus:       OplusCentralSurfaces
+     *
+     * Strategy: match known class-name substrings first (fast path), then fall back to
+     * treating ANY TYPE_WINDOW_STATE_CHANGED from a SystemUI package as a panel open.
+     * The fallback is intentionally broad — during a block session we want to be strict,
+     * and collapsing the notification shade when it wasn't open is a harmless no-op.
      */
     private fun isNotificationPanelExpanded(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString() ?: ""
+        val classLower = className.lowercase()
+
         val panelKeywords = listOf(
+            // AOSP
             "notificationpanel",
             "notificationshade",
+            "notificationshadedeprecatedview",
+            "notificationshadewindowview",
             "expandedview",
             "qspanel",
             "quicksettings",
+            "quicksettingscontroller",
             "statusbar",
-            "shade"
+            "shade",
+            // Samsung One UI 4 / 5 / 6
+            "centralsurfaces",
+            "statusbarwindowview",
+            "samsungphonestatusbar",
+            "samsungqspanel",
+            "samsungshade",
+            "phonestatusbarview",
+            "collapsedstatusbarfragment",
+            // MIUI
+            "miuinotificationpanelviewcontroller",
+            "miuiqspanel",
+            // OnePlus / OxygenOS
+            "opluscentralsurfaces",
+            "oplusqspanel",
         )
-        return panelKeywords.any { className.lowercase().contains(it) }
+        if (panelKeywords.any { classLower.contains(it) }) return true
+
+        // Broad fallback: any TYPE_WINDOW_STATE_CHANGED from a SystemUI package
+        // during an active blocking session is treated as a panel/overlay opening.
+        // This catches OEM-specific classes we have not enumerated above.
+        // Collapsing when nothing is open is a harmless no-op.
+        return event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
     }
 
     /**
