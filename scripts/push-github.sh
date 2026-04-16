@@ -11,7 +11,7 @@ git add -A
 if git diff --cached --quiet; then
   echo "[push] Nothing to commit."
 else
-  git commit -m "fix: reliable splash screen dismiss + useCallback import"
+  git commit -m "docs: add Android Studio build guide (ANDROID_STUDIO_BUILD.md)"
 fi
 
 git fetch focusflow main 2>&1 || true
