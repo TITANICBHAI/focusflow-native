@@ -14,6 +14,27 @@ type Entry = {
 
 const CHANGELOG: Entry[] = [
   {
+    version: 'c1.0.4',
+    date: 'April 2026',
+    sections: [
+      {
+        heading: 'Alarm Safety',
+        icon: 'alarm-outline',
+        items: [
+          'Native Samsung, Android, and Google clock/alarm apps are now never blocked',
+          'SystemUI is no longer dismissed by broad package-level fallback, preventing focus protection from interrupting phone alarms while the screen is off',
+        ],
+      },
+      {
+        heading: 'System Screen Matching',
+        icon: 'shield-checkmark-outline',
+        items: [
+          'Notification shade, quick settings, power menu, and Samsung Emergency mode are now detected by accessibility class/text matching only',
+        ],
+      },
+    ],
+  },
+  {
     version: 'c1.0.3',
     date: 'April 2026',
     sections: [

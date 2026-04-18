@@ -416,7 +416,7 @@ export default function SettingsScreen() {
         </Section>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: theme.muted }]}>FocusFlow c1.0.3</Text>
+          <Text style={[styles.footerText, { color: theme.muted }]}>FocusFlow c1.0.4</Text>
           <Text style={[styles.footerText, { color: theme.muted }]}>All data stored locally on device</Text>
         </View>
       </ScrollView>

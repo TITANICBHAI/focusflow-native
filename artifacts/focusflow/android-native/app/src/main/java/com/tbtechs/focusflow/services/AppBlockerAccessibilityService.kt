@@ -106,7 +106,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         val ALWAYS_ALLOWED: Set<String> = setOf(
             // Core Android OS
             "android",
-            // System UI (status bar, nav bar, quick settings)
             "com.android.systemui",
             "com.sec.android.app.systemui",
             "com.samsung.android.systemui",
@@ -200,6 +199,10 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.gurukripa.publicapp",
             "xyz.penpencil.physicswala",
             "digital.allen.study",
+            "com.sec.android.app.clockpackage",
+            "com.samsung.android.clockpackage",
+            "com.android.deskclock",
+            "com.google.android.deskclock",
         )
 
         val ALWAYS_BLOCKED: Set<String> = emptySet()
@@ -476,23 +479,8 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             }
 
             if ((focusActive || saActive) && systemGuardEnabled) {
-                // ── System UI: block notification panel + power menu ──────────
-                // When SystemUI packages fire a window event during a blocking
-                // session, check if it is the notification panel/quick-settings
-                // or the power-off dialog (GlobalActions).  Both are collapsed /
-                // dismissed immediately so the user cannot bypass the session.
-                //
-                // Samsung-specific: the power menu on One UI fires from the
-                // separate package com.samsung.android.app.powerkey rather than
-                // from SystemUI, so we must catch it independently.
                 val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
-                if (isSamsungPowerKey) {
-                    // Long-press side button opened Samsung power menu — dismiss it.
-                    // Three-layer approach for maximum OEM coverage:
-                    //   1. ACTION_CLOSE_SYSTEM_DIALOGS broadcast — works on Android ≤ 11,
-                    //      silently ignored / no-op on Android 12+ (system restriction).
-                    //   2. GLOBAL_ACTION_BACK — closes the dialog on all API levels.
-                    //   3. GLOBAL_ACTION_HOME — guaranteed return to home on all OEMs.
+                if (isSamsungPowerKey && isPowerMenu(ev)) {
                     closeSystemDialogsBroadcast()
                     handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
                     handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
@@ -504,18 +492,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     pkg == "com.samsung.android.systemui"
                 if (isSystemUiPkg) {
                     if (isPowerMenu(ev)) {
-                        // Power off / restart dialog opened — dismiss it.
-                        // Same three-layer approach as Samsung power key above.
                         closeSystemDialogsBroadcast()
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
                         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
                         return
                     }
                     if (isNotificationPanelExpanded(ev)) {
-                        // Notification bar or quick-settings pulled down.
-                        // Layer 1: ACTION_CLOSE_SYSTEM_DIALOGS (Android ≤ 11 only).
-                        // Layer 2: StatusBarManager reflection (AOSP; silently fails elsewhere).
-                        // Layer 3: GLOBAL_ACTION_HOME — guaranteed on all OEMs.
                         closeSystemDialogsBroadcast()
                         handler.postDelayed({
                             collapseStatusBarPanel()
@@ -763,23 +745,20 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         )
         if (powerKeywords.any { classLower.contains(it) }) return true
 
-        // Text-based fallback — some OEMs render the power dialog as a plain
-        // android.app.Dialog with no distinctive class name.
-        // Require only ONE matching keyword (previously 2 — too strict; some OEMs
-        // show "Power off" + "Emergency call" which only matched "power off").
-        val textLower = buildString {
-            event.text.forEach { append(it); append(' ') }
-            event.contentDescription?.let { append(it) }
-        }.lowercase()
+        val textLower = getEventAndNodeText(event, maxDepth = 5).lowercase()
         val powerTextKeywords = listOf(
             "power off",
             "power down",
             "restart",
             "reboot",
             "emergency mode",
-            "emergency call",    // added — shown instead of "emergency mode" on many OEMs
+            "emergency mode saves battery power",
+            "providing only essential apps",
+            "turning off mobile data when the screen is off",
+            "emergency call",
             "safe mode",
             "shut down",
+            "side key settings",
         )
         return powerTextKeywords.any { it in textLower }
     }
@@ -788,17 +767,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Returns true when the SystemUI window event represents an expanded
      * notification panel or quick-settings panel.
      *
-     * Covers:
-     *   • AOSP:          NotificationPanelView, QSPanel, NotificationShadeWindowView
-     *   • Samsung One UI: CentralSurfaces, StatusBarWindowView, SamsungPhoneStatusBar,
-     *                     SamsungQSPanel, SamsungShadeViewController
-     *   • MIUI:          MiuiNotificationPanelViewController
-     *   • OnePlus:       OplusCentralSurfaces
-     *
-     * Strategy: match known class-name substrings first (fast path), then fall back to
-     * treating ANY TYPE_WINDOW_STATE_CHANGED from a SystemUI package as a panel open.
-     * The fallback is intentionally broad — during a block session we want to be strict,
-     * and collapsing the notification shade when it wasn't open is a harmless no-op.
+     * Covers notification shade / quick settings only. This intentionally has no
+     * package-level fallback because alarms and other full-screen OS surfaces may
+     * also arrive from SystemUI while the screen is off.
      */
     private fun isNotificationPanelExpanded(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString() ?: ""
@@ -814,30 +785,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "qspanel",
             "quicksettings",
             "quicksettingscontroller",
-            "statusbar",
-            "shade",
             // Samsung One UI 4 / 5 / 6
-            "centralsurfaces",
-            "statusbarwindowview",
-            "samsungphonestatusbar",
             "samsungqspanel",
             "samsungshade",
-            "phonestatusbarview",
-            "collapsedstatusbarfragment",
             // MIUI
             "miuinotificationpanelviewcontroller",
             "miuiqspanel",
             // OnePlus / OxygenOS
-            "opluscentralsurfaces",
             "oplusqspanel",
         )
         if (panelKeywords.any { classLower.contains(it) }) return true
 
-        // Broad fallback: any TYPE_WINDOW_STATE_CHANGED from a SystemUI package
-        // during an active blocking session is treated as a panel/overlay opening.
-        // This catches OEM-specific classes we have not enumerated above.
-        // Collapsing when nothing is open is a harmless no-op.
-        return event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val visibleText = getEventAndNodeText(event).lowercase()
+        val panelTextGroups = listOf(
+            listOf("quick settings"),
+            listOf("quick panel"),
+            listOf("notification settings"),
+            listOf("clear all", "notification"),
+            listOf("silent notifications"),
+            listOf("media output", "device control"),
+            listOf("brightness", "wi-fi", "bluetooth"),
+        )
+        return panelTextGroups.any { group -> group.all { it in visibleText } }
     }
 
     /**
@@ -2143,6 +2112,20 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     // ─── Node text collectors ─────────────────────────────────────────────────
+
+    private fun getEventAndNodeText(event: AccessibilityEvent, maxDepth: Int = 4): String {
+        return buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.contentDescription?.let { append(it); append(' ') }
+            event.source?.let { root ->
+                try {
+                    append(collectNodeTextShallow(root, maxDepth))
+                } finally {
+                    root.recycle()
+                }
+            }
+        }
+    }
 
     private fun collectNodeText(root: AccessibilityNodeInfo): String {
         return buildString {
