@@ -5,6 +5,9 @@
 - FocusFlow Commercial Ad: video artifact in `artifacts/focusflow-ad`, preview path `/focusflow-ad/`.
 - Canvas mockup sandbox in `artifacts/mockup-sandbox`.
 
+## Artifacts
+- NodeSpy: pure Kotlin/Jetpack Compose Android accessibility inspector in `artifacts/nodespy/`. No Expo/JS. Uses AccessibilityService to capture live node trees (class, text, bounds, flags) from any foreground app. Visual canvas tab for tap-to-select nodes, Tree tab for checkbox selection, exports NodeSpyCaptureV1 JSON (with normalized bounds) for future FocusFlow integration. Build workflow: `.github/workflows/build-nodespy.yml`.
+
 ## Recent Changes
 - FocusFlow security hardening pass: added PackageInstallReceiver (auto-blocks newly installed apps mid-session + AversiveActionsManager vibration deterrent), SessionPinModule (SHA-256 PIN gates on stopService / stopNetworkBlock / setFocusActive(false)), FLAG_SECURE on BlockOverlayActivity (prevents screenshot / recents thumbnail), TRUSTED_FOCUSFLOW_CLASSES allowlist (closes self-package loophole where FocusFlow's own activity could close the overlay), isRecentsScreen() detection (sends HOME when Android overview appears during a session), clock-tamper defense in BootReceiver (dual primary+secondary validity check using task_duration_ms + task_last_written_ms), IME detection in InstalledAppsModule (isIme field on each app), and postHomeScreenReminder() in AccessibilityService (high-priority peek notification shown after overlay dismiss). All native-module TypeScript wrappers updated with PIN-aware signatures; new SessionPinModule.ts and NetworkBlockModule.ts wrappers created.
 - FocusFlow c1.0.4 narrows SystemUI protection to accessibility class/text matching only, adds native clock/alarm packages to the never-blocked list, removes the broad SystemUI window-event fallback that could interrupt Samsung alarms while the screen is off, and separates blocked keyword enforcement from the System Protection toggle.

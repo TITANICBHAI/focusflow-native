@@ -1,0 +1,5 @@
+-keep class com.tbtechs.nodespy.data.** { *; }
+-keep class com.tbtechs.nodespy.export.** { *; }
+-keep class com.tbtechs.nodespy.service.** { *; }
+-keepattributes *Annotation*
+-dontwarn kotlinx.**
