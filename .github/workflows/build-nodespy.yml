@@ -1,8 +1,8 @@
 name: Build NodeSpy APK
 
 # Pure Kotlin/Jetpack Compose Android app — no Expo, no JS, no pnpm needed.
-# Builds a debug APK (no keystore required) and a release APK signed with
-# the same FocusFlow keystore secrets so you only need one set of secrets.
+# Always produces a debug APK. Also produces a signed release APK when the
+# RELEASE_KEYSTORE_BASE64 secret is set (reuse the same FocusFlow keystore).
 #
 # ── Optional secrets for signed release build ─────────────────────────────────
 #   RELEASE_KEYSTORE_BASE64   base64-encoded .jks keystore file
@@ -13,6 +13,9 @@ name: Build NodeSpy APK
 
 on:
   workflow_dispatch:
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
 
 jobs:
   build:
@@ -45,8 +48,6 @@ jobs:
 
       - name: Build debug APK
         working-directory: artifacts/nodespy
-        env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
         run: |
           gradle assembleDebug --no-daemon --stacktrace
           echo "── Debug APK output ──"
@@ -59,24 +60,38 @@ jobs:
           path: artifacts/nodespy/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
+      - name: Check keystore secret
+        id: keystore-check
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+
       - name: Build release APK (signed)
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: steps.keystore-check.outputs.available == 'true'
         working-directory: artifacts/nodespy
         env:
-          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+          echo "$KEYSTORE_B64" | base64 --decode > release.keystore
           gradle assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
-            -Pandroid.injected.signing.store.password="${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.RELEASE_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
+            -Pandroid.injected.signing.store.password="$STORE_PASS" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASS"
           rm -f release.keystore
           echo "── Release APK output ──"
           find app/build/outputs/apk/release/ -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload release APK
-        if: ${{ secrets.RELEASE_KEYSTORE_BASE64 != '' }}
+        if: steps.keystore-check.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: nodespy-release-${{ github.run_number }}
