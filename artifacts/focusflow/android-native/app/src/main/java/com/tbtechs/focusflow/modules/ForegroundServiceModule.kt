@@ -86,10 +86,29 @@ class ForegroundServiceModule(private val reactContext: ReactApplicationContext)
     /**
      * Switches the service to idle mode (persistent notification stays, countdown stops).
      * The service is NOT stopped — it stays alive to keep the process running.
-     * This preserves the always-on notification and prevents Android from killing the service.
+     *
+     * When a session PIN is configured, [pinHash] must be the correct SHA-256 hex
+     * digest of the PIN before this method will execute. This prevents a raw JS bridge
+     * call or debugger injection from trivially ending the session.
+     *
+     * @param pinHash SHA-256 hex of the PIN, or null/empty if no PIN is configured
      */
     @ReactMethod
-    fun stopService(promise: Promise) {
+    fun stopService(pinHash: String?, promise: Promise) {
+        val prefs = reactContext.getSharedPreferences(
+            com.tbtechs.focusflow.services.AppBlockerAccessibilityService.PREFS_NAME,
+            android.content.Context.MODE_PRIVATE
+        )
+        val storedHash = prefs.getString(
+            com.tbtechs.focusflow.modules.SessionPinModule.PREF_PIN_HASH, null
+        )
+        if (!storedHash.isNullOrBlank()) {
+            if (pinHash.isNullOrBlank() ||
+                !storedHash.equals(pinHash.lowercase(), ignoreCase = true)) {
+                promise.reject("PIN_REQUIRED", "A session PIN is set — supply the correct PIN hash to stop the service")
+                return
+            }
+        }
         try {
             val intent = Intent(reactContext, ForegroundTaskService::class.java).apply {
                 action = ForegroundTaskService.ACTION_SET_IDLE

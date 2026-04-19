@@ -225,17 +225,31 @@ class NetworkBlockModule(private val reactContext: ReactApplicationContext) :
     /**
      * Deactivates all network-blocking mechanisms and restores connectivity
      * if the net_block_restore setting is true.
+     *
+     * When a session PIN is configured, [pinHash] must be the correct SHA-256 hex
+     * digest of the PIN. A bare JS bridge call without the correct PIN will be
+     * rejected regardless of focus state.
+     *
+     * @param pinHash SHA-256 hex of the PIN, or null/empty if no PIN is configured
      */
     @ReactMethod
-    fun stopNetworkBlock(promise: Promise) {
+    fun stopNetworkBlock(pinHash: String?, promise: Promise) {
+        val storedHash = prefs.getString(
+            com.tbtechs.focusflow.modules.SessionPinModule.PREF_PIN_HASH, null
+        )
+        if (!storedHash.isNullOrBlank()) {
+            if (pinHash.isNullOrBlank() ||
+                !storedHash.equals(pinHash.lowercase(), ignoreCase = true)) {
+                promise.reject("PIN_REQUIRED", "A session PIN is set — supply the correct PIN hash to stop network block")
+                return
+            }
+        }
         try {
-            // Stop VPN service
             val intent = Intent(reactContext, NetworkBlockerVpnService::class.java).apply {
                 action = NetworkBlockerVpnService.ACTION_STOP
             }
             try { reactContext.startService(intent) } catch (_: Exception) {}
 
-            // Restore connectivity if the restore flag is set
             val restore = prefs.getBoolean("net_block_restore", true)
             if (restore) {
                 if (prefs.getBoolean("net_block_wifi", true)) {

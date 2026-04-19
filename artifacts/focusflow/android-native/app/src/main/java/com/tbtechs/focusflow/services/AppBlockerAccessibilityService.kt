@@ -378,14 +378,32 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
 
         val pkg = ev.packageName?.toString() ?: return
+        val cls = ev.className?.toString() ?: ""
 
         // Update foreground package tracker so retries can guard against
         // pressing Home when the user has already switched to an allowed app.
         lastSeenPkg = pkg
 
-        // Persist current foreground package so BlockOverlayActivity can check
-        // whether the user navigated to our own app (settings) and skip re-raise.
-        prefs.edit().putString("current_foreground_pkg", pkg).apply()
+        // Persist current foreground package AND class name.
+        // BlockOverlayActivity uses the class name to distinguish trusted FocusFlow
+        // screens (MainActivity, SettingsActivity) from any deeplink/custom-tab
+        // activity in the same package — which is the self-package loophole.
+        prefs.edit()
+            .putString("current_foreground_pkg", pkg)
+            .putString("current_foreground_cls", cls)
+            .apply()
+
+        // ── Recents screen block ─────────────────────────────────────────────
+        // The Android overview/recents screen shows thumbnail previews of all
+        // recent tasks — the user can read blocked-app content from these cards
+        // without ever "opening" the app.  We detect the recents interface and
+        // press HOME immediately to prevent this.
+        if (focusActive || saActive) {
+            if (isRecentsScreen(pkg, cls, ev)) {
+                handler.post { performGlobalAction(GLOBAL_ACTION_HOME) }
+                return
+            }
+        }
 
         // ── Timed allowance: accumulate usage when user switches away ─────────
         // If the user was in a time-limited allowed app and just switched to a
@@ -427,6 +445,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 .apply()
             // Also reveal directly on the WindowManager overlay (no polling needed)
             revealWindowXButton()
+            // Post a brief "session active" reminder on the home screen so the
+            // user is not silently returned to a blank launcher with no context.
+            postHomeScreenReminder()
         }
 
         // ── NEVER_BLOCK packages ──────────────────────────────────────────────
@@ -1234,6 +1255,54 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Uses two distinctive items that always appear on the page together to avoid
      * false positives — "special access" alone is too generic.
      */
+
+    /**
+     * Returns true if [event] represents the Android recents / overview screen.
+     *
+     * The recents screen shows task thumbnails — the user can read blocked-app
+     * content (web pages, messages, etc.) without launching the app. We detect
+     * it by a combination of:
+     *   • Package name matching SystemUI variants across OEMs
+     *   • Class name containing "recents", "overview", or "launcher3.recents"
+     *   • Event text containing "recent apps" or "overview" titles
+     *
+     * When detected during an active session, the caller sends GLOBAL_ACTION_HOME
+     * to close the recents drawer immediately.
+     */
+    private fun isRecentsScreen(pkg: String, cls: String, event: AccessibilityEvent): Boolean {
+        val clsLower = cls.lowercase()
+
+        val isSystemUiPkg = pkg == "com.android.systemui" ||
+            pkg == "com.sec.android.app.systemui" ||
+            pkg == "com.samsung.android.systemui"
+
+        val isLauncherPkg = pkg == "com.android.launcher3" ||
+            pkg == "com.google.android.apps.nexuslauncher" ||
+            pkg == "com.miui.home" ||
+            pkg == "com.sec.android.app.launcher" ||
+            pkg == "com.samsung.android.app.launcher" ||
+            pkg == "com.oneplus.launcher" ||
+            pkg == "com.huawei.android.launcher" ||
+            pkg == "com.oppo.launcher" ||
+            pkg == "com.bbk.launcher2"
+
+        val classIndicatesRecents = clsLower.contains("recents") ||
+            clsLower.contains("overview") ||
+            clsLower.contains("recentstaskview") ||
+            clsLower.contains("fallbackrecentsactivity") ||
+            clsLower.contains("quickstepfallback")
+
+        if ((isSystemUiPkg || isLauncherPkg) && classIndicatesRecents) return true
+
+        val eventText = buildString {
+            event.text?.forEach { append(it); append(' ') }
+        }.lowercase()
+        if ((isSystemUiPkg || isLauncherPkg) &&
+            ("recent apps" in eventText || "overview" in eventText)) return true
+
+        return false
+    }
+
     private fun isSpecialAccessPage(event: AccessibilityEvent): Boolean {
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
@@ -1909,6 +1978,78 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
             handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 150L)
             handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 160L)
+        }
+    }
+
+    /**
+     * Posts a brief heads-up ("peek") notification when the user returns to the home
+     * screen after being kicked from a blocked app.
+     *
+     * Without this, the home screen is silent — the user has no reminder that a
+     * session is still running and the block is still enforced. This notification:
+     *   • Has HIGH importance so it peeks from the top of the screen momentarily
+     *   • Auto-cancels after the user sees it (does not clutter the shade)
+     *   • Taps into FocusFlow (MainActivity) so the user can check their task
+     *   • Only fires when at least one blocking mode is still active
+     *
+     * Uses the existing BLOCK_ALERT_CHANNEL (HIGH importance) to avoid creating
+     * a new channel that the user would need to configure.
+     */
+    private fun postHomeScreenReminder() {
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        if (!focusActive && !saActive) return
+
+        val taskName = prefs.getString("task_name", null)
+        val title    = "Session still active"
+        val text     = if (!taskName.isNullOrBlank()) "Working on: $taskName" else "Focus session is running"
+
+        try {
+            val nm = getSystemService(android.app.NotificationManager::class.java) ?: return
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val existing = nm.getNotificationChannel(BLOCK_ALERT_CHANNEL)
+                if (existing == null) {
+                    val ch = android.app.NotificationChannel(
+                        BLOCK_ALERT_CHANNEL, "Block Alert",
+                        android.app.NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        setBypassDnd(true)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                    nm.createNotificationChannel(ch)
+                }
+            }
+
+            val tapIntent = android.content.Intent(
+                this,
+                Class.forName("${packageName}.MainActivity")
+            ).apply { flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP }
+
+            val tapPending = android.app.PendingIntent.getActivity(
+                this, 8800, tapIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notif = androidx.core.app.NotificationCompat.Builder(this,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) BLOCK_ALERT_CHANNEL else "default"
+            )
+                .setSmallIcon(com.tbtechs.focusflow.R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(tapPending)
+                .build()
+
+            nm.notify(8800, notif)
+
+            // Auto-cancel after 4 s — enough time for the user to notice,
+            // short enough that it doesn't clutter the notification shade.
+            handler.postDelayed({ nm.cancel(8800) }, 4_000L)
+
+        } catch (_: Exception) {
+            // Best-effort — never crash the accessibility service
         }
     }
 

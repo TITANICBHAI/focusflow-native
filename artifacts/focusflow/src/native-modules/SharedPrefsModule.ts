@@ -25,9 +25,14 @@ function hasSharedPrefsMethod(name: string): boolean {
 }
 
 export const SharedPrefsModule = {
-  async setFocusActive(active: boolean): Promise<void> {
+  /**
+   * Tells native whether task focus is active.
+   * When deactivating (active=false) and a session PIN is configured, pinHash
+   * must be the SHA-256 hex digest of the PIN — otherwise the call is rejected.
+   */
+  async setFocusActive(active: boolean, pinHash: string | null = null): Promise<void> {
     if (!hasSharedPrefsMethod('setFocusActive')) return;
-    return SharedPrefs.setFocusActive(active);
+    return SharedPrefs.setFocusActive(active, pinHash);
   },
 
   async setAllowedPackages(packages: string[]): Promise<void> {

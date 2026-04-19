@@ -2,6 +2,7 @@ package com.tbtechs.focusflow.modules
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.view.inputmethod.InputMethodManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
@@ -56,6 +57,17 @@ class InstalledAppsModule(private val reactContext: ReactApplicationContext) :
         try {
             val pm = reactContext.packageManager
 
+            // Build the set of IME (keyboard) package names so we can flag them.
+            // Custom keyboards often have browser-like GIF search and web content built in,
+            // making them a potential bypass vector that the general app list doesn't expose.
+            val imePackages: Set<String> = try {
+                val imm = reactContext.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                        as? InputMethodManager
+                imm?.inputMethodList?.mapTo(mutableSetOf()) { it.packageName } ?: emptySet()
+            } catch (_: Exception) {
+                emptySet()
+            }
+
             // Query all installed packages — returns the full list.
             // On Android 11+ (API 30+) this is limited by package visibility unless
             // QUERY_ALL_PACKAGES is granted or a matching <queries> block exists in the manifest.
@@ -68,14 +80,18 @@ class InstalledAppsModule(private val reactContext: ReactApplicationContext) :
                 // Skip our own package
                 if (app.packageName == reactContext.packageName) continue
 
-                // Only include apps that appear in the app drawer.
-                // This naturally includes user-installed apps and pre-installed apps
-                // with a launcher icon (Chrome, YouTube, Gmail, Samsung Apps, etc.)
-                // while excluding background services, frameworks, and core OS packages.
-                val launchIntent = pm.getLaunchIntentForPackage(app.packageName) ?: continue
+                // Determine whether this is a keyboard/IME app even if it has no
+                // launcher icon — IME apps are relevant for blocking but may not
+                // appear in the app drawer under getLaunchIntentForPackage.
+                val isIme = imePackages.contains(app.packageName)
+
+                // Only include apps that appear in the app drawer OR are IMEs.
+                val launchIntent = pm.getLaunchIntentForPackage(app.packageName)
+                if (launchIntent == null && !isIme) continue
 
                 val map: WritableMap = Arguments.createMap()
                 map.putString("packageName", app.packageName)
+                map.putBoolean("isIme", isIme)
 
                 val label = try {
                     pm.getApplicationLabel(app).toString()

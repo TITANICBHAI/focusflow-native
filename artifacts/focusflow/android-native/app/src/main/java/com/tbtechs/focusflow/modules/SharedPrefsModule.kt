@@ -35,9 +35,30 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
         AppBlockerAccessibilityService.PREFS_NAME, android.content.Context.MODE_PRIVATE
     )
 
-    /** Tells the AccessibilityService and BootReceiver whether task focus mode is active. */
+    /**
+     * Tells the AccessibilityService and BootReceiver whether task focus mode is active.
+     *
+     * When deactivating (active = false) and a session PIN is set, [pinHash] must be
+     * the correct SHA-256 hex digest of the PIN.  Activation (active = true) never
+     * requires a PIN — only ending a session is gated.
+     *
+     * @param active  true = start tracking focus; false = clear focus
+     * @param pinHash SHA-256 hex of the PIN, or null/empty if no PIN is configured
+     */
     @ReactMethod
-    fun setFocusActive(active: Boolean, promise: Promise) {
+    fun setFocusActive(active: Boolean, pinHash: String?, promise: Promise) {
+        if (!active) {
+            val storedHash = prefs().getString(
+                com.tbtechs.focusflow.modules.SessionPinModule.PREF_PIN_HASH, null
+            )
+            if (!storedHash.isNullOrBlank()) {
+                if (pinHash.isNullOrBlank() ||
+                    !storedHash.equals(pinHash.lowercase(), ignoreCase = true)) {
+                    promise.reject("PIN_REQUIRED", "A session PIN is set — supply the correct PIN hash to end the session")
+                    return
+                }
+            }
+        }
         prefs().edit().putBoolean("focus_active", active).apply()
         promise.resolve(null)
     }
@@ -66,11 +87,20 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun setActiveTask(taskId: String, name: String, endMs: Double, nextName: String?, promise: Promise) {
+        val endEpoch   = endMs.toLong()
+        val now        = System.currentTimeMillis()
+        val durationMs = (endEpoch - now).coerceAtLeast(0L)
         prefs().edit()
             .putString("task_id", taskId)
             .putString("task_name", name)
-            .putLong("task_end_ms", endMs.toLong())
+            .putLong("task_end_ms", endEpoch)
             .putString("next_task_name", nextName?.takeIf { it.isNotBlank() })
+            // Extra fields used by BootReceiver for clock-tamper detection:
+            // task_duration_ms: total session length from now
+            // task_last_written_ms: wall clock at write time — lets BootReceiver
+            //   check whether "elapsed since write" is credible vs claimed end time.
+            .putLong("task_duration_ms", durationMs)
+            .putLong("task_last_written_ms", now)
             .apply()
         promise.resolve(null)
     }

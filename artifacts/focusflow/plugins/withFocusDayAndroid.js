@@ -315,6 +315,34 @@ function withFocusDayManifest(config) {
       });
     }
 
+    // ── PackageInstallReceiver ────────────────────────────────────────────────
+    // Listens for ACTION_PACKAGE_ADDED so newly installed apps during a focus
+    // session are immediately flagged and — when standalone block is active —
+    // automatically added to the blocked list.
+    // android:exported="true" is required for system-broadcast receivers;
+    // data scheme="package" restricts the receiver to package events only.
+    const pkgInstallExists = (app.receiver || []).some(
+      (r) => r.$['android:name'] === 'com.tbtechs.focusflow.services.PackageInstallReceiver'
+    );
+    if (!pkgInstallExists) {
+      if (!app.receiver) app.receiver = [];
+      app.receiver.push({
+        $: {
+          'android:name':     'com.tbtechs.focusflow.services.PackageInstallReceiver',
+          'android:enabled':  'true',
+          'android:exported': 'true',
+        },
+        'intent-filter': [{
+          action: [
+            { $: { 'android:name': 'android.intent.action.PACKAGE_ADDED' } },
+          ],
+          data: [
+            { $: { 'android:scheme': 'package' } },
+          ],
+        }],
+      });
+    }
+
     // ── <queries> block for Android 11+ package visibility ────────────────────
     // Without this, PackageManager.getInstalledPackages() returns an empty list
     // on API 30+ for user-installed apps (package visibility restrictions).

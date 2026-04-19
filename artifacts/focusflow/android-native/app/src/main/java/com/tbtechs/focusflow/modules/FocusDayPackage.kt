@@ -33,6 +33,7 @@ import com.facebook.react.uimanager.ViewManager
  *   Aversions         — screen dimmer / vibration / sound alert toggles
  *   Greyout           — time-window block schedule + temptation log access
  *   NativeImagePicker — system photo picker replacing expo-image-picker (zero deps)
+ *   SessionPin        — PIN-based protection for session-ending native methods
  */
 class FocusDayPackage : ReactPackage {
 
@@ -50,6 +51,7 @@ class FocusDayPackage : ReactPackage {
             AversionsModule(reactContext),
             GreyoutModule(reactContext),
             NativeImagePickerModule(reactContext),
+            SessionPinModule(reactContext),
         )
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =

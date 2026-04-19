@@ -59,6 +59,24 @@ class BlockOverlayActivity : Activity() {
         const val PREF_OVERLAY_X_READY = "overlay_x_ready"
         private const val X_POLL_INTERVAL_MS = 300L
 
+        /**
+         * Specific FocusFlow activity class name suffixes that are allowed to be in
+         * the foreground without triggering an overlay re-raise.
+         *
+         * Using the full package name as the only guard is a loophole: ANY activity
+         * inside com.tbtechs.focusflow (custom tabs, deeplinks, WebViews, etc.) would
+         * bypass the overlay. We only allow the real settings/main screen here.
+         *
+         * Add class name suffixes (not full names) so obfuscation-safe.
+         */
+        val TRUSTED_FOCUSFLOW_CLASSES: Set<String> = setOf(
+            "MainActivity",
+            "SettingsActivity",
+            "FocusActivity",
+            "ScheduleActivity",
+            "StatsActivity"
+        )
+
 
         private val DEFAULT_QUOTES = listOf(
             "The present moment is the only time over which we have dominion.",
@@ -190,17 +208,26 @@ class BlockOverlayActivity : Activity() {
         val saActive    = prefs.getBoolean(AppBlockerAccessibilityService.PREF_SA_ACTIVE, false)
         if (!focusActive && !saActive) return   // block session has ended — let it go
 
-        // Do NOT re-raise the overlay if the user navigated to our own app
-        // (e.g., to change settings). This lets them turn off features even while a
-        // block session is active, without the overlay fighting them.
+        // Do NOT re-raise the overlay if the user navigated to specific trusted
+        // FocusFlow screens (e.g., the main Settings activity).  Checking only
+        // packageName is too broad — any activity inside com.tbtechs.focusflow
+        // (including deeplinks or future custom tabs) would bypass the overlay.
+        // We instead check the specific class name of the current foreground window
+        // as written by AppBlockerAccessibilityService into "current_foreground_cls".
         val currentFg = prefs.getString("current_foreground_pkg", "") ?: ""
-        if (currentFg == packageName) return
+        val currentCls = prefs.getString("current_foreground_cls", "") ?: ""
+        val isTrustedFocusFlowScreen = currentFg == packageName &&
+            TRUSTED_FOCUSFLOW_CLASSES.any { trusted -> currentCls.endsWith(trusted, ignoreCase = true) }
+        if (isTrustedFocusFlowScreen) return
 
         handler.postDelayed({
             if (!isFinishing && !isDestroyed && !intentionalFinish) {
-                // Re-check: still don't re-raise if FocusFlow is in the foreground.
-                val fg = prefs.getString("current_foreground_pkg", "") ?: ""
-                if (fg == packageName) return@postDelayed
+                // Re-check: still don't re-raise if a trusted FocusFlow screen is foreground.
+                val fg  = prefs.getString("current_foreground_pkg", "") ?: ""
+                val cls = prefs.getString("current_foreground_cls", "") ?: ""
+                val trusted = fg == packageName &&
+                    TRUSTED_FOCUSFLOW_CLASSES.any { cls.endsWith(it, ignoreCase = true) }
+                if (trusted) return@postDelayed
                 try {
                     val reRaise = android.content.Intent(
                         applicationContext, BlockOverlayActivity::class.java
@@ -229,7 +256,8 @@ class BlockOverlayActivity : Activity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                 WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_SECURE
             )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
