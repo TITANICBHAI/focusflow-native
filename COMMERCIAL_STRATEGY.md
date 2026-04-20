@@ -16,19 +16,19 @@
 | Tier | Price | What's included |
 |---|---|---|
 | **Free** | $0 | 3 active tasks, 3 blocked apps, basic stats, 1 block preset |
-| **FocusFlow Pro** | $4.99 one-time | Unlimited tasks, unlimited blocked apps, all block modes, daily allowance, recurring schedules, all stats, aversion deterrents, all presets |
+| **FocusFlow** | free free one-time open source | Unlimited tasks, unlimited blocked apps, all block modes, daily allowance, recurring schedules, all stats, aversion deterrents, all presets |
 
 **Why one-time, not subscription:**
-1. This IS your biggest competitive advantage. Stay Focused's #1 complaint on Play Store (2026) is the revoked lifetime purchase. The moment you announce "one-time purchase, never revoked," you own the trust gap in the market.
-2. Subscription fatigue is at an all-time high. Users will choose a $4.99 one-time over a $2.99/month subscription even though one-time is cheaper for less than 2 months.
+1. This IS your biggest competitive advantage. Stay Focused's #1 complaint on Play Store (2026) is the revoked lifetime purchase. The moment you announce "free, open source, never revoked," you own the trust gap in the market.
+2. Subscription fatigue is at an all-time high. Users will choose a free free one-time open source over a $2.99/month subscription even though one-time is cheaper for less than 2 months.
 3. Freedom charges $8.99/month. AppBlock charges $3-5/month. Being the "buy once, keep forever" app is a category position no competitor currently holds.
 
-**Pricing rationale — why $4.99:**
+**Pricing rationale — why free:**
 - Lower than a single month of Freedom ($8.99) or AppBlock ($5/mo) — easy mental comparison
 - High enough to signal value (free-tier users perceive paid features as genuinely premium)
 - Sweet spot for impulse buy on mobile (under $5 psychological barrier)
 
-### Alternative: $2.99 launch price → $4.99 standard
+### Alternative: $2.99 launch price → free standard
 Run a "launch price" for the first 90 days. Creates urgency without a subscription.
 
 ---
@@ -56,7 +56,7 @@ The free tier must be genuinely useful so users build habits, then hit the wall 
 Display prominently in app, Play Store listing, and all marketing:
 
 > **"Bought once, yours forever."**
-> FocusFlow has no subscription and never will. Your one-time purchase gives you permanent access to every Pro feature — current and future. We've committed this in writing in our privacy policy. We will never revoke your access.
+> FocusFlow has no subscription and never will. Your free, open source gives you permanent access to every Pro feature — current and future. We've committed this in writing in our privacy policy. We will never revoke your access.
 
 This is your "moat in a sentence." Forest charges for coins. Freedom charges monthly. Stay Focused revoked lifetime licences. You own this positioning for as long as you keep the promise.
 
@@ -64,7 +64,7 @@ This is your "moat in a sentence." Forest charges for coins. Freedom charges mon
 
 ## 5. Revenue Projections (conservative)
 
-Assumptions: free-to-paid conversion rate 3% (industry avg for productivity apps), avg revenue per user $4.99.
+Assumptions: free-to-install conversion rate 3% (industry avg for productivity apps), avg revenue per user free.
 
 | Milestone | Downloads | Paid Users | Revenue |
 |---|---|---|---|

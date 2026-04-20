@@ -490,13 +490,34 @@ function SceneClosing() {
         FocusFlow
       </motion.h1>
       <motion.p 
-        className="text-3xl text-brand-300 font-medium tracking-wide uppercase"
+        className="text-3xl text-brand-400 font-medium tracking-wide uppercase"
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 1.1 }}
       >
-        Your discipline operating system
+        Block apps. On-device. No bypass.
       </motion.p>
+      <motion.div
+        className="flex gap-8 mt-10"
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 1.5 }}
+      >
+        <div className="text-center">
+          <div className="text-2xl font-bold text-brand-400">Free</div>
+          <div className="text-sm text-white/40 mt-1">Always. No cost.</div>
+        </div>
+        <div className="w-px bg-white/10" />
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">Open Source</div>
+          <div className="text-sm text-white/40 mt-1">github.com/TITANICBHAI/FocusFlow</div>
+        </div>
+        <div className="w-px bg-white/10" />
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">No bypass</div>
+          <div className="text-sm text-white/40 mt-1">Works offline too</div>
+        </div>
+      </motion.div>
     </motion.div>
   )
 }
