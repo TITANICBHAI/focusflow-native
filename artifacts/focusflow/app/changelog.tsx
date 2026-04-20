@@ -14,6 +14,44 @@ type Entry = {
 
 const CHANGELOG: Entry[] = [
   {
+    version: 'c1.0.6',
+    date: 'April 2026',
+    sections: [
+      {
+        heading: 'Focus Mode Toggle Fixed',
+        icon: 'shield-checkmark-outline',
+        items: [
+          'Auto-enable Focus Mode setting now correctly gates whether focus mode activates when a task starts — toggling it off prevents auto-start even if a task has focus mode enabled',
+        ],
+      },
+      {
+        heading: 'Standalone Block Modal',
+        icon: 'ban-outline',
+        items: [
+          'Time addition now adds to the existing end time instead of replacing it — tap +30m, +1h, +2h, or +4h while a block is locked to extend it',
+          'Recurring Block Schedules section removed for a cleaner interface',
+          'Block by Category section removed',
+          'Add by Package Name moved under an Advanced toggle — hidden by default',
+        ],
+      },
+      {
+        heading: 'Recents Screen Behaviour',
+        icon: 'apps-outline',
+        items: [
+          'The recents / recent-apps button is no longer blocked during standalone app blocks — it is only redirected during active task focus sessions',
+        ],
+      },
+      {
+        heading: 'Splash Screen',
+        icon: 'phone-portrait-outline',
+        items: [
+          'Native splash background changed to match the in-app purple splash — eliminates the black flash on cold start',
+          'In-app splash logo now starts at 30% opacity instead of fully invisible, making the entrance feel smoother',
+        ],
+      },
+    ],
+  },
+  {
     version: 'c1.0.5',
     date: 'April 2026',
     sections: [
