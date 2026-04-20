@@ -401,11 +401,13 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             .apply()
 
         // ── Recents screen block ─────────────────────────────────────────────
-        // The Android overview/recents screen shows thumbnail previews of all
-        // recent tasks — the user can read blocked-app content from these cards
-        // without ever "opening" the app.  We detect the recents interface and
-        // press HOME immediately to prevent this.
-        if (focusActive || saActive) {
+        // During task-based focus only: the overview screen shows thumbnails of
+        // recent tasks, so the user could read blocked-app content without opening
+        // it.  We press HOME to prevent this.
+        // During standalone block we leave recents alone — the user is not in a
+        // timed focus session and being kicked out of the task switcher feels
+        // unexpected.
+        if (focusActive) {
             if (isRecentsScreen(pkg, cls, ev)) {
                 handler.post { performGlobalAction(GLOBAL_ACTION_HOME) }
                 return

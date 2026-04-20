@@ -13,7 +13,6 @@ import {
   SafeAreaView,
   Platform,
   Alert,
-  Switch,
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -217,21 +216,7 @@ export function StandaloneBlockModal({
   const [manualPackages, setManualPackages] = useState<string[]>([]);
   const [showSavePreset, setShowSavePreset] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState('');
-  // Recurring block schedules state
-  const [localRecurringSchedules, setLocalRecurringSchedules] = useState<RecurringBlockSchedule[]>(recurringBlockSchedules);
-  const [showRecurringSection, setShowRecurringSection] = useState(false);
-  const [showAddRecurring, setShowAddRecurring] = useState(false);
-  const [recurringDraft, setRecurringDraft] = useState<RecurringBlockSchedule>({
-    id: '',
-    name: '',
-    packages: [],
-    days: [2, 3, 4, 5, 6], // Mon–Fri
-    startHour: 9,
-    startMin: 0,
-    endHour: 18,
-    endMin: 0,
-    enabled: true,
-  });
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const defaultUntil = blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate();
   const [untilDate, setUntilDate] = useState<Date>(defaultUntil);
@@ -245,10 +230,8 @@ export function StandaloneBlockModal({
     setOriginalDailyPkgs(new Set(dailyAllowanceEntries.map((e) => e.packageName)));
     setSearch('');
     setManualInput('');
+    setShowAdvanced(false);
     setUntilDate(blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate());
-    setLocalRecurringSchedules(recurringBlockSchedules);
-    setShowRecurringSection(false);
-    setShowAddRecurring(false);
 
     // Derive manual packages from existing blocked list before apps load
     const existingManual = blockedPackages.filter(
@@ -390,73 +373,6 @@ export function StandaloneBlockModal({
     return installed.every((pkg) => selected.has(pkg));
   }, [installedPkgSet, selected]);
 
-  // ── Recurring schedule helpers ────────────────────────────────────────────
-
-  const DAY_LABELS_RECURRING = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  const DAY_VALUES_RECURRING = [1, 2, 3, 4, 5, 6, 7];
-
-  const recurringDraftSelectedCount = useMemo(() => {
-    return recurringDraft.packages.filter((pkg) => installedPkgSet.has(pkg) || pkg.length > 0).length;
-  }, [recurringDraft.packages, installedPkgSet]);
-
-  const handleSaveRecurring = useCallback(async () => {
-    if (!recurringDraft.name.trim()) {
-      Alert.alert('Name Required', 'Give this recurring schedule a name.');
-      return;
-    }
-    if (recurringDraft.packages.length === 0) {
-      Alert.alert('No Apps', 'Add at least one app to this recurring schedule.');
-      return;
-    }
-    if (recurringDraft.days.length === 0) {
-      Alert.alert('No Days', 'Select at least one day.');
-      return;
-    }
-    const newSchedule: RecurringBlockSchedule = {
-      ...recurringDraft,
-      id: recurringDraft.id || Date.now().toString(),
-    };
-    const updated = recurringDraft.id
-      ? localRecurringSchedules.map((s) => s.id === recurringDraft.id ? newSchedule : s)
-      : [...localRecurringSchedules, newSchedule];
-    setLocalRecurringSchedules(updated);
-    setShowAddRecurring(false);
-    await onSaveRecurringSchedules?.(updated);
-  }, [recurringDraft, localRecurringSchedules, onSaveRecurringSchedules]);
-
-  const handleDeleteRecurring = useCallback((id: string) => {
-    Alert.alert('Delete Schedule', 'Remove this recurring block schedule?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          const updated = localRecurringSchedules.filter((s) => s.id !== id);
-          setLocalRecurringSchedules(updated);
-          await onSaveRecurringSchedules?.(updated);
-        },
-      },
-    ]);
-  }, [localRecurringSchedules, onSaveRecurringSchedules]);
-
-  const handleToggleRecurring = useCallback(async (id: string) => {
-    const updated = localRecurringSchedules.map((s) =>
-      s.id === id ? { ...s, enabled: !s.enabled } : s,
-    );
-    setLocalRecurringSchedules(updated);
-    await onSaveRecurringSchedules?.(updated);
-  }, [localRecurringSchedules, onSaveRecurringSchedules]);
-
-  const formatRecurringTime = (h: number, m: number) =>
-    dayjs().hour(h).minute(m).format('h:mm A');
-
-  const formatRecurringDays = (days: number[]) => {
-    if (days.length === 7) return 'Every day';
-    if (days.length === 5 && [2,3,4,5,6].every((d) => days.includes(d))) return 'Weekdays';
-    if (days.length === 2 && [1,7].every((d) => days.includes(d))) return 'Weekends';
-    const short = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-    return days.map((d) => short[d - 1]).join(', ');
-  };
 
   const handleSaveCurrentAsPreset = useCallback(async () => {
     const name = presetNameInput.trim();
@@ -762,7 +678,7 @@ export function StandaloneBlockModal({
         {/* Expiry date/time pickers */}
         <View style={[styles.expirySection, { backgroundColor: theme.card, borderColor: theme.border }, locked && styles.expirySectionLocked]}>
           <Text style={[styles.expirySectionLabel, { color: theme.textSecondary }]}>
-            Block until{locked ? ' (locked)' : ''}
+            {locked ? 'BLOCK UNTIL (LOCKED)' : 'BLOCK UNTIL'}
           </Text>
           <View style={styles.expiryRow}>
             <TouchableOpacity
@@ -786,6 +702,23 @@ export function StandaloneBlockModal({
               </Text>
             </TouchableOpacity>
           </View>
+          {locked && (
+            <View style={styles.addTimeRow}>
+              <Text style={[styles.addTimeLabel, { color: theme.textSecondary }]}>Add time:</Text>
+              {[30, 60, 120, 240].map((mins) => (
+                <TouchableOpacity
+                  key={mins}
+                  style={[styles.addTimeBtn, { borderColor: COLORS.primary + '55' }]}
+                  onPress={() => setUntilDate((prev) => dayjs(prev).add(mins, 'minute').toDate())}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.addTimeBtnText, { color: COLORS.primary }]}>
+                    +{mins >= 60 ? `${mins / 60}h` : `${mins}m`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {showDatePicker && (
@@ -881,268 +814,66 @@ export function StandaloneBlockModal({
                 </View>
               )}
 
-              {/* ── Categories section ── */}
-              <View style={[styles.categorySection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={[styles.presetSectionLabel, { color: theme.muted }]}>BLOCK BY CATEGORY</Text>
-                <Text style={[styles.categoryHint, { color: theme.textSecondary }]}>
-                  Tap a category to select all matching installed apps at once
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-                  {APP_CATEGORIES.map((cat) => {
-                    const fullySelected = isCategoryFullySelected(cat);
-                    const count = categoryInstalledCount(cat);
-                    return (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[
-                          styles.categoryChip,
-                          { borderColor: cat.color + '55', backgroundColor: fullySelected ? cat.color + '22' : theme.surface },
-                        ]}
-                        onPress={() => handleSelectCategory(cat)}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={cat.icon}
-                          size={16}
-                          color={fullySelected ? cat.color : COLORS.muted}
-                        />
-                        <Text style={[styles.categoryChipLabel, { color: fullySelected ? cat.color : theme.text }]}>
-                          {cat.label}
-                        </Text>
-                        {count > 0 && (
-                          <Text style={[styles.categoryChipCount, { color: fullySelected ? cat.color : COLORS.muted }]}>
-                            {count}
-                          </Text>
-                        )}
-                        {fullySelected && (
-                          <Ionicons name="checkmark-circle" size={13} color={cat.color} />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+              {/* ── (Categories and Recurring sections removed) ── */}
 
-              {/* ── Recurring Schedules section ── */}
+              {/* ── Advanced toggle (Add by Package Name) ── */}
               <TouchableOpacity
                 style={[styles.recurringToggleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-                onPress={() => setShowRecurringSection((v) => !v)}
+                onPress={() => setShowAdvanced((v) => !v)}
                 activeOpacity={0.8}
               >
-                <Ionicons name="repeat-outline" size={16} color={COLORS.primary} />
-                <Text style={[styles.recurringToggleLabel, { color: theme.text }]}>
-                  Recurring Block Schedules
-                </Text>
-                {localRecurringSchedules.length > 0 && (
-                  <View style={styles.recurringBadge}>
-                    <Text style={styles.recurringBadgeText}>{localRecurringSchedules.length}</Text>
-                  </View>
-                )}
+                <Ionicons name="settings-outline" size={16} color={COLORS.muted} />
+                <Text style={[styles.recurringToggleLabel, { color: theme.text }]}>Advanced</Text>
                 <Ionicons
-                  name={showRecurringSection ? 'chevron-up' : 'chevron-down'}
+                  name={showAdvanced ? 'chevron-up' : 'chevron-down'}
                   size={14}
                   color={COLORS.muted}
                 />
               </TouchableOpacity>
 
-              {showRecurringSection && (
-                <View style={[styles.recurringSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Text style={[styles.recurringSectionHint, { color: theme.textSecondary }]}>
-                    Set it once — automatically blocks these apps on the chosen days and times every week.
-                  </Text>
-
-                  {localRecurringSchedules.map((sched) => (
-                    <View key={sched.id} style={[styles.recurringItem, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                      <View style={styles.recurringItemTop}>
-                        <Switch
-                          value={sched.enabled}
-                          onValueChange={() => { void handleToggleRecurring(sched.id); }}
-                          trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-                          thumbColor={sched.enabled ? COLORS.primary : COLORS.muted}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.recurringItemName, { color: theme.text }]} numberOfLines={1}>
-                            {sched.name}
-                          </Text>
-                          <Text style={[styles.recurringItemMeta, { color: theme.muted }]}>
-                            {formatRecurringDays(sched.days)} · {formatRecurringTime(sched.startHour, sched.startMin)} – {formatRecurringTime(sched.endHour, sched.endMin)}
-                          </Text>
-                          <Text style={[styles.recurringItemMeta, { color: theme.muted }]}>
-                            {sched.packages.length} app{sched.packages.length !== 1 ? 's' : ''}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          onPress={() => handleDeleteRecurring(sched.id)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Ionicons name="trash-outline" size={18} color={COLORS.red} />
-                        </TouchableOpacity>
-                      </View>
+              {showAdvanced && (
+                <>
+                  <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>ADD BY PACKAGE NAME</Text>
+                    <Text style={[styles.manualHint, { color: theme.textSecondary }]}>
+                      Enter app package name, e.g. com.instagram.android
+                    </Text>
+                    <View style={[styles.installerTip, { backgroundColor: theme.surface }]}>
+                      <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
+                      <Text style={[styles.installerTipText, { color: theme.textSecondary }]}>
+                        To block the Android Package Installer / Uninstaller, add it manually:{' '}
+                        <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
+                      </Text>
                     </View>
-                  ))}
-
-                  {!showAddRecurring ? (
-                    <TouchableOpacity
-                      style={[styles.addRecurringBtn, { borderColor: COLORS.primary + '44' }]}
-                      onPress={() => {
-                        setRecurringDraft({
-                          id: '',
-                          name: '',
-                          packages: Array.from(selected),
-                          days: [2, 3, 4, 5, 6],
-                          startHour: 9, startMin: 0,
-                          endHour: 18, endMin: 0,
-                          enabled: true,
-                        });
-                        setShowAddRecurring(true);
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="add-circle-outline" size={16} color={COLORS.primary} />
-                      <Text style={[styles.addRecurringBtnText, { color: COLORS.primary }]}>
-                        Add Recurring Schedule{selected.size > 0 ? ` (${selected.size} app${selected.size !== 1 ? 's' : ''} pre-selected)` : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={[styles.recurringForm, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                      <Text style={[styles.recurringFormTitle, { color: theme.text }]}>New Recurring Schedule</Text>
-
+                    <View style={styles.manualInputRow}>
                       <TextInput
-                        style={[styles.recurringNameInput, { backgroundColor: theme.card, color: theme.text, borderColor: theme.border }]}
-                        placeholder="Schedule name (e.g. Work Hours)"
+                        style={[styles.manualInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+                        placeholder="com.example.app"
                         placeholderTextColor={COLORS.muted}
-                        value={recurringDraft.name}
-                        onChangeText={(name) => setRecurringDraft((d) => ({ ...d, name }))}
-                        autoFocus
+                        value={manualInput}
+                        onChangeText={setManualInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onSubmitEditing={handleAddManual}
+                        returnKeyType="done"
                       />
+                      <TouchableOpacity
+                        style={[styles.addBtn, !manualInput.trim().includes('.') && styles.addBtnDisabled]}
+                        onPress={handleAddManual}
+                        disabled={!manualInput.trim().includes('.')}
+                      >
+                        <Text style={styles.addBtnText}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-                      <Text style={[styles.recurringFormLabel, { color: theme.muted }]}>APPS TO BLOCK</Text>
-                      <Text style={[styles.recurringFormValue, { color: theme.text }]}>
-                        {recurringDraft.packages.length > 0
-                          ? `${recurringDraft.packages.length} app${recurringDraft.packages.length !== 1 ? 's' : ''} (using current selection)`
-                          : 'No apps selected — select apps below first'}
-                      </Text>
-                      {selected.size > 0 && recurringDraft.packages.length !== selected.size && (
-                        <TouchableOpacity onPress={() => setRecurringDraft((d) => ({ ...d, packages: Array.from(selected) }))}>
-                          <Text style={{ color: COLORS.primary, fontSize: FONT.xs, fontWeight: '600' }}>
-                            Use current selection ({selected.size} apps)
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-
-                      <Text style={[styles.recurringFormLabel, { color: theme.muted, marginTop: SPACING.sm }]}>REPEAT ON</Text>
-                      <View style={styles.recurringDayRow}>
-                        {DAY_VALUES_RECURRING.map((dayVal, idx) => {
-                          const active = recurringDraft.days.includes(dayVal);
-                          return (
-                            <TouchableOpacity
-                              key={dayVal}
-                              style={[styles.recurringDayBtn, active && styles.recurringDayBtnActive]}
-                              onPress={() => setRecurringDraft((d) => ({
-                                ...d,
-                                days: active ? d.days.filter((v) => v !== dayVal) : [...d.days, dayVal].sort(),
-                              }))}
-                            >
-                              <Text style={[styles.recurringDayLabel, active && styles.recurringDayLabelActive]}>
-                                {DAY_LABELS_RECURRING[idx]}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-
-                      <View style={styles.recurringTimeRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.recurringFormLabel, { color: theme.muted }]}>FROM</Text>
-                          <View style={styles.recurringTimeSteppers}>
-                            <TouchableOpacity onPress={() => setRecurringDraft((d) => ({ ...d, startHour: (d.startHour - 1 + 24) % 24 }))}>
-                              <Ionicons name="remove-circle-outline" size={20} color={COLORS.primary} />
-                            </TouchableOpacity>
-                            <Text style={[styles.recurringTimeValue, { color: theme.text }]}>
-                              {formatRecurringTime(recurringDraft.startHour, recurringDraft.startMin)}
-                            </Text>
-                            <TouchableOpacity onPress={() => setRecurringDraft((d) => ({ ...d, startHour: (d.startHour + 1) % 24 }))}>
-                              <Ionicons name="add-circle-outline" size={20} color={COLORS.primary} />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.recurringFormLabel, { color: theme.muted }]}>TO</Text>
-                          <View style={styles.recurringTimeSteppers}>
-                            <TouchableOpacity onPress={() => setRecurringDraft((d) => ({ ...d, endHour: (d.endHour - 1 + 24) % 24 }))}>
-                              <Ionicons name="remove-circle-outline" size={20} color={COLORS.primary} />
-                            </TouchableOpacity>
-                            <Text style={[styles.recurringTimeValue, { color: theme.text }]}>
-                              {formatRecurringTime(recurringDraft.endHour, recurringDraft.endMin)}
-                            </Text>
-                            <TouchableOpacity onPress={() => setRecurringDraft((d) => ({ ...d, endHour: (d.endHour + 1) % 24 }))}>
-                              <Ionicons name="add-circle-outline" size={20} color={COLORS.primary} />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
-
-                      <View style={styles.recurringFormActions}>
-                        <TouchableOpacity
-                          style={[styles.recurringCancelBtn, { borderColor: theme.border }]}
-                          onPress={() => setShowAddRecurring(false)}
-                        >
-                          <Text style={[styles.recurringCancelBtnText, { color: theme.muted }]}>Cancel</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.recurringSaveBtn, !recurringDraft.name.trim() && { opacity: 0.4 }]}
-                          onPress={() => { void handleSaveRecurring(); }}
-                          disabled={!recurringDraft.name.trim()}
-                        >
-                          <Text style={styles.recurringSaveBtnText}>Save Schedule</Text>
-                        </TouchableOpacity>
-                      </View>
+                  {manualPackages.length > 0 && (
+                    <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>MANUALLY ADDED</Text>
+                      {manualPackages.map(renderManualPackage)}
                     </View>
                   )}
-                </View>
-              )}
-
-              {/* Manual entry — always shown at the top, primary option */}
-              <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>ADD BY PACKAGE NAME</Text>
-                <Text style={[styles.manualHint, { color: theme.textSecondary }]}>
-                  Enter app package name, e.g. com.instagram.android
-                </Text>
-                <View style={[styles.installerTip, { backgroundColor: theme.surface }]}>
-                  <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
-                  <Text style={[styles.installerTipText, { color: theme.textSecondary }]}>
-                    To block the Android Package Installer / Uninstaller, add it manually:{' '}
-                    <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
-                  </Text>
-                </View>
-                <View style={styles.manualInputRow}>
-                  <TextInput
-                    style={[styles.manualInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
-                    placeholder="com.example.app"
-                    placeholderTextColor={COLORS.muted}
-                    value={manualInput}
-                    onChangeText={setManualInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onSubmitEditing={handleAddManual}
-                    returnKeyType="done"
-                  />
-                  <TouchableOpacity
-                    style={[styles.addBtn, !manualInput.trim().includes('.') && styles.addBtnDisabled]}
-                    onPress={handleAddManual}
-                    disabled={!manualInput.trim().includes('.')}
-                  >
-                    <Text style={styles.addBtnText}>Add</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Manually added packages */}
-              {manualPackages.length > 0 && (
-                <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>MANUALLY ADDED</Text>
-                  {manualPackages.map(renderManualPackage)}
-                </View>
+                </>
               )}
 
               {/* Search and installed apps header */}
@@ -1296,10 +1027,32 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   expirySectionLocked: {
-    opacity: 0.5,
+    // no longer dim the whole section — user can still add time
   },
   expiryBtnLocked: {
     backgroundColor: COLORS.border,
+  },
+  addTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+    flexWrap: 'wrap',
+  },
+  addTimeLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '500',
+    marginRight: 2,
+  },
+  addTimeBtn: {
+    borderWidth: 1,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  addTimeBtnText: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
   },
   lockedBanner: {
     flexDirection: 'row',
