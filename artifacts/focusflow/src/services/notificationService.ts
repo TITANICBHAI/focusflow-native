@@ -96,20 +96,6 @@ export async function scheduleTaskReminders(task: Task): Promise<void> {
     });
   }
 
-  // Schedule persistent notification dismissal when the task ends
-  if (endMs - now > 1000) {
-    await Notifications.scheduleNotificationAsync({
-      identifier: `${task.id}-persistent-dismiss`,
-      content: {
-        title: `Task ended: ${task.title}`,
-        body:  `Focus session complete.`,
-        data:  { taskId: task.id, type: 'persistent-dismiss' },
-        channelId: REMINDER_CHANNEL_ID,
-      } as AndroidContent,
-      trigger: { type: SchedulableTriggerInputTypes.DATE, date: new Date(endMs) },
-    });
-  }
-
   // Mid-session check-ins
   // Only schedule when there is enough headroom before the task ends:
   //   - 15 min check-in: only for tasks ≥ 25 min (at least 10 min remaining after it)

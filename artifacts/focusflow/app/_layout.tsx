@@ -33,23 +33,31 @@ import { useTheme } from '@/hooks/useTheme';
 import { EventBridge } from '@/services/eventBridge';
 import { navigateToTask, consumePendingTaskNavigation } from '@/navigation/navigationRef';
 import { registerBackgroundFetch, registerOverrunCheckTask } from '@/tasks/backgroundTasks';
-import { dismissPersistentNotification } from '@/services/notificationService';
 import { BlockedAppOverlay } from '@/components/BlockedAppOverlay';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { logger } from '@/services/startupLogger';
 
+// ─── Deferred notification action store ──────────────────────────────────────
+// Stores action from background notification tap so the app can handle it on resume.
+const pendingNotificationAction: { taskId: string | null; action: 'complete' | 'extend' | null } = {
+  taskId: null,
+  action: null,
+};
+export function consumePendingNotificationAction() {
+  const snap = { ...pendingNotificationAction };
+  pendingNotificationAction.taskId = null;
+  pendingNotificationAction.action = null;
+  return snap;
+}
+
 // ─── 2. Foreground notification display behaviour ─────────────────────────────
 Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    const data = notification.request.content.data as { type?: string };
-    // Suppress the internal persistent-dismiss bookkeeping notification silently.
-    // The focus persistent notification is now owned by the native ForegroundTaskService
-    // and never goes through Expo, so no suppression is needed for it here.
-    if (data?.type === 'persistent-dismiss') {
-      return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
-    }
-    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
-  },
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList:   true,
+    shouldPlaySound:  true,
+    shouldSetBadge:   false,
+  }),
 });
 
 // ─── 3. Connect native event channel ─────────────────────────────────────────
@@ -65,14 +73,47 @@ Notifications.addNotificationResponseReceivedListener((response) => {
     type?: string;
   };
   const actionId = response.actionIdentifier;
+  const taskId   = data?.taskId;
 
-  if (!data?.taskId) return;
+  // ── Standalone block expiry tap → open app ─────────────────────────────
+  if (data?.type === 'standalone-expiry') {
+    try { router.push('/(tabs)/focus'); } catch { /* headless */ }
+    return;
+  }
 
+  if (!taskId) return;
+
+  // ── Tap the notification body or explicit VIEW button ─────────────────
   if (
     actionId === Notifications.DEFAULT_ACTION_IDENTIFIER ||
     actionId === 'VIEW'
   ) {
-    navigateToTask(data.taskId);
+    navigateToTask(taskId);
+    return;
+  }
+
+  // ── COMPLETE button: navigate to task list with highlight + action ─────
+  // The Schedule screen reads `highlightTaskId`; adding `autoComplete=1`
+  // lets it auto-open the completion sheet for that task.
+  if (actionId === 'COMPLETE') {
+    try {
+      router.push({ pathname: '/(tabs)', params: { highlightTaskId: taskId, autoComplete: '1' } });
+    } catch {
+      pendingNotificationAction.taskId  = taskId;
+      pendingNotificationAction.action  = 'complete';
+    }
+    return;
+  }
+
+  // ── EXTEND button: go directly to the Focus tab so the user can extend ─
+  if (actionId === 'EXTEND') {
+    try {
+      router.push({ pathname: '/(tabs)/focus', params: { autoExtend: taskId } });
+    } catch {
+      pendingNotificationAction.taskId  = taskId;
+      pendingNotificationAction.action  = 'extend';
+    }
+    return;
   }
 });
 
@@ -82,17 +123,11 @@ Notifications.addNotificationReceivedListener(async (notification) => {
     taskId?: string;
     type?: string;
   };
-  if (data?.type === 'LATE_START_WARNING' && data.taskId) {
-    // Handled by ScheduleScreen polling
-  }
-  if (data?.type === 'persistent-dismiss') {
-    // Auto-dismiss the persistent notification when the task ends
-    try {
-      await dismissPersistentNotification();
-    } catch {
-      // ignore
-    }
-  }
+  // LATE_START_WARNING: the Schedule screen's own polling already surfaces this.
+  // persistent-dismiss: the native ForegroundTaskService owns its own lifecycle;
+  // dismissPersistentNotification() is a no-op shim so nothing to do here.
+  // All other received notifications are shown by the handler above.
+  void data; // silence unused-variable warning
 });
 
 // ─── 7. Notification action categories ───────────────────────────────────────
