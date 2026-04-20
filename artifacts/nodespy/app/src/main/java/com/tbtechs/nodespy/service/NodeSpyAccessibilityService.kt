@@ -102,7 +102,8 @@ class NodeSpyAccessibilityService : AccessibilityService() {
 
     // captureId is pinned at call-time so the screenshot attaches to the right capture
     // even if new captures arrive before the async callback fires.
-    fun requestScreenshot(captureId: String = CaptureStore.latest()?.id ?: return) {
+    fun requestScreenshot(captureId: String = CaptureStore.latest()?.id ?: "") {
+        if (captureId.isEmpty()) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         takeScreenshot(
             Display.DEFAULT_DISPLAY,

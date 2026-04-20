@@ -163,9 +163,15 @@ export async function dbGetTasksForDate(dateISO: string): Promise<Task[]> {
   try {
     const database = await getDb();
     if (!database) return [];
-    const day = dateISO.slice(0, 10);
+    // Use the local calendar date — tasks are displayed in local time so queries
+    // must match local date, not UTC. We pass a YYYY-MM-DD string derived from
+    // a local Date so that users in UTC-X timezones see evening tasks correctly.
+    const localDate = new Date(dateISO);
+    const day = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+    // SQLite datetime() with 'localtime' modifier converts the stored UTC ISO
+    // timestamp to the device's local timezone before extracting the date.
     const rows = await database.getAllAsync<Record<string, unknown>>(
-      `SELECT * FROM tasks WHERE date(start_time) = ? ORDER BY start_time ASC`,
+      `SELECT * FROM tasks WHERE date(datetime(start_time, 'localtime')) = ? ORDER BY start_time ASC`,
       [day],
     );
     return rows.map(rowToTask);
@@ -231,6 +237,14 @@ export async function dbDeleteTask(taskId: string): Promise<void> {
   await database.runAsync('DELETE FROM tasks WHERE id = ?', [taskId]);
 }
 
+function safeJsonParse<T>(raw: unknown, fallback: T): T {
+  try {
+    return JSON.parse(raw as string) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   const rawFap = row.focus_allowed_packages as string | null | undefined;
   return {
@@ -242,11 +256,13 @@ function rowToTask(row: Record<string, unknown>): Task {
     durationMinutes: row.duration_minutes as number,
     status: row.status as Task['status'],
     priority: row.priority as Task['priority'],
-    tags: JSON.parse(row.tags as string) as string[],
-    reminders: JSON.parse(row.reminders as string) as Task['reminders'],
+    // Individual try/catch via safeJsonParse — a single malformed row
+    // no longer throws through the whole rows.map() and wipes today's tasks.
+    tags: safeJsonParse<string[]>(row.tags, []),
+    reminders: safeJsonParse<Task['reminders']>(row.reminders, []),
     color: row.color as string,
     focusMode: (row.focus_mode as number) === 1,
-    focusAllowedPackages: rawFap ? (JSON.parse(rawFap) as string[]) : undefined,
+    focusAllowedPackages: rawFap ? safeJsonParse<string[]>(rawFap, []) : undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

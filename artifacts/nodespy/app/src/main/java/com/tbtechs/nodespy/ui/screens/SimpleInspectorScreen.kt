@@ -339,12 +339,13 @@ private fun PickElementsTab(
                 val ch = size.height
                 val scaleX = cw / sw
                 val scaleY = ch / sh
+                val snap = screenshot   // local val — required for smart-cast on delegated property
 
-                if (hasScreenshot) {
+                if (snap != null) {
                     drawImage(
-                        image = screenshot!!,
+                        image = snap,
                         srcOffset = IntOffset.Zero,
-                        srcSize = IntSize(screenshot.width, screenshot.height),
+                        srcSize = IntSize(snap.width, snap.height),
                         dstOffset = IntOffset.Zero,
                         dstSize = IntSize(cw.toInt(), ch.toInt())
                     )

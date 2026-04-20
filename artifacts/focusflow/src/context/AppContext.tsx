@@ -746,11 +746,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const stopFocusMode = useCallback(async () => {
+    // Always attempt native teardown directly — _stopFocusMode() short-circuits
+    // when focusActive is false (e.g. after a cold app restart), so we call
+    // the native layer unconditionally here to guarantee the foreground service
+    // and SharedPrefs are cleared regardless of JS module state.
     try {
       await _stopFocusMode();
     } catch (e) {
-      void logger.warn('AppContext', `stopFocusMode failed: ${String(e)}`);
+      void logger.warn('AppContext', `stopFocusMode JS-layer failed: ${String(e)}`);
     }
+    try {
+      await ForegroundServiceModule.stopService();
+    } catch { /* already stopped */ }
+    try {
+      await SharedPrefsModule.setFocusActive(false);
+      await SharedPrefsModule.setAllowedPackages([]);
+    } catch { /* best-effort */ }
     dispatch({ type: 'SET_FOCUS_SESSION', payload: null });
   }, []);
 
