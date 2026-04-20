@@ -535,7 +535,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const active = getActiveTask(stateRef.current.tasks);
-    if (active && active.focusMode && stateRef.current.focusSession === null && !isFocusActive()) {
+    if (active && active.focusMode && stateRef.current.settings.focusModeEnabled && stateRef.current.focusSession === null && !isFocusActive()) {
       void _startFocusMode(
         active,
         stateRef.current.settings.allowedInFocus,
