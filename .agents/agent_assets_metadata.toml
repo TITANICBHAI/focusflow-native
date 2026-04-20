@@ -66,6 +66,72 @@ uri = "file://store-assets/logo-v5-brain.png"
 type = "image"
 title = "focusflow logo brain shield"
 
+[[generated]]
+id = "2qn7UeOmSLTZ0YmVbVrVj"
+uri = "file://store-assets/logo-b1-bold-shield.png"
+type = "image"
+title = "bold shield icon"
+
+[[generated]]
+id = "u-OkXf7mHPS7FMbZ7aeKH"
+uri = "file://store-assets/logo-b2-premium-ring.png"
+type = "image"
+title = "premium ring icon"
+
+[[generated]]
+id = "9s24TIw9FIffZTWTqUloN"
+uri = "file://store-assets/logo-b3-lightning.png"
+type = "image"
+title = "lightning bolt power icon"
+
+[[generated]]
+id = "owTALUgmxB6dHgfz9ZUFR"
+uri = "file://store-assets/logo-b4-hourglass.png"
+type = "image"
+title = "hourglass split icon"
+
+[[generated]]
+id = "-2Rg7aCAVWNsJFThnulJT"
+uri = "file://store-assets/logo-b5-eye-lock.png"
+type = "image"
+title = "eye lock icon"
+
+[[generated]]
+id = "4YAHh7opRdZ4JTbW-wJ9u"
+uri = "file://store-assets/refined-focus-core.png"
+type = "image"
+title = "refined focus core icon"
+
+[[generated]]
+id = "u4_yAgfTYlTqBTNgTH-iy"
+uri = "file://store-assets/refined-timer-arc.png"
+type = "image"
+title = "refined timer arc icon"
+
+[[generated]]
+id = "_7lazM672XBgqKn86IISc"
+uri = "file://store-assets/refined-ring-dark.png"
+type = "image"
+title = "refined glowing ring dark"
+
+[[generated]]
+id = "DxPhlSZJggbqSivvRPx3Y"
+uri = "file://store-assets/icon-final-clean.png"
+type = "image"
+title = "clean timer arc final icon"
+
+[[generated]]
+id = "FjDLR2Qy4-HH7z3D7fXUj"
+uri = "file://store-assets/icon-final-v2.png"
+type = "image"
+title = "clean arc icon no dots"
+
+[[generated]]
+id = "HSlQW08f34Xg_cvJPHSCQ"
+uri = "file://store-assets/icon-final-v3.png"
+type = "image"
+title = "horseshoe arc icon clean"
+
 [[outputs]]
 id = "tgalAfT1-750LJk0Yh4R6"
 uri = "file://artifacts/focusflow/store-assets/STORE_LISTING.md"
@@ -113,3 +179,81 @@ id = "iP0BDwrOXTHyQj8dDGfBV"
 uri = "file://focusflow-competitive-analysis.pdf"
 type = "pdf"
 title = "FocusFlow Competitive Analysis — April 2026"
+
+[[outputs]]
+id = "WYeg5UJuCkAMIRtvx1bQR"
+uri = "file://store-assets/logo-v1-shield.png"
+type = "image"
+title = "Option 1 — Shield with Checkmark"
+
+[[outputs]]
+id = "JqC6Z7OKi_v21QVdDQmD9"
+uri = "file://store-assets/logo-v2-timer.png"
+type = "image"
+title = "Option 2 — Circular Timer Ring"
+
+[[outputs]]
+id = "7bLdMcwEonEejYUGUv9QD"
+uri = "file://store-assets/logo-v3-letter.png"
+type = "image"
+title = "Option 3 — Bold 'F' with Flow Arrow"
+
+[[outputs]]
+id = "zERYCoCYb5JRq8ji7xyAW"
+uri = "file://store-assets/logo-v4-eye.png"
+type = "image"
+title = "Option 4 — Focus Lens / Eye (Dark)"
+
+[[outputs]]
+id = "5F6ME0a60gOl3UpPS15w0"
+uri = "file://store-assets/logo-v5-brain.png"
+type = "image"
+title = "Option 5 — Brain Protected by Shield"
+
+[[outputs]]
+id = "Y9Lum71pti4Bme4DTvwpM"
+uri = "file://store-assets/logo-b1-bold-shield.png"
+type = "image"
+title = "Option A — Solid Shield (AppBlock-killer)"
+
+[[outputs]]
+id = "EMLCipzeeD2JuCRly4EtA"
+uri = "file://store-assets/logo-b2-premium-ring.png"
+type = "image"
+title = "Option B — Premium Dark Rings (Opal-level)"
+
+[[outputs]]
+id = "fVvN5kp6oMqa5pVc2Cjs8"
+uri = "file://store-assets/logo-b3-lightning.png"
+type = "image"
+title = "Option C — Lightning Bolt (Energy / Power)"
+
+[[outputs]]
+id = "V61oOPZVLVLhmvZ-jbmu5"
+uri = "file://store-assets/logo-b4-hourglass.png"
+type = "image"
+title = "Option D — Split Hourglass (Clever / Distinctive)"
+
+[[outputs]]
+id = "C-MNanLRQUBxQx_CR-AIU"
+uri = "file://store-assets/logo-b5-eye-lock.png"
+type = "image"
+title = "Option E — Eye + Lock (Focus + Protection)"
+
+[[outputs]]
+id = "V4nbEuGRcJ_Raa3IEjDQ6"
+uri = "file://store-assets/refined-focus-core.png"
+type = "image"
+title = "Refined #3 — Focus Core (your fav)"
+
+[[outputs]]
+id = "D9AbG5_ctwGuNBdCIWEWU"
+uri = "file://store-assets/refined-timer-arc.png"
+type = "image"
+title = "Refined Timer Arc (your icon.png)"
+
+[[outputs]]
+id = "YfS-83YFXCD7iwJdeG2ha"
+uri = "file://store-assets/refined-ring-dark.png"
+type = "image"
+title = "Refined Ring (your splash-icon.png — on dark bg)"
