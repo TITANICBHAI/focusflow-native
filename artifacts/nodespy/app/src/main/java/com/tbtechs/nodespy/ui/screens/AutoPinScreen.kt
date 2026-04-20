@@ -1,5 +1,8 @@
 package com.tbtechs.nodespy.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,30 +12,121 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.gson.Gson
 import com.tbtechs.nodespy.data.AutoPinRule
 import com.tbtechs.nodespy.data.CaptureStore
 import com.tbtechs.nodespy.data.MatchField
 import com.tbtechs.nodespy.ui.theme.*
+import kotlinx.coroutines.launch
+
+// ─── JSON parsing helpers ─────────────────────────────────────────────────────
+
+private val gson = Gson()
+
+@Suppress("UNCHECKED_CAST")
+private fun parseRulesFromJson(json: String): List<AutoPinRule> {
+    val rules = mutableListOf<AutoPinRule>()
+    runCatching {
+        val root = gson.fromJson(json, Any::class.java)
+
+        when {
+            // NodeSpyCaptureV1 — parse recommendedRules array
+            root is Map<*, *> && root["format"] == "NodeSpyCaptureV1" -> {
+                val recommended = root["recommendedRules"] as? List<*> ?: return@runCatching
+                for (entry in recommended) {
+                    val map = entry as? Map<*, *> ?: continue
+                    val selectorType = map["selectorType"] as? String ?: continue
+                    val selector = map["selector"] as? Map<*, *> ?: continue
+                    val (pattern, field) = when (selectorType) {
+                        "resourceId" -> (selector["matchResId"] as? String) to MatchField.RES_ID
+                        "label" -> (selector["matchText"] as? String) to MatchField.TEXT
+                        "resourceId+label" -> (selector["matchResId"] as? String) to MatchField.RES_ID
+                        "class" -> (selector["matchCls"] as? String) to MatchField.CLASS
+                        else -> null to MatchField.RES_ID
+                    }
+                    if (!pattern.isNullOrBlank()) {
+                        rules += AutoPinRule(pattern = pattern, matchField = field)
+                    }
+                }
+            }
+
+            // Plain array: [{"pattern": "...", "matchField": "TEXT"}, ...]
+            root is List<*> -> {
+                for (entry in root) {
+                    val map = entry as? Map<*, *> ?: continue
+                    val pattern = map["pattern"] as? String ?: continue
+                    val fieldName = map["matchField"] as? String ?: "RES_ID"
+                    val field = runCatching { MatchField.valueOf(fieldName) }.getOrDefault(MatchField.RES_ID)
+                    if (pattern.isNotBlank()) {
+                        rules += AutoPinRule(pattern = pattern, matchField = field)
+                    }
+                }
+            }
+        }
+    }
+    return rules
+}
+
+// ─── Screen ──────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AutoPinScreen(onBack: () -> Unit) {
     val rules by CaptureStore.autoPinRules.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val json = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+            }.getOrNull()
+
+            if (json.isNullOrBlank()) {
+                snackbarHostState.showSnackbar("Could not read file")
+                return@launch
+            }
+
+            val imported = parseRulesFromJson(json)
+            if (imported.isEmpty()) {
+                snackbarHostState.showSnackbar("No valid rules found in JSON")
+                return@launch
+            }
+
+            val existing = CaptureStore.autoPinRules.value.map { it.pattern }.toSet()
+            val novel = imported.filter { it.pattern !in existing }
+            novel.forEach { CaptureStore.addAutoPinRule(it) }
+
+            val msg = when {
+                novel.isEmpty() -> "All ${imported.size} rules already exist"
+                novel.size == imported.size -> "Imported ${novel.size} rule${if (novel.size == 1) "" else "s"}"
+                else -> "Imported ${novel.size} new rule${if (novel.size == 1) "" else "s"} (${imported.size - novel.size} duplicate${if (imported.size - novel.size == 1) "" else "s"} skipped)"
+            }
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
 
     Scaffold(
         containerColor = Background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -46,6 +140,17 @@ fun AutoPinScreen(onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "Back", tint = OnBackground)
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }
+                    ) {
+                        Icon(
+                            Icons.Default.FileOpen,
+                            contentDescription = "Import from JSON",
+                            tint = AccentBlue
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface)
@@ -112,7 +217,7 @@ private fun ExplainerBanner() {
     ) {
         Icon(Icons.Default.PushPin, null, tint = AccentOrange, modifier = Modifier.size(18.dp))
         Text(
-            "Matching nodes are auto-pinned on every new capture. Use * as a wildcard.",
+            "Matching nodes are auto-pinned on every new capture. Use * as a wildcard. Tap the file icon to import rules from any JSON export.",
             color = AccentOrange,
             fontSize = 12.sp,
             lineHeight = 17.sp
@@ -196,7 +301,7 @@ private fun EmptyAutoPinState(onAdd: () -> Unit) {
             Text("No rules yet", color = OnBackground, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Tap + to create your first pattern.\nExample: *skip* on Resource ID pins all skip buttons.",
+                "Tap + to create your first pattern.\nExample: *skip* on Resource ID pins all skip buttons.\nOr tap the file icon to import from a JSON export.",
                 color = Muted,
                 fontSize = 13.sp,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
