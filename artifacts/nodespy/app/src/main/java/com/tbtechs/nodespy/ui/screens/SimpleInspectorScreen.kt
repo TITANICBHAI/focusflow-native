@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.sp
 import com.tbtechs.nodespy.data.*
 import com.tbtechs.nodespy.export.ExportBuilder
 import com.tbtechs.nodespy.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,9 +229,13 @@ private fun PickElementsTab(
     var dragEnd by remember { mutableStateOf<Offset?>(null) }
     var tapMode by remember { mutableStateOf(true) }
 
-    val screenshot: ImageBitmap? = remember(capture.screenshotPath) {
-        capture.screenshotPath?.let { path ->
-            try { BitmapFactory.decodeFile(path)?.asImageBitmap() } catch (_: Exception) { null }
+    // Load bitmap on IO thread so we never block the composition thread
+    val screenshotLoading = capture.screenshotPath != null
+    val screenshot by produceState<ImageBitmap?>(initialValue = null, capture.screenshotPath) {
+        value = withContext(Dispatchers.IO) {
+            capture.screenshotPath?.let { path ->
+                try { BitmapFactory.decodeFile(path)?.asImageBitmap() } catch (_: Exception) { null }
+            }
         }
     }
     val hasScreenshot = screenshot != null
@@ -408,7 +414,32 @@ private fun PickElementsTab(
                 }
             }
 
-            if (!hasScreenshot && markedIds.isEmpty() && dragStart == null) {
+            // Screenshot loading spinner — path set but bitmap not decoded yet
+            if (screenshotLoading && !hasScreenshot) {
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Surface.copy(alpha = 0.88f))
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = AccentGreen,
+                            strokeWidth = 2.dp
+                        )
+                        Text("Loading screenshot…", color = OnBackground, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            // No screenshot at all — prompt user to enable SNAP
+            if (!screenshotLoading && !hasScreenshot && markedIds.isEmpty() && dragStart == null) {
                 Box(
                     Modifier
                         .align(Alignment.BottomCenter)
@@ -418,7 +449,7 @@ private fun PickElementsTab(
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        "Screenshot not available for this snapshot.\nEnable SNAP in the bubble overlay to capture screenshots.",
+                        "No screenshot for this snapshot.\nTap SNAP in the bubble or notification to enable it.",
                         color = Muted, fontSize = 11.sp, textAlign = TextAlign.Center
                     )
                 }
