@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Shield, Lock, Clock, Calendar, BarChart3, BellRing } from 'lucide-react';
+import { Lock, Clock, Calendar, BarChart3, BellRing } from 'lucide-react';
 
 const SCENE_DURATIONS = [
   5000, // 0: Opening
@@ -102,8 +102,8 @@ function SceneOpening() {
         transition={{ type: "spring", stiffness: 300, damping: 20, delay: 1 }}
         className="relative z-10 flex flex-col items-center"
       >
-        <div className="w-32 h-32 bg-brand-500 rounded-3xl flex items-center justify-center shadow-[0_0_80px_rgba(91,91,214,0.6)]">
-          <Shield className="w-16 h-16 text-white" />
+        <div className="w-32 h-32 rounded-3xl overflow-hidden shadow-[0_0_80px_rgba(99,102,241,0.6)]">
+          <img src={`${import.meta.env.BASE_URL}assets/app-icon.jpeg`} alt="FocusFlow" className="w-full h-full object-cover" />
         </div>
         <motion.h1 
           className="text-6xl font-display font-bold mt-8 tracking-tight text-white"
@@ -174,8 +174,8 @@ function SceneSolution() {
            animate={{ scale: 1, opacity: 1, y: 0 }}
            transition={{ duration: 0.8, delay: 0.3 }}
         >
-          <div className="w-24 h-24 bg-brand-500 rounded-3xl flex items-center justify-center shadow-[0_0_60px_rgba(91,91,214,0.6)]">
-             <Shield className="w-12 h-12 text-white" />
+          <div className="w-24 h-24 rounded-3xl overflow-hidden shadow-[0_0_60px_rgba(99,102,241,0.6)]">
+             <img src={`${import.meta.env.BASE_URL}assets/app-icon.jpeg`} alt="FocusFlow" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-8xl font-display font-bold text-white tracking-tight">FocusFlow</h1>
         </motion.div>
@@ -245,7 +245,7 @@ function SceneBlocking() {
               animate={{ opacity: [0, 0, 1, 1] }}
               transition={{ times: [0, 0.8, 0.85, 1], duration: 4, delay: 1 }}
             >
-              <Shield className="w-16 h-16 text-brand-500 mb-6" />
+              <img src={`${import.meta.env.BASE_URL}assets/app-icon.jpeg`} alt="FocusFlow" className="w-16 h-16 rounded-xl object-cover mb-6" />
               <h3 className="text-2xl font-bold text-white mb-2">App Blocked</h3>
               <p className="text-brand-200">You are in a focus session.</p>
             </motion.div>
@@ -474,12 +474,12 @@ function SceneClosing() {
     >
       <div className="absolute inset-0 noise-overlay opacity-10"></div>
       <motion.div
-        className="w-40 h-40 bg-brand-500 rounded-[2.5rem] flex items-center justify-center shadow-[0_0_120px_rgba(91,91,214,0.8)] mb-8"
+        className="w-40 h-40 rounded-[2.5rem] overflow-hidden shadow-[0_0_120px_rgba(99,102,241,0.8)] mb-8"
         initial={{ scale: 0.5, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.5 }}
       >
-        <Shield className="w-20 h-20 text-white" />
+        <img src={`${import.meta.env.BASE_URL}assets/app-icon.jpeg`} alt="FocusFlow" className="w-full h-full object-cover" />
       </motion.div>
       <motion.h1 
         className="text-8xl font-display font-bold text-white tracking-tight mb-4"
