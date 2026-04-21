@@ -58,6 +58,18 @@ function FocusScreen() {
     await updateSettings({ ...settings, blockPresets: presets });
   };
 
+  const handleAddTime = async (minutes: number) => {
+    const baseMs = settings.standaloneBlockUntil
+      ? Math.max(new Date(settings.standaloneBlockUntil).getTime(), Date.now())
+      : Date.now();
+    const untilMs = baseMs + minutes * 60 * 1000;
+    await setStandaloneBlockAndAllowance(
+      settings.standaloneBlockPackages ?? [],
+      untilMs,
+      settings.dailyAllowanceEntries ?? [],
+    );
+  };
+
   const handleQuickBlock = async (preset: import('@/data/types').BlockPreset, hours: number) => {
     if (Platform.OS === 'android') {
       const hasA11y = await UsageStatsModule.hasAccessibilityPermission().catch(() => false);
@@ -168,33 +180,27 @@ function FocusScreen() {
               <Text style={[styles.addMoreAppsBtnText, { color: COLORS.red }]}>Add More Apps to Block</Text>
             </TouchableOpacity>
 
-            {/* Quick-Block preset shortcuts (for adding more) */}
-            {blockPresets.length > 0 && (
-              <View style={styles.quickBlockSection}>
-                <Text style={[styles.quickBlockLabel, { color: theme.muted }]}>QUICK ADD FROM PRESET</Text>
-                {blockPresets.map((preset) => (
-                  <View key={preset.id} style={[styles.quickBlockCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                    <View style={styles.quickBlockCardTop}>
-                      <Ionicons name="ban-outline" size={16} color={COLORS.red} />
-                      <Text style={[styles.quickBlockCardName, { color: theme.text }]} numberOfLines={1}>{preset.name}</Text>
-                      <Text style={[styles.quickBlockCardCount, { color: theme.muted }]}>{preset.packages.length} app{preset.packages.length !== 1 ? 's' : ''}</Text>
-                    </View>
-                    <View style={styles.quickBlockDurations}>
-                      {[1, 2, 4, 8].map((h) => (
-                        <TouchableOpacity
-                          key={h}
-                          style={[styles.quickBlockDurationBtn, { backgroundColor: COLORS.red + '14', borderColor: COLORS.red + '33' }]}
-                          onPress={() => { void handleQuickBlock(preset, h); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.quickBlockDurationText, { color: COLORS.red }]}>{h}h</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
+            {/* Add time to current block */}
+            <View style={styles.quickBlockSection}>
+              <Text style={[styles.quickBlockLabel, { color: theme.muted }]}>ADD TIME</Text>
+              <View style={[styles.addTimeRow, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                {[
+                  { label: '+30m', minutes: 30 },
+                  { label: '+1h', minutes: 60 },
+                  { label: '+2h', minutes: 120 },
+                  { label: '+4h', minutes: 240 },
+                ].map((opt) => (
+                  <TouchableOpacity
+                    key={opt.label}
+                    style={[styles.addTimeBtn, { backgroundColor: COLORS.primary + '14', borderColor: COLORS.primary + '44' }]}
+                    onPress={() => { void handleAddTime(opt.minutes); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.addTimeBtnText, { color: COLORS.primary }]}>{opt.label}</Text>
+                  </TouchableOpacity>
                 ))}
               </View>
-            )}
+            </View>
           </ScrollView>
 
           <StandaloneBlockModal
@@ -704,6 +710,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   quickBlockDurationText: { fontSize: FONT.sm, fontWeight: '700' },
+  addTimeRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+  },
+  addTimeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  addTimeBtnText: { fontSize: FONT.md, fontWeight: '700' },
   emptyTitle: { fontSize: FONT.xl, fontWeight: '700', color: COLORS.muted },
   emptySubtitle: { fontSize: FONT.md, color: COLORS.muted, textAlign: 'center', lineHeight: 22 },
   blockScheduleBtn: {
