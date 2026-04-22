@@ -125,10 +125,24 @@ async function run() {
   const latestSha = refData.object.sha;
   console.log('Base commit:', latestSha);
 
-  console.log(`Creating replacement tree with ${treeItems.length} entries...`);
-  const newTree = await ghFetch(`/repos/${OWNER}/${REPO}/git/trees`, 'POST', {
-    tree: treeItems,
-  });
+  // GitHub's tree API times out on huge replacement trees (~400+ entries).
+  // Build the tree incrementally in chunks, each layered on top of the
+  // previous tree via base_tree. We start from the existing branch tree so
+  // unchanged files (e.g. files we excluded) stay intact.
+  const baseCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits/${latestSha}`);
+  let currentTreeSha = baseCommit.tree.sha;
+  const TREE_CHUNK = 100;
+  console.log(`Layering ${treeItems.length} entries in chunks of ${TREE_CHUNK}...`);
+  for (let i = 0; i < treeItems.length; i += TREE_CHUNK) {
+    const chunk = treeItems.slice(i, i + TREE_CHUNK);
+    const layered = await ghFetch(`/repos/${OWNER}/${REPO}/git/trees`, 'POST', {
+      base_tree: currentTreeSha,
+      tree: chunk,
+    });
+    currentTreeSha = layered.sha;
+    console.log(`  Layered ${Math.min(i + TREE_CHUNK, treeItems.length)}/${treeItems.length}`);
+  }
+  const newTree = { sha: currentTreeSha };
 
   console.log('Committing...');
   const newCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits`, 'POST', {

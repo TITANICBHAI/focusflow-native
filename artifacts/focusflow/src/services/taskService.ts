@@ -89,6 +89,59 @@ export function getActiveTask(tasks: Task[]): Task | null {
   );
 }
 
+/**
+ * Returns the task that has started but the user has NOT yet marked
+ * complete/skipped — even if its scheduled end time has passed.
+ *
+ * This is the source of truth for the focus screen: tasks should not
+ * silently disappear when their timer hits zero. Instead, the UI should
+ * prompt the user to mark complete, extend, or skip.
+ */
+export function getCurrentTask(tasks: Task[]): Task | null {
+  const now = dayjs();
+  // Prefer a still-active (not yet ended) task, then fall back to the most
+  // recent started-but-unresolved task whose end time has passed.
+  const active = getActiveTask(tasks);
+  if (active) return active;
+  const ended = tasks
+    .filter(
+      (t) =>
+        t.status !== 'completed' &&
+        t.status !== 'skipped' &&
+        dayjs(t.startTime).isBefore(now) &&
+        dayjs(t.endTime).isBefore(now),
+    )
+    .sort((a, b) => dayjs(b.endTime).unix() - dayjs(a.endTime).unix());
+  return ended[0] ?? null;
+}
+
+/**
+ * Returns true if this task has run past its scheduled end without being
+ * resolved (completed or skipped). The UI uses this to surface a decision prompt.
+ */
+export function isAwaitingDecision(task: Task): boolean {
+  if (task.status === 'completed' || task.status === 'skipped') return false;
+  return dayjs(task.endTime).isBefore(dayjs());
+}
+
+/**
+ * Returns all currently active tasks (started, not yet ended, not resolved).
+ * Used by the focus screen to show "+N more active" chip when overlapping
+ * tasks exist.
+ */
+export function getAllActiveTasks(tasks: Task[]): Task[] {
+  const now = dayjs();
+  return tasks
+    .filter(
+      (t) =>
+        t.status !== 'completed' &&
+        t.status !== 'skipped' &&
+        dayjs(t.startTime).isBefore(now) &&
+        dayjs(t.endTime).isAfter(now),
+    )
+    .sort((a, b) => dayjs(a.startTime).unix() - dayjs(b.startTime).unix());
+}
+
 export function getUpcomingTask(tasks: Task[]): Task | null {
   const now = dayjs();
   return (

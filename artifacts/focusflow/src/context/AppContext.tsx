@@ -20,6 +20,8 @@ import {
 import {
   getTodayTasks,
   getActiveTask,
+  getCurrentTask,
+  getAllActiveTasks,
   extendTask,
   updateTaskStatus,
 } from '@/services/taskService';
@@ -98,7 +100,7 @@ function reducer(state: AppState, action: AppAction): AppState {
 }
 
 const defaultSettings: AppSettings = {
-  darkMode: false,
+  darkMode: true,
   defaultDuration: 60,
   defaultReminderOffsets: [-10, -5, 0],
   focusModeEnabled: true,
@@ -158,6 +160,8 @@ interface AppContextValue {
   state: AppState;
   todayTasks: Task[];
   activeTask: Task | null;
+  currentTask: Task | null;
+  activeTasks: Task[];
 
   addTask: (task: Task) => Promise<void>;
   updateTask: (task: Task) => Promise<void>;
@@ -497,13 +501,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!state.isDbReady) return;
     tickRef.current = setInterval(() => {
       const s = stateRef.current;
-      const active = getActiveTask(s.tasks);
-      // NOTE: The native ForegroundTaskService already shows a persistent
+      // NOTE: We deliberately DO NOT auto-stop focus mode when the active task
+      // ends — that caused tasks to silently disappear. The TASK_ENDED handler
+      // and the focus screen now show a "Time's up — what next?" prompt so
+      // the user explicitly decides to complete, extend, or skip.
+      // The native ForegroundTaskService already shows a persistent
       // notification while focus is active (NEW-011). No JS sticky needed here.
-      if (!active && isFocusActive()) {
-        void _stopFocusMode();
-        dispatch({ type: 'SET_FOCUS_SESSION', payload: null });
-      }
       // Also clear any expired standalone block so the UI reflects reality.
       if (s.settings.standaloneBlockUntil) {
         void _syncStandaloneBlock(s.settings);
@@ -562,8 +565,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubTaskEnded = EventBridge.subscribe('TASK_ENDED', () => {
-      void _stopFocusMode();
-      dispatch({ type: 'SET_FOCUS_SESSION', payload: null });
+      // Do NOT auto-stop focus or hide the task. The user must explicitly
+      // resolve the task (Complete / Extend / Skip) via the in-app prompt.
+      // Keeping focus mode running prevents distractions while they decide.
+      void logger.info('AppContext', 'TASK_ENDED received — awaiting user decision');
     });
 
     const unsubAppBlocked = EventBridge.subscribe('APP_BLOCKED', (event) => {
@@ -946,11 +951,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const todayTasks = getTodayTasks(state.tasks);
   const activeTask = getActiveTask(state.tasks);
+  const currentTask = getCurrentTask(state.tasks);
+  const activeTasks = getAllActiveTasks(state.tasks);
 
   const value: AppContextValue = {
     state,
     todayTasks,
     activeTask,
+    currentTask,
+    activeTasks,
     addTask,
     updateTask,
     deleteTask,

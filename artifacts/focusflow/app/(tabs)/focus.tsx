@@ -19,7 +19,7 @@ import { router } from 'expo-router';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
 import { useTaskTimer } from '@/hooks/useTimer';
-import { formatTime } from '@/services/taskService';
+import { formatTime, isAwaitingDecision } from '@/services/taskService';
 import { dbLogFocusOverride } from '@/data/database';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
@@ -32,7 +32,7 @@ function FocusScreen() {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const ringSize = Math.min(Math.floor(windowWidth * 0.65), 260);
-  const { state, activeTask, startFocusMode, stopFocusMode, completeTask, extendTaskTime, setStandaloneBlockAndAllowance, updateSettings, setRecurringBlockSchedules } = useApp();
+  const { state, currentTask, activeTasks, startFocusMode, stopFocusMode, completeTask, skipTask, extendTaskTime, setStandaloneBlockAndAllowance, updateSettings, setRecurringBlockSchedules } = useApp();
   const isFocusing = state.focusSession !== null && state.focusSession.isActive;
   const [hasAccessibilityPermission, setHasAccessibilityPermission] = useState<boolean | null>(null);
   const [blockModalVisible, setBlockModalVisible] = useState(false);
@@ -45,7 +45,9 @@ function FocusScreen() {
     return new Date(settings.standaloneBlockUntil).getTime() > Date.now();
   })();
 
-  const task = activeTask;
+  const task = currentTask;
+  const awaitingDecision = task ? isAwaitingDecision(task) : false;
+  const otherActiveCount = Math.max(0, activeTasks.filter((t) => t.id !== task?.id).length);
   const blockPresets = settings.blockPresets ?? [];
 
   const handleSaveBlockPreset = async (preset: import('@/data/types').BlockPreset) => {
@@ -92,8 +94,21 @@ function FocusScreen() {
         return;
       }
     }
-    const untilMs = Date.now() + hours * 60 * 60 * 1000;
-    await setStandaloneBlockAndAllowance(preset.packages, untilMs, []);
+    // Additive merge: union the preset's packages with whatever is already
+    // blocked. This way tapping a preset NEVER drops apps the user already
+    // had blocked. Time is extended from the later of "now" and the existing
+    // expiry, so adding to a running block always lengthens it.
+    const existing = settings.standaloneBlockPackages ?? [];
+    const mergedPackages = Array.from(new Set([...existing, ...preset.packages]));
+    const baseMs = settings.standaloneBlockUntil
+      ? Math.max(new Date(settings.standaloneBlockUntil).getTime(), Date.now())
+      : Date.now();
+    const untilMs = baseMs + hours * 60 * 60 * 1000;
+    await setStandaloneBlockAndAllowance(
+      mergedPackages,
+      untilMs,
+      settings.dailyAllowanceEntries ?? [],
+    );
   };
 
   const pulseAnim = React.useRef(new Animated.Value(1)).current;
@@ -238,7 +253,7 @@ function FocusScreen() {
 
           <TouchableOpacity
             style={[styles.createTaskBtn, { backgroundColor: COLORS.primary }]}
-            onPress={() => router.push('/(tabs)/')}
+            onPress={() => router.push('/')}
             activeOpacity={0.85}
           >
             <Ionicons name="add-circle-outline" size={20} color="#fff" />
@@ -406,6 +421,66 @@ function FocusScreen() {
         <Text style={[styles.taskTime, { color: theme.textSecondary }]}>
           {formatTime(task.startTime)} – {formatTime(task.endTime)}
         </Text>
+
+        {/* "+N more active" chip when overlapping tasks exist */}
+        {otherActiveCount > 0 && (
+          <TouchableOpacity
+            style={[styles.moreActiveChip, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={() => router.push('/')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="layers-outline" size={12} color={COLORS.primary} />
+            <Text style={[styles.moreActiveChipText, { color: COLORS.primary }]}>
+              +{otherActiveCount} more active
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* "Time's up" decision prompt — shown when the task ended but the user
+            has not yet marked it complete, extended, or skipped. Replaces the
+            silent disappearance behaviour from before. */}
+        {awaitingDecision && (
+          <View style={[styles.endedPrompt, { backgroundColor: COLORS.orange + '15', borderColor: COLORS.orange + '55' }]}>
+            <View style={styles.endedPromptHeader}>
+              <Ionicons name="alarm" size={18} color={COLORS.orange} />
+              <Text style={[styles.endedPromptTitle, { color: COLORS.orange }]}>Time's up — what next?</Text>
+            </View>
+            <Text style={[styles.endedPromptDesc, { color: theme.textSecondary }]}>
+              This task ran past its scheduled end. Pick one to clear it.
+            </Text>
+            <View style={styles.endedPromptRow}>
+              <TouchableOpacity
+                style={[styles.endedPromptBtn, { backgroundColor: COLORS.green }]}
+                onPress={() => completeTask(task.id)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="checkmark" size={16} color="#fff" />
+                <Text style={styles.endedPromptBtnText}>Done</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.endedPromptBtn, { backgroundColor: COLORS.orange }]}
+                onPress={() => setShowExtendModal(true)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="add" size={16} color="#fff" />
+                <Text style={styles.endedPromptBtnText}>Extend</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.endedPromptBtn, { backgroundColor: COLORS.muted }]}
+                onPress={() => {
+                  Alert.alert('Skip Task', 'Skip this task?', [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Skip', style: 'destructive', onPress: () => skipTask(task.id) },
+                  ]);
+                }}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="close" size={16} color="#fff" />
+                <Text style={styles.endedPromptBtnText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Tags */}
         {task.tags.length > 0 && (
@@ -880,6 +955,41 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.red + '08',
   },
   emergencyBtnText: { fontSize: FONT.sm, fontWeight: '600', color: COLORS.red },
+  moreActiveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    marginTop: SPACING.xs,
+  },
+  moreActiveChipText: { fontSize: FONT.xs, fontWeight: '700' },
+  endedPrompt: {
+    marginHorizontal: SPACING.lg,
+    marginTop: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.5,
+    gap: SPACING.sm,
+    width: '90%',
+  },
+  endedPromptHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  endedPromptTitle: { fontSize: FONT.md, fontWeight: '800' },
+  endedPromptDesc: { fontSize: FONT.xs, lineHeight: 16 },
+  endedPromptRow: { flexDirection: 'row', gap: SPACING.xs, marginTop: SPACING.xs },
+  endedPromptBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+  },
+  endedPromptBtnText: { color: '#fff', fontSize: FONT.sm, fontWeight: '700' },
   permissionBanner: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -23,14 +23,16 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import { COLORS, FONT, RADIUS, SPACING, SHADOW } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import type { Task } from '@/data/types';
-import { formatTime } from '@/services/taskService';
+import { formatTime, isAwaitingDecision } from '@/services/taskService';
 
 type ViewMode = 'list' | 'timeline';
 
 function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { state, todayTasks, activeTask, addTask, updateTask, deleteTask, completeTask, skipTask, extendTaskTime, startFocusMode, refreshTasks } = useApp();
+  const { state, todayTasks, activeTask, currentTask, addTask, updateTask, deleteTask, completeTask, skipTask, extendTaskTime, startFocusMode, refreshTasks } = useApp();
+  const bannerTask = activeTask ?? currentTask;
+  const bannerAwaitingDecision = bannerTask ? isAwaitingDecision(bannerTask) : false;
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendTaskId, setExtendTaskId] = useState<string | null>(null);
@@ -107,44 +109,56 @@ function ScheduleScreen() {
         </View>
       </View>
 
-      {/* Active Task Banner */}
-      {activeTask && (
+      {/* Active / Time's-up Banner — surfaces ended-but-undecided tasks too. */}
+      {bannerTask && (
         <TouchableOpacity
-          style={styles.activeBanner}
-          onPress={() => setSelectedTask(activeTask)}
+          style={[
+            styles.activeBanner,
+            bannerAwaitingDecision && { backgroundColor: COLORS.orange },
+          ]}
+          onPress={() => setSelectedTask(bannerTask)}
           activeOpacity={0.9}
         >
           <View style={styles.activePulse} />
           <View style={styles.activeBannerContent}>
-            <Text style={styles.activeBannerLabel}>NOW</Text>
+            <Text style={styles.activeBannerLabel}>{bannerAwaitingDecision ? "TIME'S UP" : 'NOW'}</Text>
             <Text style={styles.activeBannerTitle} numberOfLines={1}>
-              {activeTask.title}
+              {bannerTask.title}
             </Text>
             <Text style={styles.activeBannerTime}>
-              until {formatTime(activeTask.endTime)}
+              {bannerAwaitingDecision
+                ? `ended ${formatTime(bannerTask.endTime)} · pick one`
+                : `until ${formatTime(bannerTask.endTime)}`}
             </Text>
           </View>
           <View style={styles.activeBannerActions}>
             <TouchableOpacity
               style={styles.bannerAction}
-              onPress={() => handleCompleteTask(activeTask.id)}
+              onPress={() => handleCompleteTask(bannerTask.id)}
             >
               <Ionicons name="checkmark" size={16} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.bannerAction, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-              onPress={() => setExtendTaskId(activeTask.id)}
+              onPress={() => setExtendTaskId(bannerTask.id)}
             >
               <Ionicons name="add" size={16} color="#fff" />
             </TouchableOpacity>
-            {activeTask.focusMode && (
+            {bannerAwaitingDecision ? (
+              <TouchableOpacity
+                style={[styles.bannerAction, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                onPress={() => handleSkipTask(bannerTask.id)}
+              >
+                <Ionicons name="close" size={16} color="#fff" />
+              </TouchableOpacity>
+            ) : bannerTask.focusMode ? (
               <TouchableOpacity
                 style={[styles.bannerAction, { backgroundColor: 'rgba(245,158,11,0.4)' }]}
-                onPress={() => startFocusMode(activeTask.id)}
+                onPress={() => startFocusMode(bannerTask.id)}
               >
                 <Ionicons name="shield-checkmark-outline" size={16} color="#fff" />
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         </TouchableOpacity>
       )}

@@ -52,6 +52,7 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
   const [description, setDescription] = useState('');
   const [startDate, setStartDate] = useState<Date>(() => initialDate(initialStartTime));
   const [showPicker, setShowPicker] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [duration, setDuration] = useState(60);
   const [isCustomDuration, setIsCustomDuration] = useState(false);
   const [customDurationText, setCustomDurationText] = useState('');
@@ -113,6 +114,7 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
     setDescription('');
     setStartDate(initialDate(initialStartTime));
     setShowPicker(false);
+    setShowDatePicker(false);
     setDuration(60);
     setIsCustomDuration(false);
     setCustomDurationText('');
@@ -217,18 +219,54 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
                     />
                   </Field>
 
-                  {/* Time */}
-                  <Field label="Start Time" labelColor={theme.textSecondary}>
-                    <TouchableOpacity
-                      style={[styles.input, styles.timePickerRow, { backgroundColor: theme.card, borderColor: theme.border }]}
-                      onPress={() => setShowPicker(true)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="time-outline" size={18} color={theme.muted} />
-                      <Text style={[styles.timePickerText, { color: theme.text }]}>
-                        {dayjs(startDate).format('h:mm A')}
-                      </Text>
-                    </TouchableOpacity>
+                  {/* Date + Time — supports scheduling for any future day */}
+                  <Field label="Start" labelColor={theme.textSecondary}>
+                    <View style={styles.dateTimeRow}>
+                      <TouchableOpacity
+                        style={[styles.input, styles.timePickerRow, styles.flexHalf, { backgroundColor: theme.card, borderColor: theme.border }]}
+                        onPress={() => setShowDatePicker(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="calendar-outline" size={18} color={theme.muted} />
+                        <Text style={[styles.timePickerText, { color: theme.text }]}>
+                          {dayjs(startDate).isSame(dayjs(), 'day')
+                            ? 'Today'
+                            : dayjs(startDate).isSame(dayjs().add(1, 'day'), 'day')
+                              ? 'Tomorrow'
+                              : dayjs(startDate).format('ddd, MMM D')}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.input, styles.timePickerRow, styles.flexHalf, { backgroundColor: theme.card, borderColor: theme.border }]}
+                        onPress={() => setShowPicker(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="time-outline" size={18} color={theme.muted} />
+                        <Text style={[styles.timePickerText, { color: theme.text }]}>
+                          {dayjs(startDate).format('h:mm A')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {showDatePicker && (
+                      <DateTimePicker
+                        value={startDate}
+                        mode="date"
+                        minimumDate={new Date()}
+                        display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                          setShowDatePicker(false);
+                          if (selected) {
+                            // Preserve the time portion already chosen
+                            const merged = dayjs(selected)
+                              .hour(startDate.getHours())
+                              .minute(startDate.getMinutes())
+                              .second(0)
+                              .toDate();
+                            setStartDate(merged);
+                          }
+                        }}
+                      />
+                    )}
                     {showPicker && (
                       <DateTimePicker
                         value={startDate}
@@ -237,7 +275,15 @@ export default function QuickAddModal({ visible, onClose, onSave, initialStartTi
                         display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
                         onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                           setShowPicker(false);
-                          if (selected) setStartDate(selected);
+                          if (selected) {
+                            // Preserve the date portion already chosen
+                            const merged = dayjs(startDate)
+                              .hour(selected.getHours())
+                              .minute(selected.getMinutes())
+                              .second(0)
+                              .toDate();
+                            setStartDate(merged);
+                          }
                         }}
                       />
                     )}
@@ -447,6 +493,8 @@ const styles = StyleSheet.create({
   },
   multiline: { height: 80, textAlignVertical: 'top', paddingTop: SPACING.sm },
   timePickerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  dateTimeRow: { flexDirection: 'row', gap: SPACING.sm },
+  flexHalf: { flex: 1 },
   timePickerText: { fontSize: FONT.md, color: COLORS.text },
   durationRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs },
