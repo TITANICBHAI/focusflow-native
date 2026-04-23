@@ -244,8 +244,9 @@ export default function OnboardingScreen() {
   const allGranted = grantedCount === PERMISSIONS.length;
 
   const handleFinish = async () => {
-    await updateSettings({ ...state.settings, onboardingComplete: true });
-    router.replace('/');
+    // Don't mark onboardingComplete here — user-profile.tsx does that
+    // so we know the user has seen (or skipped) the profile setup step.
+    router.replace('/user-profile');
   };
 
   return (
@@ -404,9 +405,7 @@ export default function OnboardingScreen() {
           onPress={handleFinish}
           activeOpacity={0.85}
         >
-          <Text style={styles.enterBtnText}>
-            {allGranted ? 'Get Started →' : 'Enter FocusFlow →'}
-          </Text>
+          <Text style={styles.enterBtnText}>Continue →</Text>
         </TouchableOpacity>
 
         <Text style={[styles.footerNote, { color: theme.muted }]}>

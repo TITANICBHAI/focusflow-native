@@ -145,6 +145,26 @@ function SettingsScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingBottom: 60 + insets.bottom + 20 }]}>
 
+        {/* ── Profile ── */}
+        <Section title="Profile">
+          <SettingButton
+            icon="person-circle-outline"
+            label={settings.userProfile?.name ? `${settings.userProfile.name}` : 'Set up your profile'}
+            description={
+              settings.userProfile
+                ? [
+                    settings.userProfile.occupation,
+                    settings.userProfile.dailyGoalHours ? `${settings.userProfile.dailyGoalHours}h daily goal` : null,
+                    settings.userProfile.wakeUpTime ? `Wakes at ${settings.userProfile.wakeUpTime}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'Tap to personalise your experience'
+                : 'Name, occupation, daily goal and more'
+            }
+            onPress={() => router.push('/user-profile')}
+          />
+        </Section>
+
         {/* ── Notifications ── */}
         <Section title="Notifications">
           <SettingRow label="Enable Reminders" description="Get alerts before & during tasks">

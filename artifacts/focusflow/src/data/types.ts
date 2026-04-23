@@ -84,6 +84,14 @@ export interface RecurringBlockSchedule {
   enabled: boolean;
 }
 
+export interface UserProfile {
+  name?: string;
+  occupation?: string;          // 'student' | 'professional' | 'freelancer' | 'creator' | 'other'
+  dailyGoalHours?: number;      // target focus hours per day (1–12)
+  wakeUpTime?: string;          // "HH:MM" e.g. "07:00"
+  focusGoals?: string[];        // e.g. ['deep_work', 'no_social', 'study']
+}
+
 export interface AppSettings {
   darkMode: boolean;
   defaultDuration: number; // minutes
@@ -126,6 +134,7 @@ export interface AppSettings {
   customNodeRules: CustomNodeRule[];
   // Recurring block schedules — blocks a group of apps on a repeating daily/weekly timetable
   recurringBlockSchedules: RecurringBlockSchedule[];
+  userProfile?: UserProfile;
 }
 
 /**

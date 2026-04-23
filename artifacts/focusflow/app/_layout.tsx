@@ -290,7 +290,11 @@ function OnboardingGuard() {
       return;
     }
     if (!state.settings.onboardingComplete) {
-      if (pathname !== '/onboarding') router.replace('/onboarding');
+      // Allow both the permissions screen and the profile setup screen;
+      // everything else redirects to the start of the onboarding flow.
+      if (pathname !== '/onboarding' && pathname !== '/user-profile') {
+        router.replace('/onboarding');
+      }
     }
   }, [pathname, state.isDbReady, state.settings.onboardingComplete, state.settings.privacyAccepted]);
 

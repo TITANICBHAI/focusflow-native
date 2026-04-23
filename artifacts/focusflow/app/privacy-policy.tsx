@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  Linking,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useNavigation } from 'expo-router';
@@ -8,22 +16,23 @@ import { useTheme } from '@/hooks/useTheme';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
+const PRIVACY_URL = 'https://titanicbhai.github.io/FocusFlow/privacy-policy/';
+const TERMS_URL   = 'https://titanicbhai.github.io/FocusFlow/terms-of-service/';
+
 export default function PrivacyPolicyScreen() {
   const { state, updateSettings } = useApp();
   const { theme } = useTheme();
   const navigation = useNavigation();
   const isRevisit = navigation.canGoBack();
+  const [accepted, setAccepted] = useState(false);
   const [accepting, setAccepting] = useState(false);
 
   const handleAccept = async () => {
-    if (accepting) return;
+    if (accepting || !accepted) return;
     setAccepting(true);
     try {
       const updated = { ...state.settings, privacyAccepted: true };
       await updateSettings(updated);
-      // Back up the acceptance to SharedPreferences so the app doesn't show
-      // this screen again even if the SQLite database is wiped by Android's
-      // OEM memory manager or file cleaner.
       try {
         await SharedPrefsModule.putString('privacy_accepted', 'true');
       } catch {
@@ -42,50 +51,100 @@ export default function PrivacyPolicyScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
             <Ionicons name="arrow-back" size={22} color={theme.text} />
           </TouchableOpacity>
-          <Text style={[styles.topTitle, { color: theme.text }]}>Privacy Policy</Text>
+          <Text style={[styles.topTitle, { color: theme.text }]}>Privacy & Terms</Text>
           <View style={{ width: 40 }} />
         </View>
       )}
+
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Hero */}
         <View style={styles.header}>
           <View style={styles.logoCircle}>
             <Ionicons name="lock-closed" size={34} color="#fff" />
           </View>
-          <Text style={[styles.title, { color: theme.text }]}>Privacy Policy</Text>
-          <Text style={[styles.subtitle, { color: theme.muted }]}>FocusFlow is designed to keep your focus data on this device.</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Privacy & Terms</Text>
+          <Text style={[styles.subtitle, { color: theme.muted }]}>
+            FocusFlow is designed to keep your data fully on this device. Nothing is sent to any server.
+          </Text>
         </View>
 
+        {/* Policy cards */}
         <PolicyCard title="Local-first data" icon="phone-portrait-outline">
-          Tasks, schedules, app block lists, daily allowances, and settings are stored locally in FocusFlow's on-device database and Android preferences.
+          Tasks, schedules, block lists, allowances, and settings are stored in FocusFlow's on-device database and Android preferences only.
         </PolicyCard>
 
         <PolicyCard title="Android permissions" icon="shield-checkmark-outline">
-          FocusFlow asks for special Android access so it can detect foreground apps, show blocking overlays, keep reminders running, and enforce focus sessions.
+          FocusFlow asks for special Android access to detect foreground apps, show blocking overlays, keep reminders running, and enforce focus sessions.
         </PolicyCard>
 
         <PolicyCard title="No message or password collection" icon="eye-off-outline">
-          The accessibility service is used for app blocking signals. FocusFlow does not collect passwords, private messages, form entries, or screen recordings.
+          The accessibility service is used only for app-name signals. FocusFlow does not collect passwords, private messages, form entries, or screen recordings.
         </PolicyCard>
 
         <PolicyCard title="Photos stay private" icon="images-outline">
-          If you choose a custom block-screen wallpaper, FocusFlow copies that image into app-private storage so the native block overlay can display it.
+          If you set a custom block-screen wallpaper, FocusFlow copies that image into app-private storage only. It is never uploaded or shared.
         </PolicyCard>
 
         <PolicyCard title="Your control" icon="settings-outline">
-          You can change permissions in Android Settings and manage FocusFlow's app settings at any time. Removing app data deletes your local FocusFlow data.
+          You can change permissions in Android Settings at any time. Removing app data deletes all your local FocusFlow data permanently.
         </PolicyCard>
 
-        {/* Terms of Service link */}
-        <TouchableOpacity
-          style={styles.tosRow}
-          onPress={() => router.push('/terms-of-service')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="document-text-outline" size={16} color={COLORS.primary} />
-          <Text style={styles.tosText}>View Terms of Service</Text>
-          <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
-        </TouchableOpacity>
+        {/* Divider */}
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
+        {/* External links row */}
+        <View style={styles.linksRow}>
+          <TouchableOpacity
+            style={[styles.linkPill, { borderColor: COLORS.primary + '55', backgroundColor: COLORS.primaryLight }]}
+            onPress={() => Linking.openURL(PRIVACY_URL)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="document-text-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.linkPillText}>Full Privacy Policy</Text>
+            <Ionicons name="open-outline" size={12} color={COLORS.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.linkPill, { borderColor: COLORS.primary + '55', backgroundColor: COLORS.primaryLight }]}
+            onPress={() => Linking.openURL(TERMS_URL)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="reader-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.linkPillText}>Terms of Service</Text>
+            <Ionicons name="open-outline" size={12} color={COLORS.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Checkbox — required before the accept button is enabled */}
+        {!isRevisit && (
+          <TouchableOpacity
+            style={[styles.checkRow, { backgroundColor: theme.card, borderColor: accepted ? COLORS.primary : theme.border }]}
+            onPress={() => setAccepted((v) => !v)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.checkbox, { borderColor: accepted ? COLORS.primary : theme.border, backgroundColor: accepted ? COLORS.primary : 'transparent' }]}>
+              {accepted && <Ionicons name="checkmark" size={14} color="#fff" />}
+            </View>
+            <Text style={[styles.checkText, { color: theme.textSecondary }]}>
+              I have read and agree to the{' '}
+              <Text
+                style={styles.checkLink}
+                onPress={(e) => { e.stopPropagation?.(); Linking.openURL(PRIVACY_URL); }}
+              >
+                Privacy Policy
+              </Text>
+              {' '}and{' '}
+              <Text
+                style={styles.checkLink}
+                onPress={(e) => { e.stopPropagation?.(); Linking.openURL(TERMS_URL); }}
+              >
+                Terms of Service
+              </Text>
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Action button */}
         {isRevisit ? (
           <TouchableOpacity style={styles.backBtnBottom} onPress={() => router.back()} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={18} color={COLORS.primary} />
@@ -93,10 +152,10 @@ export default function PrivacyPolicyScreen() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.acceptBtn, accepting && styles.acceptBtnDisabled]}
+            style={[styles.acceptBtn, (!accepted || accepting) && styles.acceptBtnDisabled]}
             onPress={handleAccept}
             activeOpacity={0.85}
-            disabled={accepting}
+            disabled={!accepted || accepting}
           >
             {accepting ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -144,10 +203,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topTitle: {
-    fontSize: FONT.md,
-    fontWeight: '700',
-  },
+  topTitle: { fontSize: FONT.md, fontWeight: '700' },
   backBtnBottom: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -156,21 +212,9 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     marginTop: SPACING.sm,
   },
-  backBtnText: {
-    color: COLORS.primary,
-    fontSize: FONT.md,
-    fontWeight: '700',
-  },
-  content: {
-    padding: SPACING.lg,
-    paddingBottom: 48,
-    gap: SPACING.md,
-  },
-  header: {
-    alignItems: 'center',
-    paddingVertical: SPACING.xl,
-    gap: SPACING.sm,
-  },
+  backBtnText: { color: COLORS.primary, fontSize: FONT.md, fontWeight: '700' },
+  content: { padding: SPACING.lg, paddingBottom: 48, gap: SPACING.md },
+  header: { alignItems: 'center', paddingVertical: SPACING.xl, gap: SPACING.sm },
   logoCircle: {
     width: 76,
     height: 76,
@@ -179,28 +223,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {
-    fontSize: FONT.xxl,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: FONT.sm,
-    lineHeight: 20,
-    textAlign: 'center',
-    maxWidth: 320,
-  },
+  title: { fontSize: FONT.xxl, fontWeight: '900', textAlign: 'center' },
+  subtitle: { fontSize: FONT.sm, lineHeight: 20, textAlign: 'center', maxWidth: 320 },
   card: {
     borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: SPACING.md,
     gap: SPACING.sm,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   iconWrap: {
     width: 34,
     height: 34,
@@ -209,34 +240,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardTitle: {
+  cardTitle: { flex: 1, fontSize: FONT.md, fontWeight: '800' },
+  cardBody: { fontSize: FONT.sm, lineHeight: 21 },
+  divider: { height: StyleSheet.hairlineWidth, marginVertical: SPACING.xs },
+  linksRow: { flexDirection: 'row', gap: SPACING.sm },
+  linkPill: {
     flex: 1,
-    fontSize: FONT.md,
-    fontWeight: '800',
-  },
-  cardBody: {
-    fontSize: FONT.sm,
-    lineHeight: 21,
-  },
-  tosRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.xs,
+    gap: 5,
     paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  linkPillText: { color: COLORS.primary, fontSize: FONT.xs, fontWeight: '700', flex: 1 },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    padding: SPACING.md,
     borderRadius: RADIUS.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.primary + '55',
-    backgroundColor: COLORS.primaryLight,
+    borderWidth: 1.5,
   },
-  tosText: {
-    color: COLORS.primary,
-    fontSize: FONT.sm,
-    fontWeight: '700',
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginTop: 1,
   },
+  checkText: { flex: 1, fontSize: FONT.sm, lineHeight: 20 },
+  checkLink: { color: COLORS.primary, fontWeight: '700', textDecorationLine: 'underline' },
   acceptBtn: {
-    marginTop: SPACING.sm,
+    marginTop: SPACING.xs,
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
@@ -246,12 +287,6 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     minHeight: 52,
   },
-  acceptBtnDisabled: {
-    opacity: 0.7,
-  },
-  acceptText: {
-    color: '#fff',
-    fontSize: FONT.md,
-    fontWeight: '800',
-  },
+  acceptBtnDisabled: { opacity: 0.4 },
+  acceptText: { color: '#fff', fontSize: FONT.md, fontWeight: '800' },
 });
