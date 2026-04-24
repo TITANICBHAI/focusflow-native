@@ -348,6 +348,48 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
         promise.resolve(prefs().getString(key, null))
     }
 
+    /**
+     * Returns true when the installed APK was built with android:debuggable=true
+     * (debug variant). Unlike JS `__DEV__`, which is only true while running
+     * through the Metro bundler, this reflects the actual native build flavour —
+     * so debug-built APKs that run their prebundled JS still report true and
+     * the Diagnostics screen stays accessible.
+     */
+    @ReactMethod
+    fun isDebuggable(promise: Promise) {
+        val flags = reactContext.applicationInfo.flags
+        val debuggable = (flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        promise.resolve(debuggable)
+    }
+
+    /**
+     * Writes today's progress snapshot for the home-screen widget so it can
+     * show motivational context (e.g. "3/5 tasks · 45m today" with a streak
+     * chip) when no task is active. Triggers a widget redraw.
+     *
+     * @param tasksDone   Number of today's tasks completed
+     * @param tasksTotal  Total number of today's tasks
+     * @param focusMins   Total focus minutes today
+     * @param streakDays  Current consecutive-day streak
+     */
+    @ReactMethod
+    fun setDailyStats(
+        tasksDone: Int,
+        tasksTotal: Int,
+        focusMins: Int,
+        streakDays: Int,
+        promise: Promise,
+    ) {
+        prefs().edit()
+            .putInt("daily_tasks_done", tasksDone.coerceAtLeast(0))
+            .putInt("daily_tasks_total", tasksTotal.coerceAtLeast(0))
+            .putInt("daily_focus_mins", focusMins.coerceAtLeast(0))
+            .putInt("streak_days", streakDays.coerceAtLeast(0))
+            .apply()
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
     @ReactMethod
     fun resetDailyAllowanceUsage(packageName: String?, promise: Promise) {
         val editor = prefs().edit()

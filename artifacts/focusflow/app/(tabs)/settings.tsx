@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,18 @@ function SettingsScreen() {
   const [greyoutModalVisible, setGreyoutModalVisible] = useState(false);
   const [overlayAppearanceVisible, setOverlayAppearanceVisible] = useState(false);
   const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
+  // Diagnostics is gated on the native debuggable flag (not __DEV__) so that
+  // debug-built APKs running prebundled JS still expose the section. We
+  // optimistically default to __DEV__ so Metro builds show it on first paint,
+  // then refine with the native check on mount.
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(__DEV__);
+  useEffect(() => {
+    let cancelled = false;
+    void SharedPrefsModule.isDebuggableBuild().then((isDebug) => {
+      if (!cancelled) setShowDiagnostics(isDebug);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   if (!state.isDbReady) {
     return (
@@ -393,7 +405,7 @@ function SettingsScreen() {
         </Section>
 
         {/* ── Diagnostics (debug builds only) ── */}
-        {__DEV__ && (
+        {showDiagnostics && (
           <Section title="Diagnostics">
             <SettingButton
               icon="terminal-outline"

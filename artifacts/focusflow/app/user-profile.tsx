@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,13 @@ import { useTheme } from '@/hooks/useTheme';
 import type { UserProfile } from '@/data/types';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { scheduleMorningDigest } from '@/services/notificationService';
+import {
+  dbGetTodayFocusMinutes,
+  dbGetStreak,
+  dbGetBestStreak,
+  dbGetAllTimeFocusMinutes,
+  dbGetAllTimeFocusSessions,
+} from '@/data/database';
 
 // ── Option data ───────────────────────────────────────────────────────────────
 
@@ -173,10 +180,53 @@ export default function UserProfileScreen() {
   const [goals, setGoals]         = useState<string[]>(existing.focusGoals ?? []);
   const [saving, setSaving]       = useState(false);
 
+  // Personal-journey stats — only loaded in edit mode (returning user). On
+  // first-run onboarding the DB is empty and this section stays hidden.
+  const [stats, setStats] = useState<{
+    todayMins: number;
+    streak: number;
+    bestStreak: number;
+    allTimeMins: number;
+    sessions: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [todayMins, streak, bestStreak, allTimeMins, sessions] = await Promise.all([
+          dbGetTodayFocusMinutes().catch(() => 0),
+          dbGetStreak().catch(() => 0),
+          dbGetBestStreak().catch(() => 0),
+          dbGetAllTimeFocusMinutes().catch(() => 0),
+          dbGetAllTimeFocusSessions().catch(() => 0),
+        ]);
+        if (!cancelled) setStats({ todayMins, streak, bestStreak, allTimeMins, sessions });
+      } catch {
+        // Non-fatal — section stays hidden.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isEditMode]);
+
   const suggestedApps = useMemo(
     () => computeSuggestedApps(occupation, goals),
     [occupation, goals],
   );
+
+  // Computes today's progress toward the daily focus-hour goal and a short
+  // motivational caption used in the journey panel.
+  const goalProgress = useMemo(() => {
+    if (!stats) return null;
+    const targetMins = Math.max(1, goalHours * 60);
+    const pct = Math.min(100, Math.round((stats.todayMins / targetMins) * 100));
+    const remaining = Math.max(0, targetMins - stats.todayMins);
+    const caption = pct >= 100
+      ? `Daily goal hit — ${stats.todayMins}m focused today`
+      : `${remaining}m to go to today's ${goalHours}h goal`;
+    return { pct, caption };
+  }, [stats, goalHours]);
 
   const toggleGoal = (id: string) => {
     setGoals((prev) =>
@@ -258,6 +308,72 @@ export default function UserProfileScreen() {
             <Text style={[styles.intro, { color: theme.muted }]}>
               This helps FocusFlow personalise your daily summaries and weekly reports. Everything is stored locally — nothing is shared.
             </Text>
+          )}
+
+          {/* Your Journey — personal stats panel (edit mode only). Renders only
+              once stats have loaded so first-time editors don't see a flash of
+              zeros. Shows "today" + "all time" + a goal-progress caption. */}
+          {isEditMode && stats && (stats.allTimeMins > 0 || stats.sessions > 0 || stats.streak > 0) && (
+            <View style={[styles.journeyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={styles.journeyHeader}>
+                <Ionicons name="trophy-outline" size={18} color={COLORS.primary} />
+                <Text style={[styles.journeyTitle, { color: theme.text }]}>
+                  {name ? `${name}'s journey` : 'Your journey'}
+                </Text>
+              </View>
+
+              <View style={styles.statRow}>
+                <StatTile
+                  icon="flame"
+                  iconColor="#f97316"
+                  label="Streak"
+                  value={`${stats.streak}d`}
+                  hint={stats.bestStreak > stats.streak ? `Best ${stats.bestStreak}d` : 'Keep going'}
+                  theme={theme}
+                />
+                <StatTile
+                  icon="time-outline"
+                  iconColor={COLORS.primary}
+                  label="Today"
+                  value={formatHm(stats.todayMins)}
+                  hint={goalProgress ? `${goalProgress.pct}% of goal` : ''}
+                  theme={theme}
+                />
+              </View>
+
+              <View style={styles.statRow}>
+                <StatTile
+                  icon="hourglass-outline"
+                  iconColor="#10b981"
+                  label="All time"
+                  value={formatHm(stats.allTimeMins)}
+                  hint={`${stats.sessions} session${stats.sessions === 1 ? '' : 's'}`}
+                  theme={theme}
+                />
+                <StatTile
+                  icon="ribbon-outline"
+                  iconColor="#8b5cf6"
+                  label="Best streak"
+                  value={`${stats.bestStreak}d`}
+                  hint={stats.bestStreak === stats.streak && stats.streak > 0 ? 'Personal best!' : 'Personal record'}
+                  theme={theme}
+                />
+              </View>
+
+              {goalProgress && (
+                <View style={styles.goalRow}>
+                  <View style={[styles.goalBarBg, { backgroundColor: COLORS.primaryLight }]}>
+                    <View
+                      style={[
+                        styles.goalBarFill,
+                        { width: `${goalProgress.pct}%`, backgroundColor: COLORS.primary },
+                      ]}
+                    />
+                  </View>
+                  <Text style={[styles.goalCaption, { color: theme.muted }]}>{goalProgress.caption}</Text>
+                </View>
+              )}
+            </View>
           )}
 
           {/* Name */}
@@ -388,6 +504,64 @@ export default function UserProfileScreen() {
             </FormSection>
           )}
 
+          {/* "How your profile is used" — shows the user exactly which parts
+              of the app react to each profile field, so the form doesn't feel
+              like a black hole of preferences. Always rendered. */}
+          <View style={[styles.usageCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={styles.usageHeader}>
+              <Ionicons name="sparkles-outline" size={16} color={COLORS.primary} />
+              <Text style={[styles.usageTitle, { color: theme.text }]}>How your profile is used</Text>
+            </View>
+            <UsageRow
+              icon="time-outline"
+              label="Daily focus goal"
+              value={`${goalHours}h`}
+              detail="Tracked on the Stats screen and on your home-screen widget."
+              theme={theme}
+            />
+            <UsageRow
+              icon="sunny-outline"
+              label="Wake-up time"
+              value={wakeTime ? formatWake(wakeTime) : 'Not set'}
+              detail={
+                wakeTime
+                  ? 'A morning digest notification fires at this time with today\'s plan.'
+                  : 'Set a wake-up time to get a morning plan notification.'
+              }
+              theme={theme}
+            />
+            <UsageRow
+              icon="briefcase-outline"
+              label="Occupation"
+              value={occupation ? labelFor(OCCUPATIONS, occupation) : 'Not set'}
+              detail={
+                occupation
+                  ? 'Used to suggest distracting apps to block, tailored to your work pattern.'
+                  : 'Pick one to see tailored app-block suggestions below.'
+              }
+              theme={theme}
+            />
+            <UsageRow
+              icon="flag-outline"
+              label="Focus goals"
+              value={goals.length > 0 ? `${goals.length} selected` : 'None'}
+              detail={
+                goals.length > 0
+                  ? `Drives suggestions for "${goals.map((g) => labelFor(FOCUS_GOALS, g)).slice(0, 2).join(', ')}${goals.length > 2 ? '…' : ''}".`
+                  : 'Add goals to refine app-block suggestions.'
+              }
+              theme={theme}
+            />
+            <UsageRow
+              icon="person-circle-outline"
+              label="Name"
+              value={name || 'Not set'}
+              detail={name ? 'Used in your morning digest greeting and journey panel.' : 'Add a name to personalise your morning digest.'}
+              theme={theme}
+              isLast
+            />
+          </View>
+
           {/* Save button */}
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.7 }]}
@@ -421,6 +595,81 @@ function FormSection({ title, children }: { title: string; children: React.React
       {children}
     </View>
   );
+}
+
+interface ThemeShape {
+  text: string;
+  muted: string;
+  card: string;
+  border: string;
+  background: string;
+}
+
+function StatTile({
+  icon, iconColor, label, value, hint, theme,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  label: string;
+  value: string;
+  hint: string;
+  theme: ThemeShape;
+}) {
+  return (
+    <View style={[styles.statTile, { backgroundColor: theme.background, borderColor: theme.border }]}>
+      <View style={styles.statTopRow}>
+        <Ionicons name={icon} size={14} color={iconColor} />
+        <Text style={[styles.statLabel, { color: theme.muted }]}>{label}</Text>
+      </View>
+      <Text style={[styles.statValue, { color: theme.text }]}>{value}</Text>
+      {!!hint && <Text style={[styles.statHint, { color: theme.muted }]}>{hint}</Text>}
+    </View>
+  );
+}
+
+function UsageRow({
+  icon, label, value, detail, theme, isLast,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  detail: string;
+  theme: ThemeShape;
+  isLast?: boolean;
+}) {
+  return (
+    <View style={[styles.usageRow, !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }]}>
+      <View style={[styles.usageIconWrap, { backgroundColor: COLORS.primaryLight }]}>
+        <Ionicons name={icon} size={14} color={COLORS.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.usageRowTop}>
+          <Text style={[styles.usageLabel, { color: theme.text }]}>{label}</Text>
+          <Text style={[styles.usageValue, { color: COLORS.primary }]}>{value}</Text>
+        </View>
+        <Text style={[styles.usageDetail, { color: theme.muted }]}>{detail}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── Small formatters ───────────────────────────────────────────────────────────
+
+function formatHm(mins: number): string {
+  if (mins <= 0) return '0m';
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function formatWake(id: string): string {
+  // The WAKE_UP_TIMES values are ids like "07:00" — find the friendly label.
+  return WAKE_UP_TIMES.find((t) => t.id === id)?.label ?? id;
+}
+
+function labelFor(items: { id: string; label: string }[], id: string): string {
+  return items.find((i) => i.id === id)?.label ?? id;
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -518,4 +767,74 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   suggestionBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.primary },
+
+  // ── Journey card (personal stats panel) ────────────────────────────────
+  journeyCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  journeyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  journeyTitle: { fontSize: FONT.md, fontWeight: '800' },
+  statRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  statTile: {
+    flex: 1,
+    borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    gap: 2,
+  },
+  statTopRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statLabel: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  statValue: { fontSize: FONT.lg, fontWeight: '900' },
+  statHint: { fontSize: 10, marginTop: 1 },
+  goalRow: { gap: 4, marginTop: SPACING.xs },
+  goalBarBg: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  goalBarFill: { height: 6, borderRadius: 3 },
+  goalCaption: { fontSize: 11, fontWeight: '600' },
+
+  // ── "How your profile is used" card ────────────────────────────────────
+  usageCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+  },
+  usageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: SPACING.sm,
+  },
+  usageTitle: { fontSize: FONT.md, fontWeight: '800' },
+  usageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  usageIconWrap: {
+    width: 28, height: 28, borderRadius: RADIUS.sm,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    marginTop: 1,
+  },
+  usageRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+  },
+  usageLabel: { fontSize: FONT.sm, fontWeight: '700' },
+  usageValue: { fontSize: FONT.xs, fontWeight: '800' },
+  usageDetail: { fontSize: 11, lineHeight: 15, marginTop: 2 },
 });

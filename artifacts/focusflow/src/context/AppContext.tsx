@@ -17,6 +17,8 @@ import {
   dbGetSettings,
   dbSaveSettings,
   dbGetActiveFocusSession,
+  dbGetTodayFocusMinutes,
+  dbGetStreak,
 } from '@/data/database';
 import {
   getTodayTasks,
@@ -632,6 +634,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     state.focusSession,
     state.settings.standaloneBlockUntil,
     state.settings.standaloneBlockPackages,
+  ]);
+
+  // ── Daily-stats snapshot for the widget ────────────────────────────────────
+  // Pushes today's progress (tasks done/total, focus minutes, streak) into
+  // SharedPreferences whenever the task list or focus session changes. The
+  // widget reads these to show "Done · 3/5 tasks · 45m today" and a 🔥 streak
+  // chip in idle / next-up / active states. Wrapped in a single try/catch so
+  // a DB read failure never breaks the UI thread.
+  useEffect(() => {
+    if (!state.isDbReady) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const todayTasks = getTodayTasks(state.tasks);
+        const tasksTotal = todayTasks.length;
+        const tasksDone  = todayTasks.filter((t) => t.status === 'completed').length;
+        const [focusMins, streak] = await Promise.all([
+          dbGetTodayFocusMinutes().catch(() => 0),
+          dbGetStreak().catch(() => 0),
+        ]);
+        if (cancelled) return;
+        await SharedPrefsModule.setDailyStats(tasksDone, tasksTotal, focusMins, streak);
+      } catch (e) {
+        void logger.warn('AppContext', `daily-stats sync failed: ${String(e)}`);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.isDbReady,
+    state.tasks,
+    state.focusSession,
   ]);
 
   // ── Precise expiry timer: clears standalone block the moment it expires ───────

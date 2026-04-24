@@ -146,4 +146,41 @@ export const SharedPrefsModule = {
     const enabledRules = rules.filter(r => r.enabled);
     return SharedPrefs.setCustomNodeRules(JSON.stringify(enabledRules));
   },
+
+  /**
+   * Returns true when the installed APK was built debuggable (debug variant).
+   * Falls back to JS `__DEV__` when the native bridge is unavailable (Expo Go,
+   * iOS, web). Use this to gate developer-only UI like the Diagnostics screen
+   * — `__DEV__` alone is false in debug-built APKs that run their prebundled
+   * JS, which would hide the screen exactly when it's needed.
+   */
+  async isDebuggableBuild(): Promise<boolean> {
+    if (!hasSharedPrefsMethod('isDebuggable')) return __DEV__;
+    try {
+      return Boolean(await SharedPrefs.isDebuggable());
+    } catch {
+      return __DEV__;
+    }
+  },
+
+  /**
+   * Pushes today's progress snapshot (tasks done/total, focus minutes, streak)
+   * into SharedPreferences so the home-screen widget can show motivational
+   * context (e.g. "3/5 tasks · 45m today" with a streak chip) when no task
+   * is active. Triggers a widget redraw on the native side.
+   */
+  async setDailyStats(
+    tasksDone: number,
+    tasksTotal: number,
+    focusMins: number,
+    streakDays: number,
+  ): Promise<void> {
+    if (!hasSharedPrefsMethod('setDailyStats')) return;
+    return SharedPrefs.setDailyStats(
+      Math.max(0, Math.floor(tasksDone)),
+      Math.max(0, Math.floor(tasksTotal)),
+      Math.max(0, Math.floor(focusMins)),
+      Math.max(0, Math.floor(streakDays)),
+    );
+  },
 };

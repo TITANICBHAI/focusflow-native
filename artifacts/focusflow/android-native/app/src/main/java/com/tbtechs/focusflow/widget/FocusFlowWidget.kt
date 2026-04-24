@@ -130,6 +130,36 @@ class FocusFlowWidget : AppWidgetProvider() {
             return try { JSONArray(json).length() } catch (_: Exception) { 0 }
         }
 
+        /**
+         * Builds the "Done · 3/5 tasks · 45m today" subtitle shown on the widget
+         * in idle / next-up states. Falls back to focus-only or task-only forms
+         * when one half is missing, and returns null when there's nothing to say
+         * (so callers can hide the row entirely).
+         */
+        private fun buildStatsSubtitle(tasksDone: Int, tasksTotal: Int, focusMins: Int): String? {
+            val parts = mutableListOf<String>()
+            if (tasksTotal > 0) {
+                val prefix = if (tasksDone >= tasksTotal && tasksTotal > 0) "Done · " else ""
+                parts += "${prefix}${tasksDone}/${tasksTotal} tasks"
+            }
+            if (focusMins > 0) {
+                val mins = if (focusMins >= 60) "${focusMins / 60}h ${focusMins % 60}m" else "${focusMins}m"
+                parts += "${mins} today"
+            }
+            if (parts.isEmpty()) return null
+            return parts.joinToString(" · ")
+        }
+
+        /** Sets the stats subtitle row (or hides it if there's nothing to show). */
+        private fun applyStatsSubtitle(views: RemoteViews, text: String?) {
+            if (text.isNullOrBlank()) {
+                views.setViewVisibility(R.id.widget_stats_line, View.GONE)
+            } else {
+                views.setTextViewText(R.id.widget_stats_line, text)
+                views.setViewVisibility(R.id.widget_stats_line, View.VISIBLE)
+            }
+        }
+
         // ─── State builder ────────────────────────────────────────────────────
 
         private fun buildViews(context: Context): RemoteViews {
@@ -154,17 +184,23 @@ class FocusFlowWidget : AppWidgetProvider() {
             val saUntil         = prefs.getLong("standalone_block_until_ms", 0L)
             val saPkgJson       = prefs.getString("standalone_blocked_packages", "[]")
 
+            // ── Daily progress stats (shown in idle / next-up subtitle) ──────
+            val tasksDone       = prefs.getInt("daily_tasks_done", 0)
+            val tasksTotal      = prefs.getInt("daily_tasks_total", 0)
+            val focusMins       = prefs.getInt("daily_focus_mins", 0)
+            val streakDays      = prefs.getInt("streak_days", 0)
+
             val isTaskRunning   = taskName.isNotBlank() && endTimeMs > now
             val isAwaiting      = !isTaskRunning && awaitingDecision && taskName.isNotBlank()
             val isStandalone    = saActive && saUntil > now && standaloneBlockedCount(saPkgJson) > 0
             val hasUpcoming     = nextUpName.isNotBlank() && nextUpStartMs > now
 
             when {
-                isTaskRunning -> renderActiveTask(context, views, taskName, taskColor, startMs, endTimeMs)
+                isTaskRunning -> renderActiveTask(context, views, taskName, taskColor, startMs, endTimeMs, streakDays)
                 isAwaiting    -> renderAwaitingDecision(context, views, taskName, taskColor)
                 isStandalone  -> renderStandaloneBlock(context, views, standaloneBlockedCount(saPkgJson), saUntil)
-                hasUpcoming   -> renderNextUp(context, views, nextUpName, nextUpStartMs)
-                else          -> renderIdle(context, views)
+                hasUpcoming   -> renderNextUp(context, views, nextUpName, nextUpStartMs, tasksDone, tasksTotal, focusMins)
+                else          -> renderIdle(context, views, tasksDone, tasksTotal, focusMins, streakDays)
             }
 
             return views
@@ -180,6 +216,7 @@ class FocusFlowWidget : AppWidgetProvider() {
             taskColorHex: String?,
             startMs: Long,
             endTimeMs: Long,
+            streakDays: Int,
         ) {
             val now          = System.currentTimeMillis()
             val remainingMs  = (endTimeMs - now).coerceAtLeast(0L)
@@ -196,7 +233,10 @@ class FocusFlowWidget : AppWidgetProvider() {
             }
 
             val accent = parseColor(taskColorHex)
-            views.setTextViewText(R.id.widget_header_label, "ACTIVE TASK")
+            // Append a streak suffix to the header so the user sees momentum
+            // even mid-task — costs no vertical space, fits within 4×1.
+            val headerText = if (streakDays >= 2) "ACTIVE TASK · 🔥 ${streakDays}" else "ACTIVE TASK"
+            views.setTextViewText(R.id.widget_header_label, headerText)
             views.setTextColor(R.id.widget_header_label, accent)
             views.setTextViewText(R.id.widget_task_name, taskName)
             views.setTextViewText(R.id.widget_time_remaining, timeStr)
@@ -205,6 +245,9 @@ class FocusFlowWidget : AppWidgetProvider() {
             views.setProgressBar(R.id.widget_progress, 100, progressPct, false)
             views.setViewVisibility(R.id.widget_progress, View.VISIBLE)
             views.setViewVisibility(R.id.widget_add_task_btn, View.GONE)
+            // Active task takes the full focus — hide the stats subtitle so the
+            // task name sits centred and the progress bar reads cleanly.
+            applyStatsSubtitle(views, null)
 
             val tap = pendingDeepLink(context, PI_TAP_ROOT, "/focus")
             views.setOnClickPendingIntent(R.id.widget_root, tap)
@@ -230,6 +273,7 @@ class FocusFlowWidget : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_time_remaining, View.VISIBLE)
             views.setViewVisibility(R.id.widget_progress, View.GONE)
             views.setViewVisibility(R.id.widget_add_task_btn, View.GONE)
+            applyStatsSubtitle(views, null)
 
             val tap = pendingDeepLink(context, PI_TAP_ROOT, "/focus")
             views.setOnClickPendingIntent(R.id.widget_root, tap)
@@ -254,6 +298,7 @@ class FocusFlowWidget : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
             views.setViewVisibility(R.id.widget_progress, View.GONE)
             views.setViewVisibility(R.id.widget_add_task_btn, View.GONE)
+            applyStatsSubtitle(views, null)
 
             val tap = pendingDeepLink(context, PI_TAP_ROOT, "/")
             views.setOnClickPendingIntent(R.id.widget_root, tap)
@@ -261,13 +306,17 @@ class FocusFlowWidget : AppWidgetProvider() {
 
         /**
          * State 4: nothing running right now but a task is coming up today.
-         * Shows the task name and a countdown to its start time.
+         * Shows the task name and a countdown to its start time, plus today's
+         * progress so the user sees momentum even before the next task starts.
          */
         private fun renderNextUp(
             context: Context,
             views: RemoteViews,
             taskName: String,
             startMs: Long,
+            tasksDone: Int,
+            tasksTotal: Int,
+            focusMins: Int,
         ) {
             val accent = parseColor(DEFAULT_ACCENT)
             views.setTextViewText(R.id.widget_header_label, "NEXT UP")
@@ -278,6 +327,7 @@ class FocusFlowWidget : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_time_remaining, View.VISIBLE)
             views.setViewVisibility(R.id.widget_progress, View.GONE)
             views.setViewVisibility(R.id.widget_add_task_btn, View.GONE)
+            applyStatsSubtitle(views, buildStatsSubtitle(tasksDone, tasksTotal, focusMins))
 
             val tap = pendingDeepLink(context, PI_TAP_ROOT, "/")
             views.setOnClickPendingIntent(R.id.widget_root, tap)
@@ -285,18 +335,34 @@ class FocusFlowWidget : AppWidgetProvider() {
 
         /**
          * State 5: truly idle — no active task, no upcoming task, no block.
-         * Shows a "+ Add Task" CTA.
+         * Header shows brand + streak; subtitle shows today's stats so the
+         * widget is never just empty space.
          */
-        private fun renderIdle(context: Context, views: RemoteViews) {
+        private fun renderIdle(
+            context: Context,
+            views: RemoteViews,
+            tasksDone: Int,
+            tasksTotal: Int,
+            focusMins: Int,
+            streakDays: Int,
+        ) {
             val accent = parseColor(DEFAULT_ACCENT)
-            views.setTextViewText(R.id.widget_header_label, "FOCUSFLOW")
+            val headerText = if (streakDays >= 2) "FOCUSFLOW · 🔥 ${streakDays}" else "FOCUSFLOW"
+            views.setTextViewText(R.id.widget_header_label, headerText)
             views.setTextColor(R.id.widget_header_label, accent)
-            views.setTextViewText(R.id.widget_task_name, "Nothing scheduled")
+            // Friendlier idle message when the day's done.
+            val title = when {
+                tasksTotal > 0 && tasksDone >= tasksTotal -> "All done for today \uD83C\uDF89"
+                tasksTotal > 0                           -> "Nothing scheduled now"
+                else                                     -> "Nothing scheduled"
+            }
+            views.setTextViewText(R.id.widget_task_name, title)
             // Hide the time-remaining slot — the add-task pill fills the right column
             views.setTextViewText(R.id.widget_time_remaining, "")
             views.setViewVisibility(R.id.widget_time_remaining, View.GONE)
             views.setViewVisibility(R.id.widget_progress, View.GONE)
             views.setViewVisibility(R.id.widget_add_task_btn, View.VISIBLE)
+            applyStatsSubtitle(views, buildStatsSubtitle(tasksDone, tasksTotal, focusMins))
 
             val tap    = pendingDeepLink(context, PI_TAP_ROOT, "/")
             val tapCta = pendingDeepLink(context, PI_TAP_CTA,  "/")

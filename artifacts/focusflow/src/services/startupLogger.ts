@@ -22,11 +22,33 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
 const STORAGE_KEY = 'focusflow_startup_log';
 const LOG_FILENAME = 'focusflow-boot.log';
 const MAX_ENTRIES = 500;
+
+/**
+ * Cached "is this a debuggable build?" flag — `__DEV__` alone is only true when
+ * running through the Metro bundler. A debug-built APK with prebundled JS
+ * reports false, which would silently hide all log output (and the Diagnostics
+ * screen). We mirror the native ApplicationInfo.FLAG_DEBUGGABLE so the
+ * developer surface stays available in true debug builds.
+ */
+let cachedDebuggable: boolean = __DEV__;
+let debuggableProbed = false;
+function probeDebuggable(): void {
+  if (debuggableProbed || Platform.OS !== 'android') return;
+  debuggableProbed = true;
+  try {
+    const mod = (NativeModules as Record<string, { isDebuggable?: () => Promise<boolean> }>).SharedPrefs;
+    if (mod && typeof mod.isDebuggable === 'function') {
+      void mod.isDebuggable().then((v) => { cachedDebuggable = Boolean(v) || __DEV__; }).catch(() => {});
+    }
+  } catch {
+    // Non-fatal — keep the optimistic default.
+  }
+}
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR';
 
@@ -116,7 +138,11 @@ export async function log(level: LogLevel, tag: string, message: string): Promis
   rotate();
   queuePersist();
 
-  if (__DEV__) {
+  // Probe once on first call (cheap, idempotent), then mirror to console
+  // whenever this is a debuggable build. ERROR-level entries are also mirrored
+  // unconditionally so production crashes still surface in adb logcat.
+  probeDebuggable();
+  if (cachedDebuggable || level === 'ERROR') {
     const prefix = `[${level}][${tag}]`;
     if (level === 'ERROR') console.error(prefix, message);
     else if (level === 'WARN') console.warn(prefix, message);
