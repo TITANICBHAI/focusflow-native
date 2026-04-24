@@ -56,6 +56,67 @@ const FOCUS_GOALS = [
   { id: 'writing',     label: 'Writing',        icon: 'create-outline'        },
 ];
 
+// ── Deeper-profile option lists ───────────────────────────────────────────────
+
+const SLEEP_TIMES = [
+  { id: '21:00', label: '9 pm'  },
+  { id: '22:00', label: '10 pm' },
+  { id: '23:00', label: '11 pm' },
+  { id: '00:00', label: '12 am' },
+  { id: '01:00', label: '1 am'  },
+  { id: '02:00', label: '2 am'  },
+];
+
+const CHRONOTYPES: { id: NonNullable<UserProfile['chronotype']>; label: string; icon: string }[] = [
+  { id: 'morning',   label: 'Early morning (5–9 am)',  icon: 'sunny-outline'    },
+  { id: 'midday',    label: 'Late morning (9–12)',     icon: 'partly-sunny-outline' },
+  { id: 'afternoon', label: 'Afternoon (12–5 pm)',     icon: 'cafe-outline'     },
+  { id: 'evening',   label: 'Evening (5–9 pm)',         icon: 'wine-outline'     },
+  { id: 'night',     label: 'Late night (9 pm+)',       icon: 'moon-outline'     },
+  { id: 'flexible',  label: 'Varies day to day',        icon: 'shuffle-outline'  },
+];
+
+const FOCUS_LENGTHS = [
+  { id: 15, label: '15 min', hint: 'Quick sprints' },
+  { id: 25, label: '25 min', hint: 'Classic Pomodoro' },
+  { id: 45, label: '45 min', hint: 'Balanced block' },
+  { id: 60, label: '60 min', hint: 'Deep focus' },
+  { id: 90, label: '90 min', hint: 'Flow state' },
+];
+
+const BREAK_STYLES: { id: NonNullable<UserProfile['breakStyle']>; label: string; hint: string; mins: number }[] = [
+  { id: 'short_frequent',  label: 'Short & frequent', hint: '5 min breaks',  mins: 5 },
+  { id: 'balanced',        label: 'Balanced',         hint: '10 min breaks', mins: 10 },
+  { id: 'long_infrequent', label: 'Long & infrequent',hint: '15 min breaks', mins: 15 },
+  { id: 'no_break',        label: 'No breaks',        hint: 'Push straight through', mins: 0 },
+];
+
+const DISTRACTION_TRIGGERS = [
+  { id: 'social',    label: 'Social media',  icon: 'people-outline'        },
+  { id: 'video',     label: 'Videos / TV',   icon: 'play-circle-outline'   },
+  { id: 'news',      label: 'News',          icon: 'newspaper-outline'     },
+  { id: 'games',     label: 'Games',         icon: 'game-controller-outline' },
+  { id: 'shopping',  label: 'Shopping',      icon: 'cart-outline'          },
+  { id: 'messaging', label: 'Messaging',     icon: 'chatbubbles-outline'   },
+];
+
+const MOTIVATION_STYLES = [
+  { id: 'streaks',    label: 'Streaks',         icon: 'flame-outline'    },
+  { id: 'stats',      label: 'Stats & charts',  icon: 'stats-chart-outline' },
+  { id: 'milestones', label: 'Milestones',      icon: 'trophy-outline'   },
+  { id: 'quotes',     label: 'Daily quotes',    icon: 'chatbubble-ellipses-outline' },
+];
+
+const REVIEW_DAYS: { id: NonNullable<UserProfile['weeklyReviewDay']>; label: string }[] = [
+  { id: 'sun', label: 'Sun' },
+  { id: 'mon', label: 'Mon' },
+  { id: 'tue', label: 'Tue' },
+  { id: 'wed', label: 'Wed' },
+  { id: 'thu', label: 'Thu' },
+  { id: 'fri', label: 'Fri' },
+  { id: 'sat', label: 'Sat' },
+];
+
 // ── App block suggestions ─────────────────────────────────────────────────────
 // Maps occupation IDs and goal IDs to lists of suggested apps to block.
 // Each entry: { name, pkg } — name is for display, pkg is the package name.
@@ -142,7 +203,50 @@ const GOAL_SUGGESTIONS: Record<string, SuggestedApp[]> = {
   ],
 };
 
-function computeSuggestedApps(occupation: string, goals: string[]): SuggestedApp[] {
+// Distraction-trigger → suggested apps. Merged into the main suggestion list
+// so picking "Social media" and "Games" pre-fills Instagram/TikTok/Roblox/etc
+// even when the user hasn't picked a focus goal yet.
+const TRIGGER_SUGGESTIONS: Record<string, SuggestedApp[]> = {
+  social: [
+    { name: 'Instagram',  pkg: 'com.instagram.android',     reason: 'Top scroll-trigger for most users' },
+    { name: 'Facebook',   pkg: 'com.facebook.katana',       reason: 'Endless feed' },
+    { name: 'Twitter / X', pkg: 'com.twitter.android',       reason: 'Compulsive checking' },
+    { name: 'Snapchat',   pkg: 'com.snapchat.android',      reason: 'Streak pressure pulls you back' },
+  ],
+  video: [
+    { name: 'YouTube',    pkg: 'com.google.android.youtube',reason: 'Autoplay derails everything' },
+    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',  reason: 'Strongest short-form reward loop' },
+    { name: 'Netflix',    pkg: 'com.netflix.mediaclient',   reason: '"One more episode" trap' },
+    { name: 'Twitch',     pkg: 'tv.twitch.android.app',     reason: 'Live content hard to leave' },
+  ],
+  news: [
+    { name: 'Google News', pkg: 'com.google.android.apps.magazines', reason: 'Doom-scroll trigger' },
+    { name: 'Reddit',      pkg: 'com.reddit.frontpage',      reason: 'Endless rabbit holes' },
+    { name: 'Twitter / X', pkg: 'com.twitter.android',       reason: 'Real-time news anxiety' },
+  ],
+  games: [
+    { name: 'Candy Crush', pkg: 'com.king.candycrushsaga',  reason: '"Just one level" trap' },
+    { name: 'Roblox',      pkg: 'com.roblox.client',        reason: 'Multi-hour sessions are easy' },
+    { name: 'Clash Royale',pkg: 'com.supercell.clashroyale',reason: 'Designed to interrupt your day' },
+  ],
+  shopping: [
+    { name: 'Amazon',     pkg: 'com.amazon.mShop.android.shopping', reason: 'Browsing burns hours' },
+    { name: 'AliExpress', pkg: 'com.alibaba.aliexpresshd',  reason: 'Endless deals scroll' },
+    { name: 'Temu',       pkg: 'com.einnovation.temu',      reason: 'Designed for compulsive use' },
+  ],
+  messaging: [
+    { name: 'WhatsApp',   pkg: 'com.whatsapp',              reason: 'Frequent interruptions' },
+    { name: 'Messenger',  pkg: 'com.facebook.orca',         reason: 'Always-on chat fragments focus' },
+    { name: 'Telegram',   pkg: 'org.telegram.messenger',    reason: 'Group chats keep ringing' },
+    { name: 'Discord',    pkg: 'com.discord',               reason: 'Servers ping constantly' },
+  ],
+};
+
+function computeSuggestedApps(
+  occupation: string,
+  goals: string[],
+  triggers: string[] = [],
+): SuggestedApp[] {
   const seen = new Set<string>();
   const results: SuggestedApp[] = [];
   const addAll = (list: SuggestedApp[]) => {
@@ -159,6 +263,11 @@ function computeSuggestedApps(occupation: string, goals: string[]): SuggestedApp
   for (const goal of goals) {
     if (GOAL_SUGGESTIONS[goal]) {
       addAll(GOAL_SUGGESTIONS[goal]);
+    }
+  }
+  for (const trigger of triggers) {
+    if (TRIGGER_SUGGESTIONS[trigger]) {
+      addAll(TRIGGER_SUGGESTIONS[trigger]);
     }
   }
   return results;

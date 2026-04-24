@@ -90,6 +90,34 @@ export interface UserProfile {
   dailyGoalHours?: number;      // target focus hours per day (1–12)
   wakeUpTime?: string;          // "HH:MM" e.g. "07:00"
   focusGoals?: string[];        // e.g. ['deep_work', 'no_social', 'study']
+
+  // ── Deeper profile (added later) ───────────────────────────────────────────
+  // All optional so existing profiles keep working unchanged.
+
+  /** "HH:MM" e.g. "23:00" — pairs with wakeUpTime to define the available day. */
+  sleepTime?: string;
+
+  /** When the user focuses best — drives task-scheduling suggestions. */
+  chronotype?: 'morning' | 'midday' | 'afternoon' | 'evening' | 'night' | 'flexible';
+
+  /** Preferred focus block length in minutes; written through to
+   *  settings.defaultDuration & settings.pomodoroDuration on save. */
+  focusSessionLength?: number;  // 15 | 25 | 45 | 60 | 90
+
+  /** How the user likes to break between focus blocks; written through to
+   *  settings.pomodoroBreak on save. */
+  breakStyle?: 'short_frequent' | 'balanced' | 'long_infrequent' | 'no_break';
+
+  /** Categories of apps the user finds most distracting — fed into the
+   *  suggested-apps-to-block list alongside occupation + focusGoals. */
+  distractionTriggers?: string[]; // e.g. ['social','video','news','games','shopping','messaging']
+
+  /** What kinds of motivation work for them — drives which gamification
+   *  surfaces (streak chips, charts, milestone toasts, daily quotes). */
+  motivationStyle?: string[];     // e.g. ['streaks','stats','milestones','quotes']
+
+  /** Day of the week the user wants a weekly recap notification. */
+  weeklyReviewDay?: 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat';
 }
 
 export interface AppSettings {
