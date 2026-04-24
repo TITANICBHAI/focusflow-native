@@ -38,3 +38,15 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[[ports]]
+localPort = 25040
+externalPort = 3001
+
+[[ports]]
+localPort = 25669
+externalPort = 3000
