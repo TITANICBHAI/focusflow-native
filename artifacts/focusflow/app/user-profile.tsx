@@ -24,6 +24,7 @@ import {
   dbGetAllTimeFocusMinutes,
   dbGetAllTimeFocusSessions,
 } from '@/data/database';
+import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
 // ── Option data ───────────────────────────────────────────────────────────────
 
@@ -117,161 +118,10 @@ const REVIEW_DAYS: { id: NonNullable<UserProfile['weeklyReviewDay']>; label: str
   { id: 'sat', label: 'Sat' },
 ];
 
-// ── App block suggestions ─────────────────────────────────────────────────────
-// Maps occupation IDs and goal IDs to lists of suggested apps to block.
-// Each entry: { name, pkg } — name is for display, pkg is the package name.
-
-interface SuggestedApp { name: string; pkg: string; reason: string; }
-
-const OCCUPATION_SUGGESTIONS: Record<string, SuggestedApp[]> = {
-  student: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Big time sink during study' },
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Constant scroll distraction' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Short-form video addiction' },
-    { name: 'Snapchat',   pkg: 'com.snapchat.android',             reason: 'Frequent social interruptions' },
-    { name: 'Reddit',     pkg: 'com.reddit.frontpage',             reason: 'Endless rabbit holes' },
-  ],
-  professional: [
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'News doom-scroll during work hours' },
-    { name: 'LinkedIn',    pkg: 'com.linkedin.android',            reason: 'Passive browsing vs active work' },
-    { name: 'YouTube',     pkg: 'com.google.android.youtube',      reason: 'Autoplay pulls attention away' },
-    { name: 'Candy Crush', pkg: 'com.king.candycrushsaga',         reason: '"Just one level" trap' },
-  ],
-  freelancer: [
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Comparison scrolling kills momentum' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Compulsive checking breaks flow' },
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Autoplay derails deep work' },
-    { name: 'WhatsApp',   pkg: 'com.whatsapp',                    reason: 'Client messages can wait for batch reply' },
-  ],
-  creator: [
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Engagement anxiety blocks creation' },
-    { name: 'Instagram',   pkg: 'com.instagram.android',           reason: 'Scroll triggers comparison' },
-    { name: 'TikTok',      pkg: 'com.zhiliaoapp.musically',         reason: 'Short-form competes with long creation' },
-    { name: 'Netflix',     pkg: 'com.netflix.mediaclient',         reason: 'Passive consumption mode' },
-  ],
-};
-
-const GOAL_SUGGESTIONS: Record<string, SuggestedApp[]> = {
-  deep_work: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Autoplay destroys flow state' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Micro-updates interrupt sustained thought' },
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Visual scroll breaks context' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Dopamine-reward loop vs deep focus' },
-    { name: 'Discord',    pkg: 'com.discord',                     reason: 'Constant pings fragment attention' },
-    { name: 'Reddit',     pkg: 'com.reddit.frontpage',             reason: 'Link-hopping destroys deep work' },
-  ],
-  study: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Unless used for lectures — hard to resist' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Strongest short-form reward cycle' },
-    { name: 'Snapchat',   pkg: 'com.snapchat.android',             reason: 'Streaks create artificial urgency' },
-    { name: 'Games (Candy Crush)', pkg: 'com.king.candycrushsaga', reason: 'Designed to be picked up mid-task' },
-  ],
-  no_social: [
-    { name: 'Facebook',   pkg: 'com.facebook.katana',              reason: 'Block the source' },
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Block the source' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Block the source' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Block the source' },
-    { name: 'Snapchat',   pkg: 'com.snapchat.android',             reason: 'Block the source' },
-    { name: 'Reddit',     pkg: 'com.reddit.frontpage',             reason: 'Block the source' },
-    { name: 'BeReal',     pkg: 'com.bereal.android',               reason: 'Block the source' },
-    { name: 'Pinterest',  pkg: 'com.pinterest',                   reason: 'Block the source' },
-  ],
-  reading: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Video competes with deep reading' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Opposite attention pattern to reading' },
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Visual scroll interrupts immersion' },
-  ],
-  coding: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Autoplay derails coding sessions' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Tech news loops break focus' },
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Passive scroll replaces active building' },
-    { name: 'Games',      pkg: 'com.roblox.client',               reason: 'Easy to slip into play mode' },
-  ],
-  writing: [
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Micro-writing substitutes for real writing' },
-    { name: 'Reddit',      pkg: 'com.reddit.frontpage',            reason: 'Procrastination disguised as research' },
-    { name: 'YouTube',     pkg: 'com.google.android.youtube',      reason: '"Background noise" becomes main event' },
-  ],
-  exercise: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',       reason: 'Passive watching replaces active doing' },
-    { name: 'Netflix',    pkg: 'com.netflix.mediaclient',          reason: 'Couch time grows, gym time shrinks' },
-  ],
-  creative: [
-    { name: 'Instagram',  pkg: 'com.instagram.android',            reason: 'Comparison anxiety kills creative flow' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',            reason: 'Engagement anxiety distracts from creation' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',          reason: 'Consuming replaces creating' },
-  ],
-};
-
-// Distraction-trigger → suggested apps. Merged into the main suggestion list
-// so picking "Social media" and "Games" pre-fills Instagram/TikTok/Roblox/etc
-// even when the user hasn't picked a focus goal yet.
-const TRIGGER_SUGGESTIONS: Record<string, SuggestedApp[]> = {
-  social: [
-    { name: 'Instagram',  pkg: 'com.instagram.android',     reason: 'Top scroll-trigger for most users' },
-    { name: 'Facebook',   pkg: 'com.facebook.katana',       reason: 'Endless feed' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',       reason: 'Compulsive checking' },
-    { name: 'Snapchat',   pkg: 'com.snapchat.android',      reason: 'Streak pressure pulls you back' },
-  ],
-  video: [
-    { name: 'YouTube',    pkg: 'com.google.android.youtube',reason: 'Autoplay derails everything' },
-    { name: 'TikTok',     pkg: 'com.zhiliaoapp.musically',  reason: 'Strongest short-form reward loop' },
-    { name: 'Netflix',    pkg: 'com.netflix.mediaclient',   reason: '"One more episode" trap' },
-    { name: 'Twitch',     pkg: 'tv.twitch.android.app',     reason: 'Live content hard to leave' },
-  ],
-  news: [
-    { name: 'Google News', pkg: 'com.google.android.apps.magazines', reason: 'Doom-scroll trigger' },
-    { name: 'Reddit',      pkg: 'com.reddit.frontpage',      reason: 'Endless rabbit holes' },
-    { name: 'Twitter / X', pkg: 'com.twitter.android',       reason: 'Real-time news anxiety' },
-  ],
-  games: [
-    { name: 'Candy Crush', pkg: 'com.king.candycrushsaga',  reason: '"Just one level" trap' },
-    { name: 'Roblox',      pkg: 'com.roblox.client',        reason: 'Multi-hour sessions are easy' },
-    { name: 'Clash Royale',pkg: 'com.supercell.clashroyale',reason: 'Designed to interrupt your day' },
-  ],
-  shopping: [
-    { name: 'Amazon',     pkg: 'com.amazon.mShop.android.shopping', reason: 'Browsing burns hours' },
-    { name: 'AliExpress', pkg: 'com.alibaba.aliexpresshd',  reason: 'Endless deals scroll' },
-    { name: 'Temu',       pkg: 'com.einnovation.temu',      reason: 'Designed for compulsive use' },
-  ],
-  messaging: [
-    { name: 'WhatsApp',   pkg: 'com.whatsapp',              reason: 'Frequent interruptions' },
-    { name: 'Messenger',  pkg: 'com.facebook.orca',         reason: 'Always-on chat fragments focus' },
-    { name: 'Telegram',   pkg: 'org.telegram.messenger',    reason: 'Group chats keep ringing' },
-    { name: 'Discord',    pkg: 'com.discord',               reason: 'Servers ping constantly' },
-  ],
-};
-
-function computeSuggestedApps(
-  occupation: string,
-  goals: string[],
-  triggers: string[] = [],
-): SuggestedApp[] {
-  const seen = new Set<string>();
-  const results: SuggestedApp[] = [];
-  const addAll = (list: SuggestedApp[]) => {
-    for (const item of list) {
-      if (!seen.has(item.pkg)) {
-        seen.add(item.pkg);
-        results.push(item);
-      }
-    }
-  };
-  if (occupation && OCCUPATION_SUGGESTIONS[occupation]) {
-    addAll(OCCUPATION_SUGGESTIONS[occupation]);
-  }
-  for (const goal of goals) {
-    if (GOAL_SUGGESTIONS[goal]) {
-      addAll(GOAL_SUGGESTIONS[goal]);
-    }
-  }
-  for (const trigger of triggers) {
-    if (TRIGGER_SUGGESTIONS[trigger]) {
-      addAll(TRIGGER_SUGGESTIONS[trigger]);
-    }
-  }
-  return results;
-}
+// ── App block suggestions removed per user request ────────────────────────────
+// The previous occupation/goal/trigger → suggested-apps tables and the
+// "Apps to consider blocking" section have been removed.  Distraction triggers
+// are still captured in the profile for future use.
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -327,11 +177,6 @@ export default function UserProfileScreen() {
     })();
     return () => { cancelled = true; };
   }, [isEditMode]);
-
-  const suggestedApps = useMemo(
-    () => computeSuggestedApps(occupation, goals, triggers),
-    [occupation, goals, triggers],
-  );
 
   // Computes today's progress toward the daily focus-hour goal and a short
   // motivational caption used in the journey panel.
@@ -394,6 +239,11 @@ export default function UserProfileScreen() {
       };
       await updateSettings(updated);
 
+      // Mirror onboarding flag into SharedPreferences so it survives DB-file
+      // wipes (some Android OEMs aggressively clear app private storage).
+      // Restored by AppContext.init() on next launch.
+      try { await SharedPrefsModule.putString('onboarding_complete', 'true'); } catch { /* non-fatal */ }
+
       // Schedule morning digest for tomorrow if a wake-up time is set.
       if (profile.wakeUpTime) {
         try {
@@ -417,6 +267,7 @@ export default function UserProfileScreen() {
     if (isEditMode) { router.back(); return; }
     // Mark onboarding done but don't save a profile
     await updateSettings({ ...state.settings, onboardingComplete: true });
+    try { await SharedPrefsModule.putString('onboarding_complete', 'true'); } catch { /* non-fatal */ }
     router.replace('/');
   };
 
@@ -719,7 +570,7 @@ export default function UserProfileScreen() {
           {/* Distraction triggers */}
           <FormSection title="What pulls you off track most?">
             <Text style={[styles.multiHint, { color: theme.muted }]}>
-              Select all that apply. Adds tailored apps to the block-suggestions below.
+              Select all that apply. Helps the app recognise the patterns you struggle with most.
             </Text>
             <View style={styles.chipGrid}>
               {DISTRACTION_TRIGGERS.map((t) => {
@@ -784,34 +635,6 @@ export default function UserProfileScreen() {
             </View>
           </FormSection>
 
-          {/* App block suggestions — shown when occupation or goals are set */}
-          {suggestedApps.length > 0 && (
-            <FormSection title="Apps to consider blocking">
-              <Text style={[styles.multiHint, { color: theme.muted }]}>
-                Based on your profile. You can block these anytime from the Focus screen.
-              </Text>
-              <View style={{ gap: 8 }}>
-                {suggestedApps.map((app) => (
-                  <View
-                    key={app.pkg}
-                    style={[styles.suggestionCard, { backgroundColor: theme.card, borderColor: theme.border }]}
-                  >
-                    <View style={[styles.suggestionIcon, { backgroundColor: COLORS.primaryLight }]}>
-                      <Ionicons name="ban-outline" size={16} color={COLORS.primary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.suggestionName, { color: theme.text }]}>{app.name}</Text>
-                      <Text style={[styles.suggestionReason, { color: theme.muted }]}>{app.reason}</Text>
-                    </View>
-                    <View style={[styles.suggestionBadge, { backgroundColor: COLORS.primaryLight }]}>
-                      <Text style={styles.suggestionBadgeText}>Block</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </FormSection>
-          )}
-
           {/* "How your profile is used" — shows the user exactly which parts
               of the app react to each profile field, so the form doesn't feel
               like a black hole of preferences. Always rendered. */}
@@ -844,8 +667,8 @@ export default function UserProfileScreen() {
               value={occupation ? labelFor(OCCUPATIONS, occupation) : 'Not set'}
               detail={
                 occupation
-                  ? 'Used to suggest distracting apps to block, tailored to your work pattern.'
-                  : 'Pick one to see tailored app-block suggestions below.'
+                  ? 'Helps tailor your morning digest tone and stats labels to your work pattern.'
+                  : 'Pick one so we can tailor the app to your routine.'
               }
               theme={theme}
             />
@@ -855,8 +678,8 @@ export default function UserProfileScreen() {
               value={goals.length > 0 ? `${goals.length} selected` : 'None'}
               detail={
                 goals.length > 0
-                  ? `Drives suggestions for "${goals.map((g) => labelFor(FOCUS_GOALS, g)).slice(0, 2).join(', ')}${goals.length > 2 ? '…' : ''}".`
-                  : 'Add goals to refine app-block suggestions.'
+                  ? `Used to label your focus blocks ("${goals.map((g) => labelFor(FOCUS_GOALS, g)).slice(0, 2).join(', ')}${goals.length > 2 ? '…' : ''}") in stats and recaps.`
+                  : 'Add goals so we can group and label your focus time.'
               }
               theme={theme}
             />
@@ -908,8 +731,8 @@ export default function UserProfileScreen() {
               label="Distraction triggers"
               value={triggers.length > 0 ? `${triggers.length} selected` : 'None'}
               detail={triggers.length > 0
-                ? 'Adds tailored apps to your block-suggestions list above.'
-                : 'Pick triggers (social, video, games…) for tailored block suggestions.'}
+                ? 'Recorded so future features (insights, weekly recap) can reference what derails you most.'
+                : 'Pick what derails you most so the app can adapt over time.'}
               theme={theme}
             />
             <UsageRow
@@ -1135,28 +958,6 @@ const styles = StyleSheet.create({
   saveBtnText: { color: '#fff', fontSize: FONT.md, fontWeight: '800' },
   skipLink: { alignItems: 'center', paddingVertical: SPACING.xs },
   skipLinkText: { color: COLORS.muted, fontSize: FONT.xs, textAlign: 'center' },
-  suggestionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  suggestionIcon: {
-    width: 32, height: 32, borderRadius: RADIUS.sm,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  suggestionName: { fontSize: FONT.sm, fontWeight: '700' },
-  suggestionReason: { fontSize: FONT.xs, lineHeight: 16, marginTop: 1 },
-  suggestionBadge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    flexShrink: 0,
-  },
-  suggestionBadgeText: { fontSize: 10, fontWeight: '800', color: COLORS.primary },
-
   // ── Journey card (personal stats panel) ────────────────────────────────
   journeyCard: {
     borderRadius: RADIUS.lg,

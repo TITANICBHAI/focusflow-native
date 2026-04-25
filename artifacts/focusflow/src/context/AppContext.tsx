@@ -271,23 +271,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const rawSettings = await withTimeout(dbGetSettings(), 8000, defaultSettings);
       void logger.info('AppContext', 'Settings loaded from DB');
 
-      // If the DB returned privacyAccepted=false (e.g. because it fell back to
-      // the recovery DB after OEM memory management wiped the DB file), cross-
-      // check with SharedPreferences — which survives DB file deletion — before
-      // concluding the user needs to re-accept the privacy policy. This stops
-      // the privacy policy screen from appearing randomly between sessions.
+      // If the DB returned privacyAccepted=false or onboardingComplete=false
+      // (e.g. because it fell back to the recovery DB after OEM memory
+      // management wiped the DB file), cross-check with SharedPreferences —
+      // which survives DB file deletion — before concluding the user needs to
+      // re-accept the privacy policy or redo onboarding.  Stops the
+      // privacy/onboarding screens from re-appearing randomly between sessions.
       let settings = rawSettings;
+      let restoredFromSp = false;
       if (!rawSettings.privacyAccepted) {
         try {
           const spValue = await SharedPrefsModule.getString('privacy_accepted');
           if (spValue === 'true') {
             void logger.info('AppContext', 'privacyAccepted restored from SharedPreferences backup');
-            settings = { ...rawSettings, privacyAccepted: true };
-            try { await dbSaveSettings(settings); } catch { /* non-fatal */ }
+            settings = { ...settings, privacyAccepted: true };
+            restoredFromSp = true;
           }
         } catch (e) {
           void logger.warn('AppContext', `SharedPrefs privacy backup check failed: ${String(e)}`);
         }
+      }
+      if (!rawSettings.onboardingComplete) {
+        try {
+          const spValue = await SharedPrefsModule.getString('onboarding_complete');
+          if (spValue === 'true') {
+            void logger.info('AppContext', 'onboardingComplete restored from SharedPreferences backup');
+            settings = { ...settings, onboardingComplete: true };
+            restoredFromSp = true;
+          }
+        } catch (e) {
+          void logger.warn('AppContext', `SharedPrefs onboarding backup check failed: ${String(e)}`);
+        }
+      }
+      if (restoredFromSp) {
+        try { await dbSaveSettings(settings); } catch { /* non-fatal — primary path is the in-memory state */ }
       }
 
       void logger.info('AppContext', 'Dispatching SET_SETTINGS + SET_DB_READY');

@@ -14,6 +14,39 @@ type Entry = {
 
 const CHANGELOG: Entry[] = [
   {
+    version: 'c1.0.8',
+    date: 'April 2026',
+    sections: [
+      {
+        heading: 'Block-list Safety',
+        icon: 'shield-checkmark-outline',
+        items: [
+          'Sensitive system apps (home launcher, dialer, Settings, Google Play Services, package installer, wallets, FocusFlow itself) are no longer silently force-allowed during Focus',
+          'Trying to block a sensitive app now opens a confirmation dialog explaining the risk — you can still proceed',
+          '"Sensitive" badge replaces the old "System" lock icon so you can see at a glance which apps need extra care',
+          '"Block all" deselect now warns once with a count of sensitive apps that would be blocked',
+        ],
+      },
+      {
+        heading: 'Cleaner Profile',
+        icon: 'person-circle-outline',
+        items: [
+          'Removed the "Apps to consider blocking" suggestion section from the profile screen',
+          'Distraction triggers are still captured for future insights, but no longer drive a suggestion list',
+          'Helper copy on triggers, occupation and goals updated to describe what each field actually does today',
+        ],
+      },
+      {
+        heading: 'Onboarding Persistence',
+        icon: 'save-outline',
+        items: [
+          'Fixed: onboarding/profile screen could randomly re-appear after some days if Android wiped the database',
+          'Onboarding completion is now mirrored into SharedPreferences (which survives DB-file deletion) and restored on next launch — same fix that previously stopped the privacy-policy screen from re-appearing',
+        ],
+      },
+    ],
+  },
+  {
     version: 'c1.0.7',
     date: 'April 2026',
     sections: [

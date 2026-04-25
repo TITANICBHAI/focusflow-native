@@ -18,70 +18,110 @@ import { InstalledAppsModule, type InstalledApp } from '@/native-modules/Install
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import type { AllowedAppPreset } from '@/data/types';
 
-// ─── System app whitelist ─────────────────────────────────────────────────────
-// Apps in this set are ALWAYS allowed during Focus and cannot be deselected.
-// Blocking them causes soft bricks (no home screen), broken emergencies, or
-// inaccessible device settings.  Research summary:
-//   • Home launchers (ALL brands): blocking = no way to return to home = soft brick
-//   • SystemUI: blocking = status bar/notification shade disappears = device unusable
-//   • Phone/dialer: blocking = cannot dial 112/911 during emergency
-//   • Settings: blocking = cannot change any device setting (including uninstalling FocusFlow)
-//   • Google Play Services (gms): blocking = ~all apps fail auth, crash, or lose internet
-//   • Package installers: blocking = OTA updates and Play Store installs fail silently
-//   • Wallet apps: blocking at a payment terminal leaves user unable to pay or unlock NFC
-//   • FocusFlow itself: must always be accessible so user can end/adjust a session
+// ─── Sensitive-app advisory list ──────────────────────────────────────────────
+// These apps CAN be blocked, but the user is warned first because blocking them
+// can soft-brick the device, break emergency calls, or lock the user out of
+// FocusFlow itself.  The warning is a confirmation dialog — the user can still
+// proceed.
+//
+// Each category groups packages with the same risk so the warning is concise.
 
-const SYSTEM_ALWAYS_ALLOWED = new Set([
-  // ── Home launchers (every known Android OEM + AOSP) ──
-  'com.android.launcher',
-  'com.android.launcher2',
-  'com.android.launcher3',
-  'com.sec.android.app.launcher',        // Samsung OneUI
-  'com.google.android.apps.nexuslauncher', // Pixel / stock
-  'com.miui.launcher',                   // Xiaomi / MIUI
-  'com.huawei.android.launcher',         // Huawei / EMUI
-  'com.coloros.launcher',                // Oppo / ColorOS
-  'com.oneplus.launcher',                // OnePlus OxygenOS
-  'com.oppo.launcher',                   // Oppo legacy
-  'com.motorola.launcher3',              // Motorola
-  'com.nothing.launcher',               // Nothing OS
-  'com.realme.launcher',                 // Realme UI
-  'com.iqoo.launcher',                   // iQOO / Funtouch
-  'com.vivo.launcher',                   // Vivo
-  'com.asus.launcher',                   // Asus ROG
-  'com.ZenUI.launcher',                  // Asus ZenUI
-  'com.lge.launcher3',                   // LG
-  'com.htc.launcher',                    // HTC
-  'com.sonyericsson.home',               // Sony Xperia
-  'com.tcl.launcher',                    // TCL
-  'com.nokia.launcher',                  // Nokia
-  'com.infinix.launcher',                // Infinix
-  'com.transsion.launcher',              // Transsion / itel / Tecno
-  'com.hihonor.launcher',                // Honor
-  // ── System UI ──
-  'com.android.systemui',
-  // ── Phone / emergency calling ──
-  'com.android.phone',
-  'com.android.server.telecom',
-  'com.samsung.android.incallui',
-  'com.google.android.dialer',
-  'com.google.android.apps.googledialer',
-  // ── Settings ──
-  'com.android.settings',
-  'com.sec.android.app.SecSetupWizard',
-  // ── Google Play Services (critical dependency for most apps) ──
-  'com.google.android.gms',
-  // ── Package installers ──
-  'com.android.packageinstaller',
-  'com.google.android.packageinstaller',
-  'com.samsung.android.packageinstaller',
-  // ── Digital wallets (blocking at POS terminal leaves user stranded) ──
-  'com.samsung.android.wallet',
-  'com.samsung.android.samsungpay',
-  'com.google.android.apps.walletnfcrel',
-  // ── FocusFlow itself ──
-  'com.tbtechs.focusflow',
-]);
+type SensitiveCategory = {
+  category: string;          // Short label shown on the badge
+  warning: string;           // Risk text shown in the confirmation dialog
+  pkgs: string[];
+};
+
+const SENSITIVE_CATEGORIES: SensitiveCategory[] = [
+  {
+    category: 'Home launcher',
+    warning:
+      'Blocking your home launcher can leave you with no way to return to the home screen during a focus session.',
+    pkgs: [
+      'com.android.launcher', 'com.android.launcher2', 'com.android.launcher3',
+      'com.sec.android.app.launcher',          // Samsung OneUI
+      'com.google.android.apps.nexuslauncher', // Pixel / stock
+      'com.miui.launcher',                     // Xiaomi / MIUI
+      'com.huawei.android.launcher',           // Huawei / EMUI
+      'com.coloros.launcher',                  // Oppo / ColorOS
+      'com.oneplus.launcher',                  // OnePlus OxygenOS
+      'com.oppo.launcher',                     // Oppo legacy
+      'com.motorola.launcher3',                // Motorola
+      'com.nothing.launcher',                  // Nothing OS
+      'com.realme.launcher',                   // Realme UI
+      'com.iqoo.launcher',                     // iQOO / Funtouch
+      'com.vivo.launcher',                     // Vivo
+      'com.asus.launcher', 'com.ZenUI.launcher', // Asus
+      'com.lge.launcher3',                     // LG
+      'com.htc.launcher',                      // HTC
+      'com.sonyericsson.home',                 // Sony Xperia
+      'com.tcl.launcher',                      // TCL
+      'com.nokia.launcher',                    // Nokia
+      'com.infinix.launcher',                  // Infinix
+      'com.transsion.launcher',                // Transsion / itel / Tecno
+      'com.hihonor.launcher',                  // Honor
+    ],
+  },
+  {
+    category: 'System UI',
+    warning:
+      'Blocking System UI hides the status bar and notification shade — the device may become unusable until the focus session ends.',
+    pkgs: ['com.android.systemui'],
+  },
+  {
+    category: 'Phone / dialer',
+    warning:
+      'Blocking the phone dialer can prevent you from making emergency calls (112 / 911) during a focus session.',
+    pkgs: [
+      'com.android.phone', 'com.android.server.telecom',
+      'com.samsung.android.incallui',
+      'com.google.android.dialer', 'com.google.android.apps.googledialer',
+    ],
+  },
+  {
+    category: 'Android Settings',
+    warning:
+      'Blocking Settings means you may not be able to change device settings (including disabling FocusFlow) until the session ends.',
+    pkgs: ['com.android.settings', 'com.sec.android.app.SecSetupWizard'],
+  },
+  {
+    category: 'Google Play Services',
+    warning:
+      'Most apps depend on Google Play Services for sign-in, push notifications and Maps. Blocking it can break many other apps at once.',
+    pkgs: ['com.google.android.gms'],
+  },
+  {
+    category: 'Package installer',
+    warning:
+      'Blocking the package installer means Play Store updates and new app installs may silently fail.',
+    pkgs: [
+      'com.android.packageinstaller',
+      'com.google.android.packageinstaller',
+      'com.samsung.android.packageinstaller',
+    ],
+  },
+  {
+    category: 'Wallet / NFC pay',
+    warning:
+      'Blocking your wallet app can leave you unable to pay at a card terminal or unlock NFC during the session.',
+    pkgs: [
+      'com.samsung.android.wallet',
+      'com.samsung.android.samsungpay',
+      'com.google.android.apps.walletnfcrel',
+    ],
+  },
+  {
+    category: 'FocusFlow',
+    warning:
+      'Blocking FocusFlow itself means you will have no way to end or adjust the active focus session from inside the app.',
+    pkgs: ['com.tbtechs.focusflow'],
+  },
+];
+
+const SENSITIVE_APPS = new Map<string, { category: string; warning: string }>();
+SENSITIVE_CATEGORIES.forEach((c) =>
+  c.pkgs.forEach((p) => SENSITIVE_APPS.set(p, { category: c.category, warning: c.warning })),
+);
 
 interface Props {
   visible: boolean;
@@ -132,16 +172,13 @@ export function AppPickerSheet({
         setApps(sorted);
 
         const allPkgs = new Set(sorted.map((a) => a.packageName));
-        // System-critical apps are always allowed — seed them into the initial selection
-        const systemPkgsPresent = sorted
-          .map((a) => a.packageName)
-          .filter((p) => SYSTEM_ALWAYS_ALLOWED.has(p));
         if (initialSelected.length === 0) {
           // [] sentinel → check ALL apps (all allowed by default)
           setSelected(new Set(allPkgs));
         } else {
-          // Always include system-critical apps even if not in the saved list
-          setSelected(new Set([...initialSelected.filter((p) => allPkgs.has(p)), ...systemPkgsPresent]));
+          // Honour the user's saved selection exactly — sensitive apps are
+          // surfaced with a warning at toggle time, not auto-added here.
+          setSelected(new Set(initialSelected.filter((p) => allPkgs.has(p))));
         }
       } catch {
         setApps([]);
@@ -162,25 +199,58 @@ export function AppPickerSheet({
     );
   }, [apps, search]);
 
+  const removePkg = useCallback((pkg: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(pkg);
+      return next;
+    });
+  }, []);
+
   const toggle = useCallback((pkg: string) => {
-    if (SYSTEM_ALWAYS_ALLOWED.has(pkg)) return; // system-critical: never removable
+    const sensitive = SENSITIVE_APPS.get(pkg);
+    const isAllowed = selected.has(pkg);
+    // Only warn when REMOVING (= "blocking during focus") a sensitive app.
+    if (sensitive && isAllowed) {
+      Alert.alert(
+        `Block ${sensitive.category}?`,
+        `${sensitive.warning}\n\nYou can re-enable it any time from this screen.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Block anyway', style: 'destructive', onPress: () => removePkg(pkg) },
+        ],
+      );
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(pkg)) next.delete(pkg);
       else next.add(pkg);
       return next;
     });
-  }, []);
+  }, [selected, removePkg]);
 
   const selectAll = useCallback(() => {
     setSelected(new Set(apps.map((a) => a.packageName)));
   }, [apps]);
 
   const deselectAll = useCallback(() => {
-    // Keep system-critical apps always checked
-    const systemPkgs = apps.map((a) => a.packageName).filter((p) => SYSTEM_ALWAYS_ALLOWED.has(p));
-    setSelected(new Set(systemPkgs));
-  }, [apps]);
+    const sensitivePresent = apps
+      .map((a) => a.packageName)
+      .filter((p) => SENSITIVE_APPS.has(p) && selected.has(p));
+    if (sensitivePresent.length > 0) {
+      Alert.alert(
+        'Block all apps?',
+        `This will also block ${sensitivePresent.length} sensitive app${sensitivePresent.length === 1 ? '' : 's'} (launcher, dialer, Settings, etc.). The device may become hard to use until the session ends.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Block everything', style: 'destructive', onPress: () => setSelected(new Set()) },
+        ],
+      );
+      return;
+    }
+    setSelected(new Set());
+  }, [apps, selected]);
 
   const applyPreset = useCallback(
     (preset: AllowedAppPreset) => {
@@ -236,12 +306,12 @@ export function AppPickerSheet({
 
   const renderApp = ({ item }: { item: InstalledApp }) => {
     const checked = selected.has(item.packageName);
-    const isSystem = SYSTEM_ALWAYS_ALLOWED.has(item.packageName);
+    const sensitive = SENSITIVE_APPS.get(item.packageName);
     return (
       <TouchableOpacity
-        style={[styles.row, isSystem && { opacity: 0.7 }]}
+        style={styles.row}
         onPress={() => toggle(item.packageName)}
-        activeOpacity={isSystem ? 1 : 0.7}
+        activeOpacity={0.7}
       >
         {item.iconBase64 ? (
           <Image
@@ -256,22 +326,20 @@ export function AppPickerSheet({
         <View style={styles.appInfo}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={styles.appName} numberOfLines={1}>{item.appName}</Text>
-            {isSystem && (
+            {sensitive && (
               <View style={styles.systemBadge}>
-                <Ionicons name="shield-checkmark" size={10} color={COLORS.primary} />
-                <Text style={styles.systemBadgeText}>System</Text>
+                <Ionicons name="alert-circle-outline" size={10} color={COLORS.primary} />
+                <Text style={styles.systemBadgeText}>Sensitive</Text>
               </View>
             )}
           </View>
-          <Text style={styles.pkgName} numberOfLines={1}>{item.packageName}</Text>
+          <Text style={styles.pkgName} numberOfLines={1}>
+            {sensitive ? `${sensitive.category} · ${item.packageName}` : item.packageName}
+          </Text>
         </View>
-        {isSystem ? (
-          <Ionicons name="lock-closed" size={16} color={COLORS.muted} />
-        ) : (
-          <View style={[styles.checkbox, checked && styles.checkboxOn]}>
-            {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
-          </View>
-        )}
+        <View style={[styles.checkbox, checked && styles.checkboxOn]}>
+          {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -397,7 +465,7 @@ export function AppPickerSheet({
         />
       </View>
 
-      <Text style={styles.hint}>Checked apps are allowed during Focus Mode · Uncheck all to block every app</Text>
+      <Text style={styles.hint}>Checked apps are allowed during Focus · "Sensitive" tag warns before blocking apps that can break the device</Text>
 
       {loading && (
         <View style={styles.loadingRow}>
