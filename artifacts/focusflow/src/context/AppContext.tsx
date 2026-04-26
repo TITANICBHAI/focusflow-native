@@ -198,6 +198,9 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ref to the latest tryAutoStartFocus so the long-lived 30 s tick can call
+  // it without re-creating the interval whenever the callback identity changes.
+  const tryAutoStartFocusRef = useRef<(() => void) | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tracks which unresolved task IDs have already triggered a "did you finish
   // your previous task?" alert so we don't show the same prompt twice.
@@ -580,6 +583,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // standalone-block expiry stay in sync without waiting for the next
       // user action. Cheap: it's a single SharedPrefs read + RemoteViews push.
       void _syncWidget(s);
+      // Safety net: if the precise focus-mode timer was cleared by an unmount
+      // or a hot-reload, the tick still catches the activation within 30 s.
+      tryAutoStartFocusRef.current?.();
     }, 30000);
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
@@ -719,38 +725,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [state.settings.standaloneBlockUntil]);
 
   // ── Auto-start focus mode when active task has focusMode: true ───────────────
-  // Runs when the active task changes. If the task was created with focusMode
-  // enabled and no focus session is running yet, activate silently (no goHome).
+  // PROBLEM PREVIOUSLY: this only fired when state.tasks changed. If a task was
+  // created in advance (e.g. created at 10:00 to start at 11:00), state.tasks
+  // didn't change at 11:00, so the effect never re-ran and focus mode never
+  // auto-started — making the per-task "Enable Focus Mode" toggle look broken.
+  //
+  // NEW DESIGN:
+  //   1. tryAutoStartFocus()  — pure function that checks whether the currently
+  //      active task wants focus mode and starts it if so. Safe to call any
+  //      number of times (guarded by focusSession === null && !isFocusActive()).
+  //   2. Run it whenever state.tasks changes (instant if a task is created
+  //      already-active or already-late).
+  //   3. Schedule a one-shot setTimeout for the *next* future focus-mode task's
+  //      startTime so it fires the moment the task becomes active — no waiting
+  //      for the 30 s tick.
+  //   4. The 30 s tick (further down) also calls it as a safety net.
 
+  const tryAutoStartFocus = useCallback(() => {
+    const s = stateRef.current;
+    if (!s.settings.focusModeEnabled) return;
+    if (s.focusSession !== null) return;
+    if (isFocusActive()) return;
+    const active = getActiveTask(s.tasks);
+    if (!active || !active.focusMode) return;
+
+    // Task-specific allowed packages take priority over the global list.
+    const autoAllowed =
+      active.focusAllowedPackages !== undefined
+        ? active.focusAllowedPackages
+        : s.settings.allowedInFocus;
+    void _startFocusMode(
+      active,
+      autoAllowed,
+      (app) => {
+        dispatch({ type: 'SET_FOCUS_VIOLATION', payload: app });
+        setTimeout(() => dispatch({ type: 'SET_FOCUS_VIOLATION', payload: null }), 4000);
+      },
+      { skipGoHome: true },
+    ).then(() => {
+      const session: FocusSession = {
+        taskId: active.id,
+        startedAt: new Date().toISOString(),
+        isActive: true,
+        allowedPackages: autoAllowed,
+      };
+      dispatch({ type: 'SET_FOCUS_SESSION', payload: session });
+    }).catch(() => {});
+  }, []);
+
+  // Keep the long-lived 30 s tick's ref in sync with the latest callback.
   useEffect(() => {
-    const active = getActiveTask(stateRef.current.tasks);
-    if (active && active.focusMode && stateRef.current.settings.focusModeEnabled && stateRef.current.focusSession === null && !isFocusActive()) {
-      // Task-specific allowed packages take priority over the global list when auto-starting.
-      const autoAllowed =
-        active.focusAllowedPackages !== undefined
-          ? active.focusAllowedPackages
-          : stateRef.current.settings.allowedInFocus;
-      void _startFocusMode(
-        active,
-        autoAllowed,
-        (app) => {
-          dispatch({ type: 'SET_FOCUS_VIOLATION', payload: app });
-          setTimeout(() => dispatch({ type: 'SET_FOCUS_VIOLATION', payload: null }), 4000);
-        },
-        { skipGoHome: true },
-      ).then(() => {
-        const session: FocusSession = {
-          taskId: active.id,
-          startedAt: new Date().toISOString(),
-          isActive: true,
-          allowedPackages: autoAllowed,
-        };
-        dispatch({ type: 'SET_FOCUS_SESSION', payload: session });
-      }).catch(() => {});
-    }
-  // Re-run when the active task identity changes (new task or task cleared)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.tasks]);
+    tryAutoStartFocusRef.current = tryAutoStartFocus;
+  }, [tryAutoStartFocus]);
+
+  // (a) Try right away whenever the task list changes.
+  useEffect(() => {
+    tryAutoStartFocus();
+  }, [state.tasks, tryAutoStartFocus]);
+
+  // (b) Schedule a precise one-shot timer for the next future focus-mode task
+  // so auto-start fires the *moment* its startTime arrives, not 30 s later.
+  useEffect(() => {
+    const now = Date.now();
+    const nextFocusTask = state.tasks
+      .filter(
+        (t) =>
+          t.focusMode &&
+          t.status !== 'completed' &&
+          t.status !== 'skipped' &&
+          new Date(t.startTime).getTime() > now,
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+      )[0];
+    if (!nextFocusTask) return;
+    const msUntilStart = new Date(nextFocusTask.startTime).getTime() - now;
+    // Cap at ~24 h — beyond that we'll re-schedule on the next state.tasks change.
+    if (msUntilStart > 24 * 60 * 60 * 1000) return;
+    const t = setTimeout(() => {
+      tryAutoStartFocus();
+    }, msUntilStart + 250); // small buffer so getActiveTask sees the task as started
+    return () => clearTimeout(t);
+  }, [state.tasks, tryAutoStartFocus]);
 
   // ── Prompt user to resolve past unresolved tasks when a new task starts ──────
   // When a new task becomes active while a previous task is still awaiting a
