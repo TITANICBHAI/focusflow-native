@@ -17,6 +17,7 @@ import { useTheme } from '@/hooks/useTheme';
 import type { UserProfile } from '@/data/types';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { scheduleMorningDigest } from '@/services/notificationService';
+import { pickAndImportBackup } from '@/services/backupService';
 import {
   dbGetTodayFocusMinutes,
   dbGetStreak,
@@ -25,6 +26,7 @@ import {
   dbGetAllTimeFocusSessions,
 } from '@/data/database';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
+import { Alert } from 'react-native';
 
 // ── Option data ───────────────────────────────────────────────────────────────
 
@@ -126,7 +128,7 @@ const REVIEW_DAYS: { id: NonNullable<UserProfile['weeklyReviewDay']>; label: str
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function UserProfileScreen() {
-  const { state, updateSettings } = useApp();
+  const { state, updateSettings, addTask, deleteTask, refreshTasks } = useApp();
   const { theme } = useTheme();
   const navigation = useNavigation();
   const isEditMode = navigation.canGoBack(); // came from settings — back is available
@@ -275,6 +277,41 @@ export default function UserProfileScreen() {
     router.replace('/');
   };
 
+  // ── Returning-user import shortcut ───────────────────────────────────────
+  // Shown both during onboarding (so a user re-installing on a new phone can
+  // skip the questionnaire entirely) and from the profile screen when opened
+  // from Settings (so they can pull in a backup later).
+  const [importBusy, setImportBusy] = useState(false);
+  const handleImportFromBackup = async () => {
+    if (importBusy) return;
+    setImportBusy(true);
+    try {
+      const result = await pickAndImportBackup({
+        updateSettings,
+        addTask,
+        deleteTask,
+        refreshTasks,
+        replaceTasks: false,
+        currentTasks: state.tasks ?? [],
+        currentSettings: state.settings,
+      });
+      if ('error' in result) {
+        Alert.alert('Import failed', result.error);
+        return;
+      }
+      // Mark onboarding done so the user lands on the home screen.
+      await updateSettings({ ...state.settings, onboardingComplete: true });
+      try { await SharedPrefsModule.putString('onboarding_complete', 'true'); } catch { /* non-fatal */ }
+      Alert.alert(
+        'Welcome back',
+        `Settings ${result.settings ? 'restored' : 'unchanged'}.\nTasks imported: ${result.tasksImported}`,
+        [{ text: 'OK', onPress: () => { if (!isEditMode) router.replace('/'); } }],
+      );
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -307,9 +344,39 @@ export default function UserProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
           {!isEditMode && (
-            <Text style={[styles.intro, { color: theme.muted }]}>
-              This helps FocusFlow personalise your daily summaries and weekly reports. Everything is stored locally — nothing is shared.
-            </Text>
+            <>
+              {/* Returning-user shortcut: lets someone re-installing on a new
+                  phone skip the entire questionnaire by importing their old
+                  backup file. New users just keep scrolling. */}
+              <View style={[styles.welcomeBanner, { backgroundColor: COLORS.primary + '12', borderColor: COLORS.primary + '33' }]}>
+                <View style={styles.welcomeRow}>
+                  <View style={[styles.welcomeIconCircle, { backgroundColor: COLORS.primary + '22' }]}>
+                    <Ionicons name="sparkles" size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.welcomeTitle, { color: theme.text }]}>New here, or returning?</Text>
+                    <Text style={[styles.welcomeBody,  { color: theme.muted }]}>
+                      Brand new — just answer the short questions below.
+                      Coming back? Pull in your old backup and we'll skip the rest.
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.welcomeBtn, { borderColor: COLORS.primary }, importBusy && { opacity: 0.5 }]}
+                  onPress={handleImportFromBackup}
+                  disabled={importBusy}
+                >
+                  <Ionicons name="cloud-download-outline" size={16} color={COLORS.primary} />
+                  <Text style={[styles.welcomeBtnText, { color: COLORS.primary }]}>
+                    {importBusy ? 'Importing…' : 'Import previous backup'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.intro, { color: theme.muted }]}>
+                This helps FocusFlow personalise your daily summaries and weekly reports. Everything is stored locally — nothing is shared.
+              </Text>
+            </>
           )}
 
           {/* Your Journey — personal stats panel (edit mode only). Renders only
@@ -924,6 +991,28 @@ const styles = StyleSheet.create({
   skipText: { color: COLORS.primary, fontSize: FONT.sm, fontWeight: '700' },
   content: { padding: SPACING.lg, paddingBottom: 56, gap: SPACING.xl },
   intro: { fontSize: FONT.sm, lineHeight: 20 },
+
+  welcomeBanner: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    gap: SPACING.sm,
+  },
+  welcomeRow: { flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start' },
+  welcomeIconCircle: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  welcomeTitle: { fontSize: FONT.md, fontWeight: '800' },
+  welcomeBody: { fontSize: FONT.xs, lineHeight: 16, marginTop: 2 },
+  welcomeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.xs,
+    borderWidth: 1.5,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm,
+  },
+  welcomeBtnText: { fontSize: FONT.sm, fontWeight: '700' },
   section: { gap: SPACING.sm },
   sectionTitle: { fontSize: FONT.md, fontWeight: '800' },
   textInput: {

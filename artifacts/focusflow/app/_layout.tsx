@@ -81,6 +81,15 @@ Notifications.addNotificationResponseReceivedListener((response) => {
     return;
   }
 
+  // ── Morning digest tap → open the Reports screen ───────────────────────
+  // The morning notification is a recap of yesterday + plan for today, so
+  // funneling it into the dedicated reports screen gives the user the most
+  // useful first interaction of the day.
+  if (data?.type === 'morning-digest') {
+    try { router.push('/reports'); } catch { /* headless */ }
+    return;
+  }
+
   if (!taskId) return;
 
   // ── Tap the notification body or explicit VIEW button ─────────────────
@@ -346,6 +355,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
               <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
+              <Stack.Screen name="reports" options={{ headerShown: false, presentation: 'card' }} />
               <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
               <Stack.Screen name="permissions" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />

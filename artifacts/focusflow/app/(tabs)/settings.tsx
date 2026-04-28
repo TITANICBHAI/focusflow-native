@@ -17,6 +17,7 @@ import type { DailyAllowanceEntry, GreyoutWindow } from '@/data/types';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
+import { exportBackup, pickAndImportBackup } from '@/services/backupService';
 import { formatDuration } from '@/services/taskService';
 import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
@@ -32,7 +33,7 @@ const DURATION_OPTIONS = [30, 45, 60, 90, 120];
 
 function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { state, updateSettings, setStandaloneBlockAndAllowance, setDailyAllowanceEntries, setBlockedWords, refreshTasks, deleteTask } = useApp();
+  const { state, updateSettings, setStandaloneBlockAndAllowance, setDailyAllowanceEntries, setBlockedWords, refreshTasks, deleteTask, addTask } = useApp();
   const { settings } = state;
   const { theme } = useTheme();
   const [appsModalVisible, setAppsModalVisible] = useState(false);
@@ -111,6 +112,71 @@ function SettingsScreen() {
         ? 'You will now receive task reminders.'
         : 'Please enable notifications in your device Settings.',
     );
+  };
+
+  // ── Backup & restore ──────────────────────────────────────────────────────
+
+  const [backupBusy, setBackupBusy] = useState(false);
+
+  const handleExportBackup = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      const result = await exportBackup(settings, 'c1.0.8');
+      if (!result.ok) {
+        Alert.alert('Export failed', result.error ?? 'Could not create backup file.');
+      }
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleImportBackup = () => {
+    Alert.alert(
+      'Restore from backup',
+      'Pick how to merge the backup into this device:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add tasks',
+          onPress: async () => runImport(false),
+        },
+        {
+          text: 'Replace everything',
+          style: 'destructive',
+          onPress: async () => runImport(true),
+        },
+      ],
+    );
+  };
+
+  const runImport = async (replaceTasks: boolean) => {
+    if (backupBusy) return;
+    setBackupBusy(true);
+    try {
+      const result = await pickAndImportBackup({
+        updateSettings,
+        addTask,
+        deleteTask,
+        refreshTasks,
+        replaceTasks,
+        currentTasks: state.tasks,
+        currentSettings: settings,
+      });
+      if ('error' in result) {
+        Alert.alert('Import failed', result.error);
+        return;
+      }
+      const lines = [
+        `Settings: ${result.settings ? 'restored' : 'not changed'}`,
+        `Tasks imported: ${result.tasksImported}`,
+        result.tasksSkipped > 0 ? `Tasks skipped: ${result.tasksSkipped}` : null,
+        ...result.warnings.slice(0, 3),
+      ].filter(Boolean) as string[];
+      Alert.alert('Backup restored', lines.join('\n'));
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const handleClearAllTasks = () => {
@@ -478,6 +544,25 @@ function SettingsScreen() {
           )}
         </Section>
 
+        {/* ── Backup & Data ── */}
+        {/* Sits above Permissions so users see the safety net BEFORE they
+            grant any device-level access. Export builds a portable JSON of
+            settings + tasks; Import restores it (Android only). */}
+        <Section title="Backup & Data">
+          <SettingButton
+            icon="cloud-upload-outline"
+            label={backupBusy ? 'Working…' : 'Export Backup'}
+            description="Save a JSON of your settings, profile and tasks"
+            onPress={handleExportBackup}
+          />
+          <SettingButton
+            icon="cloud-download-outline"
+            label="Import Backup"
+            description="Restore a FocusFlow backup file from this device"
+            onPress={handleImportBackup}
+          />
+        </Section>
+
         {/* ── Permissions ── */}
         <Section title="Permissions">
           <SettingButton
@@ -513,22 +598,24 @@ function SettingsScreen() {
 
         <Section title="About">
           <SettingButton
+            icon="bar-chart-outline"
+            label="Reports"
+            description="Focus time, completed tasks, blocked apps, streak"
+            onPress={() => router.push('/reports')}
+          />
+          <SettingButton
             icon="rocket-outline"
             label="What's New"
             description="Changelog — features, fixes, and improvements"
             onPress={() => router.push('/changelog')}
           />
+          {/* Privacy + Terms are now a single combined screen — the
+              privacy-policy screen renders both as tabs. */}
           <SettingButton
             icon="shield-checkmark-outline"
-            label="Privacy Policy"
-            description="How FocusFlow handles your data"
+            label="Privacy & Terms"
+            description="How FocusFlow handles your data and the rules of use"
             onPress={() => router.push('/privacy-policy')}
-          />
-          <SettingButton
-            icon="document-text-outline"
-            label="Terms of Service"
-            description="Rules and conditions for using FocusFlow"
-            onPress={() => router.push('/terms-of-service')}
           />
         </Section>
 
