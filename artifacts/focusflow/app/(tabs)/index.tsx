@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
 import TaskCard from '@/components/TaskCard';
-import TimelineView from '@/components/TimelineView';
+
 import QuickAddModal from '@/components/QuickAddModal';
 import ExtendModal from '@/components/ExtendModal';
 import EditTaskModal from '@/components/EditTaskModal';
@@ -25,15 +25,12 @@ import { useTheme } from '@/hooks/useTheme';
 import type { Task } from '@/data/types';
 import { formatTime, isAwaitingDecision } from '@/services/taskService';
 
-type ViewMode = 'list' | 'timeline';
-
 function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { state, todayTasks, activeTask, currentTask, addTask, updateTask, deleteTask, completeTask, skipTask, extendTaskTime, startFocusMode, refreshTasks } = useApp();
   const bannerTask = activeTask ?? currentTask;
   const bannerAwaitingDecision = bannerTask ? isAwaitingDecision(bannerTask) : false;
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendTaskId, setExtendTaskId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -89,23 +86,6 @@ function ScheduleScreen() {
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
             {completedCount}/{totalCount} tasks done
           </Text>
-        </View>
-        <View style={styles.headerRight}>
-          {/* View toggle */}
-          <View style={[styles.viewToggle, { backgroundColor: theme.surface }]}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}
-              onPress={() => setViewMode('list')}
-            >
-              <Ionicons name="list" size={18} color={viewMode === 'list' ? '#fff' : COLORS.muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'timeline' && styles.toggleBtnActive]}
-              onPress={() => setViewMode('timeline')}
-            >
-              <Ionicons name="time-outline" size={18} color={viewMode === 'timeline' ? '#fff' : COLORS.muted} />
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
 
@@ -163,37 +143,33 @@ function ScheduleScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Task list or timeline */}
-      {viewMode === 'list' ? (
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={[styles.listContent, { paddingBottom: 60 + insets.bottom + 80 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {todayTasks.length === 0 && (
-            <View style={styles.emptyState}>
-              <Ionicons name="calendar-outline" size={48} color={theme.border} />
-              <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks scheduled for today</Text>
-              <Text style={[styles.emptySubtext, { color: theme.border }]}>Tap + to add your first task</Text>
-            </View>
-          )}
+      {/* Task list */}
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 60 + insets.bottom + 80 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {todayTasks.length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={48} color={theme.border} />
+            <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks scheduled for today</Text>
+            <Text style={[styles.emptySubtext, { color: theme.border }]}>Tap + to add your first task</Text>
+          </View>
+        )}
 
-          {todayTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              isActive={task.id === activeTask?.id}
-              onPress={(t) => setSelectedTask(t)}
-              onComplete={handleCompleteTask}
-              onSkip={handleSkipTask}
-              onExtend={(id) => setExtendTaskId(id)}
-              onStartFocus={startFocusMode}
-            />
-          ))}
-        </ScrollView>
-      ) : (
-        <TimelineView tasks={todayTasks} onTaskPress={setSelectedTask} />
-      )}
+        {todayTasks.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            isActive={task.id === activeTask?.id}
+            onPress={(t) => setSelectedTask(t)}
+            onComplete={handleCompleteTask}
+            onSkip={handleSkipTask}
+            onExtend={(id) => setExtendTaskId(id)}
+            onStartFocus={startFocusMode}
+          />
+        ))}
+      </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity style={[styles.fab, { bottom: 60 + insets.bottom + 12 }]} onPress={() => setShowAddModal(true)}>
@@ -258,18 +234,6 @@ const styles = StyleSheet.create({
   },
   dateText: { fontSize: FONT.xl, fontWeight: '700', color: COLORS.text },
   subtitle: { fontSize: FONT.sm, color: COLORS.muted, marginTop: 2 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: 3,
-  },
-  toggleBtn: {
-    padding: SPACING.xs,
-    borderRadius: RADIUS.sm,
-  },
-  toggleBtnActive: { backgroundColor: COLORS.primary },
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',

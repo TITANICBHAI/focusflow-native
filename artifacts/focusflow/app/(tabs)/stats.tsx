@@ -349,12 +349,6 @@ function StatsScreen() {
            :                         'All time'}
           </Text>
         </View>
-        {filter === 'week' && (
-          <TouchableOpacity onPress={handleClearLog} hitSlop={{ top:8,bottom:8,left:8,right:8 }}
-            style={[styles.iconBtn, { backgroundColor: COLORS.red + '15' }]}>
-            <Ionicons name="trash-outline" size={17} color={COLORS.red} />
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* ── Tab pills ─────────────────────────────────────────────────── */}

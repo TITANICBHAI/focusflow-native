@@ -2756,7 +2756,14 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                                  cal.get(java.util.Calendar.MINUTE)
             for (i in 0 until arr.length()) {
                 val entry = arr.optJSONObject(i) ?: continue
-                if (!entry.optString("pkg").equals(pkg, ignoreCase = true)) continue
+                // Support multi-app windows (pkgs array) and legacy single-pkg string
+                val pkgsArr = entry.optJSONArray("pkgs")
+                val matchesPkg = if (pkgsArr != null && pkgsArr.length() > 0) {
+                    (0 until pkgsArr.length()).any { pkgsArr.optString(it).equals(pkg, ignoreCase = true) }
+                } else {
+                    entry.optString("pkg").equals(pkg, ignoreCase = true)
+                }
+                if (!matchesPkg) continue
                 val days = entry.optJSONArray("days") ?: continue
                 val dayMatch = (0 until days.length()).any { days.optInt(it) == currentDay }
                 if (!dayMatch) continue

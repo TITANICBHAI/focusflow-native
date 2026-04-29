@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,13 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import type { GreyoutWindow } from '@/data/types';
+import { InstalledAppsModule, type InstalledApp } from '@/native-modules/InstalledAppsModule';
 
 interface Props {
   visible: boolean;
@@ -24,18 +26,21 @@ interface Props {
 
 const DAY_LABELS  = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DAY_NAMES   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_VALUES  = [1, 2, 3, 4, 5, 6, 7]; // Calendar.DAY_OF_WEEK
+const DAY_VALUES  = [1, 2, 3, 4, 5, 6, 7];
 
 type Mode = 'list' | 'add';
 
 const BLANK_WINDOW: GreyoutWindow = {
   pkg: '',
+  pkgs: [],
   startHour: 9,
   startMin: 0,
   endHour: 18,
   endMin: 0,
-  days: [2, 3, 4, 5, 6], // Mon–Fri
+  days: [2, 3, 4, 5, 6],
 };
+
+type SelectedApp = { pkg: string; name: string };
 
 export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Props) {
   const { theme } = useTheme();
@@ -45,77 +50,139 @@ export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Prop
   const [editIndex, setEditIndex] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // ── App search state ──────────────────────────────────────────────────────
+  const [allApps, setAllApps] = useState<InstalledApp[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [appSearch, setAppSearch] = useState('');
+  const [selectedApps, setSelectedApps] = useState<SelectedApp[]>([]);
+
+  // Load installed apps whenever the modal opens
   useEffect(() => {
-    if (visible) {
-      setLocalWindows(windows);
-      setMode('list');
-      setDraft(BLANK_WINDOW);
-      setEditIndex(null);
-    }
-  }, [visible, windows]);
+    if (!visible) return;
+    setLocalWindows(windows);
+    setMode('list');
+    setDraft(BLANK_WINDOW);
+    setEditIndex(null);
+    setSelectedApps([]);
+    setAppSearch('');
+    setAppsLoading(true);
+    InstalledAppsModule.getInstalledApps()
+      .then((apps) => {
+        setAllApps(
+          apps.slice().sort((a, b) =>
+            a.appName.toLowerCase().localeCompare(b.appName.toLowerCase()),
+          ),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setAppsLoading(false));
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lookup map pkg → friendly name (for list view display)
+  const pkgToName = useMemo(
+    () => new Map(allApps.map((a) => [a.packageName, a.appName])),
+    [allApps],
+  );
+
+  // Live-filter installed apps as user types, excluding already-selected ones
+  const filteredApps = useMemo(() => {
+    if (!appSearch.trim()) return [];
+    const q = appSearch.toLowerCase();
+    const selectedPkgs = new Set(selectedApps.map((a) => a.pkg));
+    return allApps
+      .filter(
+        (a) =>
+          (a.appName.toLowerCase().includes(q) ||
+            a.packageName.toLowerCase().includes(q)) &&
+          !selectedPkgs.has(a.packageName),
+      )
+      .slice(0, 8);
+  }, [appSearch, allApps, selectedApps]);
 
   const pad = (n: number) => String(n).padStart(2, '0');
   const formatTime = (h: number, m: number) => `${pad(h)}:${pad(m)}`;
 
   const toggleDay = (dayVal: number) => {
     const exists = draft.days.includes(dayVal);
-    setDraft(d => ({
+    setDraft((d) => ({
       ...d,
-      days: exists ? d.days.filter(v => v !== dayVal) : [...d.days, dayVal].sort((a, b) => a - b),
+      days: exists
+        ? d.days.filter((v) => v !== dayVal)
+        : [...d.days, dayVal].sort((a, b) => a - b),
     }));
   };
 
   const adjustHour = (field: 'startHour' | 'endHour', delta: number) => {
-    setDraft(d => ({ ...d, [field]: (d[field] + delta + 24) % 24 }));
+    setDraft((d) => ({ ...d, [field]: (d[field] + delta + 24) % 24 }));
   };
 
   const adjustMin = (field: 'startMin' | 'endMin', delta: number) => {
-    setDraft(d => ({ ...d, [field]: (d[field] + delta + 60) % 60 }));
+    setDraft((d) => ({ ...d, [field]: (d[field] + delta + 60) % 60 }));
   };
+
+  const selectApp = useCallback((app: InstalledApp) => {
+    setSelectedApps((prev) => [...prev, { pkg: app.packageName, name: app.appName }]);
+    setAppSearch('');
+  }, []);
+
+  const removeSelectedApp = useCallback((pkg: string) => {
+    setSelectedApps((prev) => prev.filter((a) => a.pkg !== pkg));
+  }, []);
 
   const openAdd = () => {
     setDraft(BLANK_WINDOW);
+    setSelectedApps([]);
+    setAppSearch('');
     setEditIndex(null);
     setMode('add');
   };
 
   const openEdit = (idx: number) => {
-    setDraft({ ...localWindows[idx] });
+    const w = localWindows[idx];
+    const pkgs = w.pkgs && w.pkgs.length > 0 ? w.pkgs : w.pkg ? [w.pkg] : [];
+    const selApps = pkgs.map((pkg) => ({ pkg, name: pkgToName.get(pkg) ?? pkg }));
+    setSelectedApps(selApps);
+    setDraft({ ...w });
     setEditIndex(idx);
+    setAppSearch('');
     setMode('add');
   };
 
   const commitDraft = () => {
-    const pkg = draft.pkg.trim();
-    if (!pkg) {
-      Alert.alert('Package name required', 'Enter the Android package name of the app (e.g. com.instagram.android).');
+    if (selectedApps.length === 0) {
+      Alert.alert(
+        'Select at least one app',
+        'Search for apps by name and tap to add them to this window.',
+      );
       return;
     }
     if (draft.days.length === 0) {
       Alert.alert('Select at least one day');
       return;
     }
+    const pkgs = selectedApps.map((a) => a.pkg);
     const updated = [...localWindows];
+    const window: GreyoutWindow = { ...draft, pkg: pkgs[0], pkgs };
     if (editIndex !== null) {
-      updated[editIndex] = { ...draft, pkg };
+      updated[editIndex] = window;
     } else {
-      updated.push({ ...draft, pkg });
+      updated.push(window);
     }
     setLocalWindows(updated);
     setMode('list');
   };
 
   const deleteWindow = (idx: number) => {
-    Alert.alert(
-      'Remove Window',
-      `Remove greyout window for ${localWindows[idx].pkg}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Remove', style: 'destructive', onPress: () => {
-          setLocalWindows(w => w.filter((_, i) => i !== idx));
-        }},
-      ]
-    );
+    const w = localWindows[idx];
+    const label = windowDisplayLabel(w);
+    Alert.alert('Remove Window', `Remove greyout window for ${label}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => setLocalWindows((prev) => prev.filter((_, i) => i !== idx)),
+      },
+    ]);
   };
 
   const handleSave = async () => {
@@ -128,11 +195,23 @@ export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Prop
     }
   };
 
-  const dayRowLabel = (window: GreyoutWindow) => {
-    if (window.days.length === 7) return 'Every day';
-    if (JSON.stringify(window.days) === JSON.stringify([2,3,4,5,6])) return 'Weekdays';
-    if (JSON.stringify(window.days) === JSON.stringify([1,7])) return 'Weekends';
-    return window.days.map(d => DAY_NAMES[d - 1]).join(', ');
+  const dayRowLabel = (w: GreyoutWindow) => {
+    if (w.days.length === 7) return 'Every day';
+    if (JSON.stringify(w.days) === JSON.stringify([2, 3, 4, 5, 6])) return 'Weekdays';
+    if (JSON.stringify(w.days) === JSON.stringify([1, 7])) return 'Weekends';
+    return w.days.map((d) => DAY_NAMES[d - 1]).join(', ');
+  };
+
+  const windowDisplayLabel = (w: GreyoutWindow) => {
+    const pkgs = w.pkgs && w.pkgs.length > 0 ? w.pkgs : w.pkg ? [w.pkg] : [];
+    if (pkgs.length === 0) return '(no app)';
+    const firstName = pkgToName.get(pkgs[0]) ?? pkgs[0];
+    return pkgs.length > 1 ? `${firstName} +${pkgs.length - 1} more` : firstName;
+  };
+
+  const windowAppCount = (w: GreyoutWindow) => {
+    const pkgs = w.pkgs && w.pkgs.length > 0 ? w.pkgs : w.pkg ? [w.pkg] : [];
+    return pkgs.length;
   };
 
   return (
@@ -155,7 +234,7 @@ export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Prop
             </TouchableOpacity>
           </View>
 
-          {/* ── List view ─── */}
+          {/* ── List view ── */}
           {mode === 'list' && (
             <>
               <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 20 }}>
@@ -163,31 +242,54 @@ export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Prop
                   <View style={styles.emptyBox}>
                     <Ionicons name="time-outline" size={32} color={theme.muted} />
                     <Text style={[styles.emptyText, { color: theme.muted }]}>
-                      No greyout windows yet.{'\n'}Add one to block apps during specific hours.
+                      No greyout windows yet.{'\n'}Add one to grey out apps during specific hours.
                     </Text>
                   </View>
                 )}
-                {localWindows.map((w, idx) => (
-                  <View key={idx} style={[styles.windowCard, { borderColor: theme.border, backgroundColor: theme.surface }]}>
-                    <TouchableOpacity style={styles.windowMain} onPress={() => openEdit(idx)}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.windowPkg, { color: theme.text }]} numberOfLines={1}>{w.pkg}</Text>
-                        <Text style={[styles.windowTime, { color: COLORS.primary }]}>
-                          {formatTime(w.startHour, w.startMin)} – {formatTime(w.endHour, w.endMin)}
-                        </Text>
-                        <Text style={[styles.windowDays, { color: theme.muted }]}>{dayRowLabel(w)}</Text>
-                      </View>
-                      <Ionicons name="create-outline" size={18} color={theme.muted} style={{ marginRight: 8 }} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => deleteWindow(idx)} style={styles.deleteBtn}>
-                      <Ionicons name="trash-outline" size={18} color={COLORS.red} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                {localWindows.map((w, idx) => {
+                  const count = windowAppCount(w);
+                  return (
+                    <View
+                      key={idx}
+                      style={[
+                        styles.windowCard,
+                        { borderColor: theme.border, backgroundColor: theme.surface },
+                      ]}
+                    >
+                      <TouchableOpacity style={styles.windowMain} onPress={() => openEdit(idx)}>
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.windowLabelRow}>
+                            <Text style={[styles.windowPkg, { color: theme.text }]} numberOfLines={1}>
+                              {windowDisplayLabel(w)}
+                            </Text>
+                            {count > 1 && (
+                              <View style={styles.countBadge}>
+                                <Text style={styles.countBadgeText}>{count} apps</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.windowTime, { color: COLORS.primary }]}>
+                            {formatTime(w.startHour, w.startMin)} – {formatTime(w.endHour, w.endMin)}
+                          </Text>
+                          <Text style={[styles.windowDays, { color: theme.muted }]}>
+                            {dayRowLabel(w)}
+                          </Text>
+                        </View>
+                        <Ionicons name="create-outline" size={18} color={theme.muted} style={{ marginRight: 8 }} />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => deleteWindow(idx)} style={styles.deleteBtn}>
+                        <Ionicons name="trash-outline" size={18} color={COLORS.red} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
               </ScrollView>
 
               <View style={[styles.footer, { borderTopColor: theme.border }]}>
-                <TouchableOpacity style={[styles.addBtn, { borderColor: COLORS.primary }]} onPress={openAdd}>
+                <TouchableOpacity
+                  style={[styles.addBtn, { borderColor: COLORS.primary }]}
+                  onPress={openAdd}
+                >
                   <Ionicons name="add" size={18} color={COLORS.primary} />
                   <Text style={[styles.addBtnText, { color: COLORS.primary }]}>Add Window</Text>
                 </TouchableOpacity>
@@ -196,31 +298,111 @@ export function GreyoutScheduleModal({ visible, windows, onSave, onClose }: Prop
                   onPress={handleSave}
                   disabled={saving}
                 >
-                  {saving
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={styles.saveBtnText}>Save</Text>
-                  }
+                  {saving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </>
           )}
 
-          {/* ── Add / Edit view ─── */}
+          {/* ── Add / Edit view ── */}
           {mode === 'add' && (
-            <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 20 }}>
-              <Text style={[styles.formLabel, { color: theme.muted }]}>PACKAGE NAME</Text>
-              <TextInput
-                style={[styles.pkgInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
-                value={draft.pkg}
-                onChangeText={t => setDraft(d => ({ ...d, pkg: t }))}
-                placeholder="com.instagram.android"
-                placeholderTextColor={theme.muted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={[styles.formHint, { color: theme.muted }]}>
-                Find it in Settings → Apps → [App name] → App info.
-              </Text>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={{ paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* App search */}
+              <Text style={[styles.formLabel, { color: theme.muted }]}>APPS</Text>
+
+              {/* Selected app chips */}
+              {selectedApps.length > 0 && (
+                <View style={styles.chipsRow}>
+                  {selectedApps.map((a) => (
+                    <View
+                      key={a.pkg}
+                      style={[styles.appChip, { backgroundColor: `${COLORS.primary}18`, borderColor: COLORS.primary }]}
+                    >
+                      <Text style={[styles.appChipText, { color: COLORS.primary }]} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                      <TouchableOpacity onPress={() => removeSelectedApp(a.pkg)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                        <Ionicons name="close-circle" size={16} color={COLORS.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Search input */}
+              <View style={[styles.searchBox, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                <Ionicons name="search" size={16} color={theme.muted} style={{ marginRight: 6 }} />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.text }]}
+                  value={appSearch}
+                  onChangeText={setAppSearch}
+                  placeholder="Search apps by name…"
+                  placeholderTextColor={theme.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {appsLoading && <ActivityIndicator size="small" color={theme.muted} style={{ marginLeft: 4 }} />}
+                {appSearch.length > 0 && !appsLoading && (
+                  <TouchableOpacity onPress={() => setAppSearch('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                    <Ionicons name="close-circle" size={16} color={theme.muted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Live search results */}
+              {filteredApps.length > 0 && (
+                <View style={[styles.resultsBox, { borderColor: theme.border, backgroundColor: theme.surface }]}>
+                  {filteredApps.map((app, i) => (
+                    <TouchableOpacity
+                      key={app.packageName}
+                      style={[
+                        styles.resultRow,
+                        i < filteredApps.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border },
+                      ]}
+                      onPress={() => selectApp(app)}
+                      activeOpacity={0.7}
+                    >
+                      {app.iconBase64 ? (
+                        <Image
+                          source={{ uri: `data:image/png;base64,${app.iconBase64}` }}
+                          style={styles.resultIcon}
+                        />
+                      ) : (
+                        <View style={[styles.resultIconPlaceholder, { backgroundColor: theme.border }]}>
+                          <Ionicons name="apps-outline" size={16} color={theme.muted} />
+                        </View>
+                      )}
+                      <View style={styles.resultText}>
+                        <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
+                          {app.appName}
+                        </Text>
+                        <Text style={[styles.resultPkg, { color: theme.muted }]} numberOfLines={1}>
+                          {app.packageName}
+                        </Text>
+                      </View>
+                      <Ionicons name="add-circle-outline" size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {appSearch.trim().length > 0 && !appsLoading && filteredApps.length === 0 && (
+                <Text style={[styles.noResults, { color: theme.muted }]}>No apps match "{appSearch}"</Text>
+              )}
+
+              {selectedApps.length === 0 && appSearch.trim().length === 0 && (
+                <Text style={[styles.searchHint, { color: theme.muted }]}>
+                  Type to search installed apps — tap to add them to this window.
+                </Text>
+              )}
 
               {/* Start time */}
               <Text style={[styles.formLabel, { color: theme.muted }]}>START TIME</Text>
@@ -349,7 +531,7 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
-    maxHeight: '88%',
+    maxHeight: '92%',
   },
   header: {
     flexDirection: 'row',
@@ -387,7 +569,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: SPACING.md,
   },
+  windowLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   windowPkg: { fontSize: FONT.sm, fontWeight: '600' },
+  countBadge: {
+    backgroundColor: `${COLORS.primary}20`,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  countBadgeText: { fontSize: FONT.xs, color: COLORS.primary, fontWeight: '600' },
   windowTime: { fontSize: FONT.md, fontWeight: '700', marginTop: 2 },
   windowDays: { fontSize: FONT.xs, marginTop: 2 },
   deleteBtn: {
@@ -430,17 +620,61 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     marginBottom: SPACING.xs,
   },
-  pkgInput: {
+
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  appChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 5,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    maxWidth: 180,
+  },
+  appChipText: { fontSize: FONT.xs, fontWeight: '600', flex: 1 },
+
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  searchInput: { flex: 1, fontSize: FONT.sm, padding: 0 },
+
+  resultsBox: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    overflow: 'hidden',
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: SPACING.sm,
-    fontSize: FONT.sm,
+    gap: SPACING.sm,
   },
-  formHint: {
-    fontSize: FONT.xs,
-    marginTop: SPACING.xs,
-    marginBottom: SPACING.xs,
+  resultIcon: { width: 32, height: 32, borderRadius: RADIUS.sm },
+  resultIconPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  resultText: { flex: 1 },
+  resultName: { fontSize: FONT.sm, fontWeight: '600' },
+  resultPkg: { fontSize: FONT.xs },
+
+  noResults: { fontSize: FONT.xs, marginTop: SPACING.xs, fontStyle: 'italic' },
+  searchHint: { fontSize: FONT.xs, marginTop: SPACING.xs, lineHeight: 17 },
 
   timeRow: {
     flexDirection: 'row',

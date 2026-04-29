@@ -59,7 +59,10 @@ export interface FocusSession {
 }
 
 export interface GreyoutWindow {
+  /** Primary package name (backward-compat; always equals pkgs[0] when pkgs is set). */
   pkg: string;
+  /** All package names covered by this window. Overrides pkg when present. */
+  pkgs?: string[];
   startHour: number;
   startMin: number;
   endHour: number;
