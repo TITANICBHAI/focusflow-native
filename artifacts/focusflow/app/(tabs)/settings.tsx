@@ -18,6 +18,7 @@ import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
 import { exportBackup, pickAndImportBackup } from '@/services/backupService';
+import { mergeIntoStandaloneBlockList } from '@/services/blockListImport';
 import { formatDuration } from '@/services/taskService';
 import { AllowedAppsModal } from '@/components/AllowedAppsModal';
 import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
@@ -207,23 +208,18 @@ function SettingsScreen() {
   };
 
   const handleImportFromOtherApp = async (packages: string[]) => {
-    const existing = new Set(settings.standaloneBlockPackages ?? []);
-    const newPkgs = packages.filter((p) => !existing.has(p));
-    if (newPkgs.length === 0) {
+    const result = await mergeIntoStandaloneBlockList(
+      packages,
+      settings,
+      setStandaloneBlockAndAllowance,
+    );
+    if (result.added === 0) {
       Alert.alert('Nothing new', 'All detected apps are already in your block list.');
       return;
     }
-    const merged = [...Array.from(existing), ...newPkgs];
-    // Preserve any existing timed session; imported apps are also enforced
-    // via always-on enforcement even when no timed session is active.
-    const existingUntilMs = settings.standaloneBlockUntil
-      ? new Date(settings.standaloneBlockUntil).getTime()
-      : null;
-    const untilMs = existingUntilMs && existingUntilMs > Date.now() ? existingUntilMs : null;
-    await setStandaloneBlockAndAllowance(merged, untilMs, settings.dailyAllowanceEntries ?? []);
     Alert.alert(
       'Import complete',
-      `${newPkgs.length} new app${newPkgs.length !== 1 ? 's' : ''} added to your block list.`,
+      `${result.added} new app${result.added !== 1 ? 's' : ''} added to your block list.`,
     );
   };
 

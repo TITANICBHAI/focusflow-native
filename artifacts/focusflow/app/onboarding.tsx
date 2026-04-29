@@ -27,12 +27,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { NativeImagePickerModule } from '@/native-modules/NativeImagePickerModule';
+import { Alert } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { requestPermissions } from '@/services/notificationService';
+import { mergeIntoStandaloneBlockList } from '@/services/blockListImport';
 import { ForegroundServiceModule } from '@/native-modules/ForegroundServiceModule';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { ForegroundLaunchModule } from '@/native-modules/ForegroundLaunchModule';
+import { ImportFromOtherAppModal } from '@/components/ImportFromOtherAppModal';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 
 type PermStatus = 'granted' | 'denied' | 'unknown';
@@ -175,12 +178,35 @@ async function checkStatus(id: string): Promise<PermStatus> {
 }
 
 export default function OnboardingScreen() {
-  const { state, updateSettings } = useApp();
+  const { state, updateSettings, setStandaloneBlockAndAllowance } = useApp();
   const { theme } = useTheme();
   const [statuses, setStatuses] = useState<Record<string, PermStatus>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [importVisible, setImportVisible] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+
+  /**
+   * One-tap entry for users switching from another blocker (Stay Focused,
+   * AppBlock, Lock Me Out, etc). Imported packages are merged into the
+   * always-on standalone block list so enforcement starts as soon as the
+   * required permissions are granted.
+   */
+  const handleImportFromOnboarding = async (packages: string[]) => {
+    const result = await mergeIntoStandaloneBlockList(
+      packages,
+      state.settings,
+      setStandaloneBlockAndAllowance,
+    );
+    if (result.added === 0) {
+      Alert.alert('Nothing new', 'All matched apps are already in your block list.');
+      return;
+    }
+    Alert.alert(
+      'Block list ready',
+      `${result.added} app${result.added !== 1 ? 's' : ''} added. Once you finish granting the permissions below, FocusFlow will start blocking them.`,
+    );
+  };
 
   const checkAll = useCallback(async () => {
     const result: Record<string, PermStatus> = {};
@@ -276,6 +302,24 @@ export default function OnboardingScreen() {
             </Text>
           </View>
         </View>
+
+        {/* One-tap import for users coming from another blocker */}
+        <TouchableOpacity
+          style={styles.importBanner}
+          onPress={() => setImportVisible(true)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.importBannerIconWrap}>
+            <Ionicons name="swap-horizontal" size={22} color="#fff" />
+          </View>
+          <View style={styles.importBannerTextWrap}>
+            <Text style={styles.importBannerTitle}>Switching from another blocker?</Text>
+            <Text style={styles.importBannerBody}>
+              Bring your block list across in one tap — works for Stay Focused, AppBlock, Lock Me Out and more.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#fff" style={{ opacity: 0.85 }} />
+        </TouchableOpacity>
 
         {/* Progress bar */}
         <View style={styles.progressSection}>
@@ -412,6 +456,12 @@ export default function OnboardingScreen() {
           All permissions can be managed in Settings at any time.
         </Text>
       </ScrollView>
+
+      <ImportFromOtherAppModal
+        visible={importVisible}
+        onClose={() => setImportVisible(false)}
+        onImport={handleImportFromOnboarding}
+      />
     </SafeAreaView>
   );
 }
@@ -469,6 +519,39 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   tagline: { fontSize: FONT.sm, color: COLORS.muted, textAlign: 'center' },
+
+  // One-tap import banner (Stay Focused / AppBlock / Lock Me Out refugees)
+  importBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+  },
+  importBannerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  importBannerTextWrap: { flex: 1 },
+  importBannerTitle: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  importBannerBody: {
+    fontSize: FONT.xs,
+    color: 'rgba(255,255,255,0.92)',
+    lineHeight: 16,
+  },
 
   // Tutorial banner
   tutorialBanner: {
