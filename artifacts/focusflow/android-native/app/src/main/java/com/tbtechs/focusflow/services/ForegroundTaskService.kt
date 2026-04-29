@@ -282,8 +282,13 @@ class ForegroundTaskService : Service() {
                 return
             }
 
-            // ── 4. Skip always-allowed packages ───────────────────────────
-            if (AppBlockerAccessibilityService.ALWAYS_ALLOWED.any {
+            // ── 4. Skip BLOCKABLE_AFTER_WARNING packages ──────────────────
+            // These are launcher / dialer / Settings etc. — bypassed by
+            // default so the user is never trapped. They can still be
+            // blocked if the user explicitly opts in via the picker (after
+            // a confirmation warning), but the AccessibilityService handles
+            // that opt-in path; the fallback poller skips them outright.
+            if (AppBlockerAccessibilityService.BLOCKABLE_AFTER_WARNING.any {
                     pkg.equals(it, ignoreCase = true)
                 }) {
                 handler.postDelayed(this, FALLBACK_POLL_MS)

@@ -137,7 +137,7 @@ export default function BlockDefenseScreen() {
         <View style={[styles.introBanner, { backgroundColor: COLORS.primary + '12', borderColor: COLORS.primary + '33' }]}>
           <Ionicons name="shield-checkmark" size={20} color={COLORS.primary} />
           <Text style={[styles.introText, { color: theme.text }]}>
-            These tools run silently in the background to catch every bypass attempt — keyword tricks, power-button tricks, and new-app installs.
+            These tools run continuously in the background whenever they are switched on — they do not need a Focus session or standalone block to be active. While a block IS running, the toggles below stay locked on so they can&apos;t be disabled mid-session.
           </Text>
         </View>
 
@@ -169,16 +169,16 @@ export default function BlockDefenseScreen() {
           <SectionHeader
             icon="lock-closed-outline"
             title="System Protection"
-            description="Locks down Android system controls during active blocks so there's no way to wriggle out through system menus."
+            description="Locks down Android system controls so there's no way to wriggle out through system menus. Each toggle runs continuously while it is on."
             theme={theme}
           />
           <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <SwitchRow
               label="Protect system controls"
               description={
-                blockProtectionActive
+                blockProtectionActive && (settings.systemGuardEnabled ?? true)
                   ? 'Locked on — active block in progress'
-                  : 'Power menu, notification shade, Emergency mode & sensitive Settings pages'
+                  : 'Power menu, Emergency mode & sensitive Settings pages — guarded all the time when on'
               }
               value={settings.systemGuardEnabled ?? true}
               onValueChange={handleSystemGuardToggle}
@@ -187,7 +187,11 @@ export default function BlockDefenseScreen() {
             />
             <SwitchRow
               label="Block install / uninstall"
-              description="Stops Play Store installs & package-installer dialogs from slipping through"
+              description={
+                blockProtectionActive && (settings.blockInstallActionsEnabled ?? false)
+                  ? 'Locked on — active block in progress'
+                  : 'Stops Play Store installs & package-installer dialogs from slipping through — runs all the time when on'
+              }
               value={settings.blockInstallActionsEnabled ?? false}
               onValueChange={handleInstallToggle}
               disabled={blockProtectionActive && (settings.blockInstallActionsEnabled ?? false)}
@@ -195,7 +199,11 @@ export default function BlockDefenseScreen() {
             />
             <SwitchRow
               label="Block YouTube Shorts"
-              description="Sends you home the moment the Shorts player opens (regular YouTube stays usable)"
+              description={
+                blockProtectionActive && (settings.blockYoutubeShortsEnabled ?? false)
+                  ? 'Locked on — active block in progress'
+                  : 'Sends you home the moment the Shorts player opens (regular YouTube stays usable) — runs all the time when on'
+              }
               value={settings.blockYoutubeShortsEnabled ?? false}
               onValueChange={handleYoutubeToggle}
               disabled={blockProtectionActive && (settings.blockYoutubeShortsEnabled ?? false)}
@@ -203,7 +211,11 @@ export default function BlockDefenseScreen() {
             />
             <SwitchRow
               label="Block Instagram Reels"
-              description="Closes the Reels viewer (rest of Instagram stays usable)"
+              description={
+                blockProtectionActive && (settings.blockInstagramReelsEnabled ?? false)
+                  ? 'Locked on — active block in progress'
+                  : 'Closes the Reels viewer (rest of Instagram stays usable) — runs all the time when on'
+              }
               value={settings.blockInstagramReelsEnabled ?? false}
               onValueChange={handleReelsToggle}
               disabled={blockProtectionActive && (settings.blockInstagramReelsEnabled ?? false)}

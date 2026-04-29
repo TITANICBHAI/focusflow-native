@@ -26,7 +26,7 @@ const CHANGELOG: Entry[] = [
           'Added "Education essentials" warning category for PhysicsWallah (PW), Allen Digital, and Gurukripa (GCI) — these were already hard-protected at the native layer; the UI now also surfaces a warning if you try to block them',
           'Home launchers (Pixel, Samsung, MIUI, OnePlus, Huawei, Honor, Oppo, Vivo, Realme, iQOO, Motorola, Nothing, Asus, LG, HTC, Sony, TCL, Nokia, Infinix, Transsion + AOSP) are now in the hard-locked native never-block list — no override possible, since blocking your launcher would leave you with nowhere to land when you press HOME',
           'Native never-block list (passes through unconditionally regardless of UI selection): home launchers, all OEM dialer/in-call UIs, Telecom service, WhatsApp, WhatsApp Business, Truecaller, VLC, system clock/alarm apps, and education essentials (PW / Allen / GCI)',
-          'Android Settings stays in the always-allowed list — you get a warning dialog if you try to block it, but you can still proceed (so power users can lock themselves out of Settings on purpose)',
+          'Android Settings stays in the warning-only list — you get a confirmation dialog if you try to block it, but you can still proceed (so power users can lock themselves out of Settings on purpose). Apps in the hard-locked never-block list above cannot be blocked at all.',
           '"Block all" deselect now warns once with a count of sensitive apps that would be blocked',
         ],
       },

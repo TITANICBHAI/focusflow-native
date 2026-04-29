@@ -40,9 +40,12 @@ import org.json.JSONArray
  *
  *   1. TASK-BASED BLOCK (focus_active = true)
  *      - Blocks any app NOT in the "allowed_packages" list.
- *      - System UI, launchers, phone/dialer are ALWAYS allowed (see ALWAYS_ALLOWED).
- *      - Settings is ALWAYS_ALLOWED but specific sub-pages (accessibility settings,
- *        clear data dialogs, date/time) are intercepted and dismissed during focus.
+ *      - System UI, launchers, phone/dialer are bypassed by default unless the user
+ *        explicitly opts to block them via a confirmation warning in the UI
+ *        (see BLOCKABLE_AFTER_WARNING — formerly ALWAYS_ALLOWED).
+ *      - Settings is in BLOCKABLE_AFTER_WARNING but specific sub-pages (accessibility
+ *        settings, clear data dialogs, date/time) are intercepted and dismissed
+ *        during focus regardless.
  *      - Cleared automatically when task_end_ms is passed (native time authority).
  *
  *   2. STANDALONE BLOCK (standalone_block_active = true)
@@ -124,16 +127,31 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         private const val BLOCK_ALERT_NOTIF_ID = 9001
 
         /**
-         * Packages that are NEVER blocked regardless of focus or standalone settings.
+         * BLOCKABLE_AFTER_WARNING (formerly ALWAYS_ALLOWED).
          *
-         * This must include every launcher / home screen variant and system-critical
-         * packages. Without this, pressing HOME sends the user to the launcher which
-         * then fires a TYPE_WINDOW_STATE_CHANGED event — the service would immediately
-         * block the launcher too, causing an infinite HOME-press loop.
+         * Packages in this set are bypassed by the accessibility service BY DEFAULT
+         * — but the user can still choose to block them by explicitly adding them
+         * to their standalone block list or removing them from their focus-allowed
+         * list. The TS UI shows a "Sensitive" badge and a confirmation dialog
+         * (see SENSITIVE_APPS in src/components/AppPickerSheet.tsx) before letting
+         * the user opt in, so the rename of this constant emphasises that these
+         * apps CAN be blocked AFTER a warning — they are not unconditionally
+         * allowed. Contrast with NEVER_BLOCK below, which is hard-locked and
+         * cannot be overridden by any setting.
          *
-         * Settings is included here but specific sub-pages are intercepted separately.
+         * Why include them at all? Two reasons:
+         *   1. Safety nets — launcher / dialer / SystemUI must keep working so
+         *      the user is not trapped on a blank screen during a session.
+         *   2. Loop prevention — pressing HOME sends the user to the launcher
+         *      which fires TYPE_WINDOW_STATE_CHANGED; without this set the
+         *      service would block the launcher too and create an infinite loop.
+         *
+         * Settings is included so the user can always reach FocusFlow's own
+         * settings to stop a session. Specific dangerous Settings sub-pages
+         * (accessibility, clear-data, date/time) are intercepted further down
+         * by content inspection during a session, regardless of this set.
          */
-        val ALWAYS_ALLOWED: Set<String> = setOf(
+        val BLOCKABLE_AFTER_WARNING: Set<String> = setOf(
             // Core Android OS
             "android",
             "com.android.systemui",
@@ -506,9 +524,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         //
         // This check intentionally lives AFTER the packageName guard above so
         // our own overlay activity never triggers the X-ready signal.
-        // It also lives BEFORE the ALWAYS_ALLOWED early-return below so that
-        // the launcher (which is ALWAYS_ALLOWED) correctly triggers it after
-        // the user presses HOME.
+        // It also lives BEFORE the BLOCKABLE_AFTER_WARNING early-return below
+        // so that the launcher (which is in BLOCKABLE_AFTER_WARNING) correctly
+        // triggers it after the user presses HOME.
         val awaitingPkg = prefs.getString("overlay_awaiting_pkg", "") ?: ""
         if (awaitingPkg.isNotEmpty() && !pkg.equals(awaitingPkg, ignoreCase = true)) {
             prefs.edit()
@@ -525,22 +543,26 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // ── NEVER_BLOCK packages ──────────────────────────────────────────────
         // Phone dialers (all OEM variants) and WhatsApp are unconditionally
         // allowed. No user setting, standalone block, or focus session can
-        // override this. This check runs before ALWAYS_ALLOWED so that even
-        // if a user somehow adds one of these packages to a block list, the
-        // block is silently ignored.
+        // override this. This check runs before BLOCKABLE_AFTER_WARNING so
+        // that even if a user somehow adds one of these packages to a block
+        // list, the block is silently ignored.
         if (NEVER_BLOCK.any { pkg.equals(it, ignoreCase = true) }) {
             return
         }
 
-        // ── ALWAYS_ALLOWED packages ───────────────────────────────────────────
-        // Settings is always allowed at the package level but we intercept dangerous
-        // sub-pages (accessibility settings, clear data, date/time) during focus.
-        if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) {
+        // ── BLOCKABLE_AFTER_WARNING packages ──────────────────────────────────
+        // These are bypassed by default so the user is never trapped (launcher,
+        // dialer, Settings, etc.) — but the user can opt to block any of them
+        // via the picker after the "Sensitive" confirmation dialog. We intercept
+        // dangerous Settings sub-pages (accessibility, clear data, date/time)
+        // separately during a focus session.
+        if (BLOCKABLE_AFTER_WARNING.any { pkg.equals(it, ignoreCase = true) }) {
 
-            // ── User explicit override ────────────────────────────────────────
-            // If the user deliberately added an ALWAYS_ALLOWED package (e.g. Settings)
-            // to their standalone blocked list or excluded it from their focus allowed
-            // list, honour that choice and bypass the protection entirely.
+            // ── User explicit opt-in ──────────────────────────────────────────
+            // If the user deliberately added a BLOCKABLE_AFTER_WARNING package
+            // (e.g. Settings) to their standalone blocked list or excluded it
+            // from their focus allowed list, honour that choice — the warning
+            // dialog already happened in the UI before they got here.
             if (saActive || alwaysBlockActive) {
                 val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
                 val alwaysJson = prefs.getString(PREF_ALWAYS_BLOCK_PKGS, "[]") ?: "[]"
@@ -573,7 +595,11 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 }
             }
 
-            if ((focusActive || saActive) && systemGuardEnabled) {
+            // System Protection runs continuously whenever the toggle is on.
+            // It does NOT require an active focus session or standalone block —
+            // the user explicitly opted in to lock these system controls all the
+            // time (the toggle in Block Enforcement is off by default).
+            if (systemGuardEnabled) {
                 val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
                 if (isSamsungPowerKey && isPowerMenu(ev)) {
                     handlePowerMenuIntercepted()
@@ -665,35 +691,35 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
 
         // ── Content-specific guards ──────────────────────────────────────────
-        // Each toggle is opt-in. They run during any active block session
-        // (focusActive || saActive) for the relevant package only.
+        // Each toggle is opt-in and runs continuously whenever it is on —
+        // independent of any focus session or standalone block. The user
+        // explicitly opted in by enabling the toggle in Block Enforcement.
         //
         //   • blockInstallActions  — Play Store / packageinstaller install,
         //                            update, and uninstall confirmation dialogs.
         //   • blockYoutubeShorts   — YouTube Shorts player (rest of YouTube OK).
         //   • blockInstagramReels  — Instagram Reels / clips viewer (rest of IG OK).
-        if (focusActive || saActive) {
-            if (blockInstallActions && isInstallActionContext(ev, pkg)) {
-                handleBlockedApp(pkg)
-                return
-            }
-            if (blockYoutubeShorts && pkg == "com.google.android.youtube" && isYoutubeShorts(ev)) {
-                handleBlockedApp(pkg)
-                return
-            }
-            if (blockInstagramReels && pkg == "com.instagram.android" && isInstagramReels(ev)) {
-                handleBlockedApp(pkg)
-                return
-            }
+        if (blockInstallActions && isInstallActionContext(ev, pkg)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        if (blockYoutubeShorts && pkg == "com.google.android.youtube" && isYoutubeShorts(ev)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        if (blockInstagramReels && pkg == "com.instagram.android" && isInstagramReels(ev)) {
+            handleBlockedApp(pkg)
+            return
         }
 
         // ── Word blocking ─────────────────────────────────────────────────────
-        // During any active blocking session, if the current window content contains
-        // a user-defined blocked word, show the overlay and redirect immediately.
+        // The Keyword Blocker runs continuously whenever any blocked words are
+        // configured — the user explicitly added them, so enforcement is always
+        // on. No focus session or standalone block is required.
         //
         // For browser packages: also extract the URL bar text and do a substring
         // (non-whole-word) match, so "gaming" catches "gaming.com/news" in the URL.
-        if (focusActive || saActive) {
+        run {
             val blockedWords = getBlockedWords()
             if (blockedWords.isNotEmpty()) {
                 val isBrowser = BROWSER_PACKAGES.contains(pkg)

@@ -178,7 +178,7 @@ title = "FocusFlow Custom Node Rules JSON Guide"
 id = "iP0BDwrOXTHyQj8dDGfBV"
 uri = "file://focusflow-competitive-analysis.pdf"
 type = "pdf"
-title = "FocusFlow Competitive Analysis — April 2026"
+title = "FocusFlow Competitive Analysis — April 2026 (12 competitors)"
 
 [[outputs]]
 id = "WYeg5UJuCkAMIRtvx1bQR"
@@ -257,3 +257,9 @@ id = "YfS-83YFXCD7iwJdeG2ha"
 uri = "file://store-assets/refined-ring-dark.png"
 type = "image"
 title = "Refined Ring (your splash-icon.png — on dark bg)"
+
+[[outputs]]
+id = "dLUFyYW4I2U0xQeIeQTLW"
+uri = "file://COMPETITIVE_ANALYSIS.md"
+type = "text"
+title = "Competitive Analysis (Markdown source)"

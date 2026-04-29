@@ -541,7 +541,12 @@ export function AppPickerSheet({
         />
       </View>
 
-      <Text style={styles.hint}>Checked apps are allowed during Focus · "Sensitive" tag warns before blocking apps that can break the device</Text>
+      <Text style={styles.hint}>
+        Checked apps are allowed during Focus. The &quot;Sensitive&quot; tag means an app
+        can be blocked but will warn first (e.g. Settings, Wallet). Truly
+        protected apps — your phone dialer, home launcher and WhatsApp — are
+        kept usable by the system and don&apos;t appear here at all.
+      </Text>
 
       {loading && (
         <View style={styles.loadingRow}>
