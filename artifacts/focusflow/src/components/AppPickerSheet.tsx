@@ -329,8 +329,30 @@ export function AppPickerSheet({
     const allChecked = apps.length > 0 && selected.size === apps.length;
     const blockAll = apps.length > 0 && (selected.size === 0 || onlySensitivesSelected);
     const packages = allChecked ? [] : blockAll ? ['__block_all__'] : Array.from(selected);
-    onSave(packages);
-    onClose();
+
+    // Always ask for confirmation before saving the allowed-apps list.
+    // Users should consciously acknowledge which apps bypass blocking.
+    let summaryLine: string;
+    if (allChecked) {
+      summaryLine = `All ${apps.length} installed apps will be allowed during Focus sessions — blocking will have no effect.`;
+    } else if (blockAll) {
+      summaryLine = `All apps (except system-critical ones) will be blocked during Focus sessions.`;
+    } else {
+      const blockedCount = apps.length - selected.size;
+      summaryLine = `${selected.size} app${selected.size !== 1 ? 's' : ''} allowed · ${blockedCount} app${blockedCount !== 1 ? 's' : ''} will be blocked during Focus sessions.`;
+    }
+
+    Alert.alert(
+      'Save allowed apps?',
+      `${summaryLine}\n\nAllowed apps bypass all Focus Mode blocking rules.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: () => { onSave(packages); onClose(); },
+        },
+      ],
+    );
   }, [selected, apps, onSave, onClose, onlySensitivesSelected]);
 
   const allChecked = apps.length > 0 && selected.size === apps.length;

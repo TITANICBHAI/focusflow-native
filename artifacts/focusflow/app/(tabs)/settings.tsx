@@ -26,6 +26,7 @@ import { BlockedWordsModal } from '@/components/BlockedWordsModal';
 import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
 import { OverlayAppearanceModal } from '@/components/OverlayAppearanceModal';
 import DiagnosticsModal from '@/components/DiagnosticsModal';
+import { ImportFromOtherAppModal } from '@/components/ImportFromOtherAppModal';
 import { withScreenErrorBoundary } from '@/components/withScreenErrorBoundary';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
@@ -43,6 +44,7 @@ function SettingsScreen() {
   const [greyoutModalVisible, setGreyoutModalVisible] = useState(false);
   const [overlayAppearanceVisible, setOverlayAppearanceVisible] = useState(false);
   const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
+  const [importOtherAppVisible, setImportOtherAppVisible] = useState(false);
   // Diagnostics is gated on the native debuggable flag (not __DEV__) so that
   // debug-built APKs running prebundled JS still expose the section. We
   // optimistically default to __DEV__ so Metro builds show it on first paint,
@@ -202,6 +204,27 @@ function SettingsScreen() {
     if (state.focusSession?.isActive) {
       await SharedPrefsModule.setAllowedPackages(packages);
     }
+  };
+
+  const handleImportFromOtherApp = async (packages: string[]) => {
+    const existing = new Set(settings.standaloneBlockPackages ?? []);
+    const newPkgs = packages.filter((p) => !existing.has(p));
+    if (newPkgs.length === 0) {
+      Alert.alert('Nothing new', 'All detected apps are already in your block list.');
+      return;
+    }
+    const merged = [...Array.from(existing), ...newPkgs];
+    // Preserve any existing timed session; imported apps are also enforced
+    // via always-on enforcement even when no timed session is active.
+    const existingUntilMs = settings.standaloneBlockUntil
+      ? new Date(settings.standaloneBlockUntil).getTime()
+      : null;
+    const untilMs = existingUntilMs && existingUntilMs > Date.now() ? existingUntilMs : null;
+    await setStandaloneBlockAndAllowance(merged, untilMs, settings.dailyAllowanceEntries ?? []);
+    Alert.alert(
+      'Import complete',
+      `${newPkgs.length} new app${newPkgs.length !== 1 ? 's' : ''} added to your block list.`,
+    );
   };
 
   const handleSystemGuardToggle = async (enabled: boolean) => {
@@ -561,6 +584,12 @@ function SettingsScreen() {
             description="Restore from a .focusflow backup file"
             onPress={handleImportBackup}
           />
+          <SettingButton
+            icon="swap-horizontal-outline"
+            label="Import from Another App"
+            description="AppBlock, StayFree, ActionDash, Digital Wellbeing, or any plain-text list"
+            onPress={() => setImportOtherAppVisible(true)}
+          />
         </Section>
 
         {/* ── Permissions ── */}
@@ -676,6 +705,12 @@ function SettingsScreen() {
       <DiagnosticsModal
         visible={diagnosticsVisible}
         onClose={() => setDiagnosticsVisible(false)}
+      />
+
+      <ImportFromOtherAppModal
+        visible={importOtherAppVisible}
+        onClose={() => setImportOtherAppVisible(false)}
+        onImport={handleImportFromOtherApp}
       />
     </SafeAreaView>
   );
