@@ -41,7 +41,9 @@ const MUST_INCLUDE_PATTERNS = [
 function shouldExclude(filePath) {
   const rel = relative(BASE, filePath);
   if (MUST_INCLUDE_PATTERNS.some(p => p.test(rel))) return false;
-  return EXCLUDE_PATTERNS.some(p => p.test(rel) || p.test(filePath));
+  // Only test against the relative path — testing the absolute path would
+  // incorrectly exclude every file when BASE itself lives under /tmp.
+  return EXCLUDE_PATTERNS.some(p => p.test(rel));
 }
 
 function collectFiles(dir, files = []) {
