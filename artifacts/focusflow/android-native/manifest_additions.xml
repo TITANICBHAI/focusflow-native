@@ -48,8 +48,10 @@
     VIBRATE                     (for vibration harassment aversion layer)
     SCHEDULE_EXACT_ALARM        (for weekly temptation report alarm; optional, falls back to inexact)
     KILL_BACKGROUND_PROCESSES   (terminate the blocked app process after HOME press)
-    USE_FULL_SCREEN_INTENT      (required to launch BlockOverlayActivity via full-screen notification)
+    USE_FULL_SCREEN_INTENT      (required to launch BlockOverlayActivity AND TaskAlarmActivity via full-screen notification)
     EXPAND_STATUS_BAR           (allows collapsing the notification panel via StatusBarManager)
+    READ_EXTERNAL_STORAGE       (legacy API ≤ 32 — lets WallpaperManager.getDrawable() succeed
+                                 when reading the home-screen wallpaper for BlockOverlayActivity)
 
   AndroidManifest.xml components (patched automatically):
 
@@ -121,6 +123,27 @@
         android:turnScreenOn="true"
         android:noHistory="false"
         android:launchMode="singleTask"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:exported="false" />
+
+    <!--
+      TaskAlarmActivity — full-screen alarm launched by ForegroundTaskService
+      via setFullScreenIntent the moment a task hits its end time.
+        showWhenLocked + turnScreenOn — wakes the device and shows over lockscreen
+        excludeFromRecents              — never appears in the recents list
+        noHistory                       — auto-removed once finished
+        launchMode singleInstance       — re-trigger never stacks duplicate alarms
+        Backed by the high-importance "task_alarm" notification channel created
+        in ForegroundTaskService (sound + vibration + bypass DnD).
+    -->
+    <activity
+        android:name="...services.TaskAlarmActivity"
+        android:excludeFromRecents="true"
+        android:showWhenLocked="true"
+        android:turnScreenOn="true"
+        android:noHistory="true"
+        android:launchMode="singleInstance"
+        android:taskAffinity=""
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:exported="false" />
 

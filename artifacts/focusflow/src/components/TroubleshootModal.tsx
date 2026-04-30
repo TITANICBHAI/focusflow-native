@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 
-type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay';
+type PermissionId = 'accessibility' | 'usage' | 'battery' | 'notifications' | 'device_admin' | 'overlay' | 'media_files';
 
 type Brand = {
   id: string;
@@ -220,11 +220,12 @@ const TIPS: TroubleshootData = {
 
 const PERM_LABELS: Record<PermissionId, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   accessibility: { label: 'Accessibility Service', icon: 'accessibility-outline' },
-  usage: { label: 'Usage Access', icon: 'analytics-outline' },
-  battery: { label: 'Battery Optimization', icon: 'battery-charging-outline' },
-  notifications: { label: 'Notifications', icon: 'notifications-outline' },
-  device_admin: { label: 'Device Admin', icon: 'shield-outline' },
-  overlay: { label: 'Appear on Top', icon: 'layers-outline' },
+  usage:         { label: 'Usage Access',          icon: 'analytics-outline'    },
+  battery:       { label: 'Battery Optimization',  icon: 'battery-charging-outline' },
+  notifications: { label: 'Notifications',         icon: 'notifications-outline' },
+  device_admin:  { label: 'Device Admin',          icon: 'shield-outline'       },
+  overlay:       { label: 'Appear on Top',         icon: 'layers-outline'       },
+  media_files:   { label: 'Media Files Access',    icon: 'images-outline'       },
 };
 
 interface Props {

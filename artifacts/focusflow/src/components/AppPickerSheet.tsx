@@ -18,12 +18,138 @@ import { InstalledAppsModule, type InstalledApp } from '@/native-modules/Install
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import type { AllowedAppPreset } from '@/data/types';
 
+// ─── Sensitive-app advisory list ──────────────────────────────────────────────
+// These apps CAN be blocked, but the user is warned first because blocking them
+// can soft-brick the device, break emergency calls, or lock the user out of
+// FocusFlow itself.  The warning is a confirmation dialog — the user can still
+// proceed.
+//
+// Each category groups packages with the same risk so the warning is concise.
+
+type SensitiveCategory = {
+  category: string;          // Short label shown on the badge
+  warning: string;           // Risk text shown in the confirmation dialog
+  pkgs: string[];
+};
+
+const SENSITIVE_CATEGORIES: SensitiveCategory[] = [
+  {
+    category: 'Home launcher',
+    warning:
+      'Blocking your home launcher can leave you with no way to return to the home screen during a focus session.',
+    pkgs: [
+      'com.android.launcher', 'com.android.launcher2', 'com.android.launcher3',
+      'com.sec.android.app.launcher',          // Samsung OneUI
+      'com.google.android.apps.nexuslauncher', // Pixel / stock
+      'com.miui.launcher',                     // Xiaomi / MIUI
+      'com.huawei.android.launcher',           // Huawei / EMUI
+      'com.coloros.launcher',                  // Oppo / ColorOS
+      'com.oneplus.launcher',                  // OnePlus OxygenOS
+      'com.oppo.launcher',                     // Oppo legacy
+      'com.motorola.launcher3',                // Motorola
+      'com.nothing.launcher',                  // Nothing OS
+      'com.realme.launcher',                   // Realme UI
+      'com.iqoo.launcher',                     // iQOO / Funtouch
+      'com.vivo.launcher',                     // Vivo
+      'com.asus.launcher', 'com.ZenUI.launcher', // Asus
+      'com.lge.launcher3',                     // LG
+      'com.htc.launcher',                      // HTC
+      'com.sonyericsson.home',                 // Sony Xperia
+      'com.tcl.launcher',                      // TCL
+      'com.nokia.launcher',                    // Nokia
+      'com.infinix.launcher',                  // Infinix
+      'com.transsion.launcher',                // Transsion / itel / Tecno
+      'com.hihonor.launcher',                  // Honor
+    ],
+  },
+  {
+    category: 'System UI',
+    warning:
+      'Blocking System UI hides the status bar and notification shade — the device may become unusable until the focus session ends.',
+    pkgs: ['com.android.systemui'],
+  },
+  {
+    category: 'Phone / dialer',
+    warning:
+      'Blocking the phone dialer can prevent you from making emergency calls (112 / 911) during a focus session.',
+    pkgs: [
+      'com.android.phone', 'com.android.server.telecom',
+      'com.samsung.android.incallui',
+      'com.google.android.dialer', 'com.google.android.apps.googledialer',
+    ],
+  },
+  {
+    category: 'Caller ID / spam protection',
+    warning:
+      'Blocking Truecaller (or your caller-ID app) means spam and unknown calls will not be screened during the session — and you may miss the caller name on legitimate incoming calls.',
+    pkgs: [
+      'com.truecaller',                       // Truecaller
+      'com.truecaller.pro',                   // Truecaller Premium
+    ],
+  },
+  {
+    category: 'Education essentials',
+    warning:
+      'You marked this as a learning app you rely on. Blocking it during focus sessions usually defeats the purpose.',
+    pkgs: [
+      'xyz.penpencil.physicswala',            // PhysicsWallah (PW)
+      'digital.allen.study',                  // Allen Digital
+      'com.gurukripa.publicapp',              // Gurukripa (GCI)
+    ],
+  },
+  {
+    category: 'Android Settings',
+    warning:
+      'Blocking Settings means you may not be able to change device settings (including disabling FocusFlow) until the session ends.',
+    pkgs: ['com.android.settings', 'com.sec.android.app.SecSetupWizard'],
+  },
+  {
+    category: 'Google Play Services',
+    warning:
+      'Most apps depend on Google Play Services for sign-in, push notifications and Maps. Blocking it can break many other apps at once.',
+    pkgs: ['com.google.android.gms'],
+  },
+  {
+    category: 'Package installer',
+    warning:
+      'Blocking the package installer means Play Store updates and new app installs may silently fail.',
+    pkgs: [
+      'com.android.packageinstaller',
+      'com.google.android.packageinstaller',
+      'com.samsung.android.packageinstaller',
+    ],
+  },
+  {
+    category: 'Wallet / NFC pay',
+    warning:
+      'Blocking your wallet app can leave you unable to pay at a card terminal or unlock NFC during the session.',
+    pkgs: [
+      'com.samsung.android.wallet',
+      'com.samsung.android.samsungpay',
+      'com.google.android.apps.walletnfcrel',
+    ],
+  },
+  {
+    category: 'FocusFlow',
+    warning:
+      'Blocking FocusFlow itself means you will have no way to end or adjust the active focus session from inside the app.',
+    pkgs: ['com.tbtechs.focusflow'],
+  },
+];
+
+const SENSITIVE_APPS = new Map<string, { category: string; warning: string }>();
+SENSITIVE_CATEGORIES.forEach((c) =>
+  c.pkgs.forEach((p) => SENSITIVE_APPS.set(p, { category: c.category, warning: c.warning })),
+);
+
 interface Props {
   visible: boolean;
   title?: string;
   // [] = "all apps allowed" sentinel (all apps pre-checked on open)
   // [...pkgs] = specific allowed list (only those pre-checked)
+  // When noneWhenEmpty=true: [] = "block all" (nothing pre-checked)
   initialSelected: string[];
+  noneWhenEmpty?: boolean;
   presets: AllowedAppPreset[];
   onSave: (packages: string[]) => void;
   onSavePreset: (preset: AllowedAppPreset) => void;
@@ -35,6 +161,7 @@ export function AppPickerSheet({
   visible,
   title = 'Allowed Apps',
   initialSelected,
+  noneWhenEmpty = false,
   presets,
   onSave,
   onSavePreset,
@@ -68,9 +195,16 @@ export function AppPickerSheet({
 
         const allPkgs = new Set(sorted.map((a) => a.packageName));
         if (initialSelected.length === 0) {
-          // [] sentinel → check ALL apps (all allowed by default)
-          setSelected(new Set(allPkgs));
+          if (noneWhenEmpty) {
+            // Focus-mode context: [] = block all → start with nothing checked
+            setSelected(new Set());
+          } else {
+            // Standalone-block context: [] = all allowed sentinel → check ALL apps
+            setSelected(new Set(allPkgs));
+          }
         } else {
+          // Honour the user's saved selection exactly — sensitive apps are
+          // surfaced with a warning at toggle time, not auto-added here.
           setSelected(new Set(initialSelected.filter((p) => allPkgs.has(p))));
         }
       } catch {
@@ -92,32 +226,74 @@ export function AppPickerSheet({
     );
   }, [apps, search]);
 
+  const removePkg = useCallback((pkg: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(pkg);
+      return next;
+    });
+  }, []);
+
   const toggle = useCallback((pkg: string) => {
+    const sensitive = SENSITIVE_APPS.get(pkg);
+    const isAllowed = selected.has(pkg);
+    // Only warn when REMOVING (= "blocking during focus") a sensitive app.
+    if (sensitive && isAllowed) {
+      Alert.alert(
+        `Block ${sensitive.category}?`,
+        `${sensitive.warning}\n\nYou can re-enable it any time from this screen.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Block anyway', style: 'destructive', onPress: () => removePkg(pkg) },
+        ],
+      );
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(pkg)) next.delete(pkg);
       else next.add(pkg);
       return next;
     });
-  }, []);
+  }, [selected, removePkg]);
+
+  // Pre-computed set of installed sensitive packages (launcher, dialer,
+  // Settings, Play Services, FocusFlow, etc.). Bulk operations keep these
+  // *allowed* so the device stays usable mid-session — without this guard
+  // a single tap on "Deselect All" can soft-brick the phone.
+  const sensitiveInstalled = useMemo(
+    () => new Set(apps.map((a) => a.packageName).filter((p) => SENSITIVE_APPS.has(p))),
+    [apps],
+  );
 
   const selectAll = useCallback(() => {
     setSelected(new Set(apps.map((a) => a.packageName)));
   }, [apps]);
 
   const deselectAll = useCallback(() => {
-    setSelected(new Set());
-  }, []);
+    // Keep sensitive apps allowed — they are protected by design.  If the
+    // user really wants to block one of them they can untick it manually
+    // (the per-app toggle still surfaces the warning dialog).
+    setSelected(new Set(sensitiveInstalled));
+  }, [sensitiveInstalled]);
 
   const applyPreset = useCallback(
     (preset: AllowedAppPreset) => {
       if (preset.packages.length === 0) {
+        // [] sentinel → all apps allowed
         setSelected(new Set(apps.map((a) => a.packageName)));
+      } else if (preset.packages.includes('__block_all__')) {
+        // '__block_all__' sentinel → block everything *except* sensitive
+        // apps. Same protection as the Deselect-All button so a saved
+        // "Block all" preset cannot accidentally lock the user out.
+        setSelected(new Set(sensitiveInstalled));
       } else {
-        setSelected(new Set(preset.packages));
+        // Honour the explicit preset list, but always keep sensitives
+        // allowed regardless of how the preset was authored.
+        setSelected(new Set([...preset.packages, ...sensitiveInstalled]));
       }
     },
-    [apps],
+    [apps, sensitiveInstalled],
   );
 
   const confirmDeletePreset = useCallback(
@@ -130,28 +306,69 @@ export function AppPickerSheet({
     [onDeletePreset],
   );
 
+  // "Effectively none selected" = no real user-pickable apps remain — only
+  // sensitive system apps that the picker keeps allowed for safety. This is
+  // what the user means when they tap Deselect All and we treat it as the
+  // "block everything" save state.
+  const onlySensitivesSelected =
+    apps.length > 0 &&
+    selected.size > 0 &&
+    selected.size === sensitiveInstalled.size &&
+    Array.from(selected).every((p) => sensitiveInstalled.has(p));
+
   const handleSavePreset = useCallback(() => {
     const name = presetName.trim();
     if (!name) return;
     const allChecked = apps.length > 0 && selected.size === apps.length;
-    const packages = allChecked ? [] : Array.from(selected);
+    const blockAll = apps.length > 0 && (selected.size === 0 || onlySensitivesSelected);
+    const packages = allChecked ? [] : blockAll ? ['__block_all__'] : Array.from(selected);
     onSavePreset({ id: Date.now().toString(), name, packages });
     setShowPresetInput(false);
     setPresetName('');
-  }, [presetName, selected, apps, onSavePreset]);
+  }, [presetName, selected, apps, onSavePreset, onlySensitivesSelected]);
 
   const handleSave = useCallback(() => {
-    // If every app is checked → use [] sentinel (all allowed)
+    // all checked  → [] sentinel (all apps allowed, no blocking)
+    // block-all    → ['__block_all__'] sentinel (everything except sensitive
+    //                apps is blocked).  Sensitive apps are always passed
+    //                through by the AccessibilityService anyway, so the
+    //                stored allow-list does not need to include them.
+    // some checked → explicit allow-list (only those apps pass through during Focus)
     const allChecked = apps.length > 0 && selected.size === apps.length;
-    const packages = allChecked ? [] : Array.from(selected);
-    onSave(packages);
-    onClose();
-  }, [selected, apps, onSave, onClose]);
+    const blockAll = apps.length > 0 && (selected.size === 0 || onlySensitivesSelected);
+    const packages = allChecked ? [] : blockAll ? ['__block_all__'] : Array.from(selected);
+
+    // Always ask for confirmation before saving the allowed-apps list.
+    // Users should consciously acknowledge which apps bypass blocking.
+    let summaryLine: string;
+    if (allChecked) {
+      summaryLine = `All ${apps.length} installed apps will be allowed during Focus sessions — blocking will have no effect.`;
+    } else if (blockAll) {
+      summaryLine = `All apps (except system-critical ones) will be blocked during Focus sessions.`;
+    } else {
+      const blockedCount = apps.length - selected.size;
+      summaryLine = `${selected.size} app${selected.size !== 1 ? 's' : ''} allowed · ${blockedCount} app${blockedCount !== 1 ? 's' : ''} will be blocked during Focus sessions.`;
+    }
+
+    Alert.alert(
+      'Save allowed apps?',
+      `${summaryLine}\n\nAllowed apps bypass all Focus Mode blocking rules.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Save',
+          onPress: () => { onSave(packages); onClose(); },
+        },
+      ],
+    );
+  }, [selected, apps, onSave, onClose, onlySensitivesSelected]);
 
   const allChecked = apps.length > 0 && selected.size === apps.length;
+  const noneSelected = apps.length > 0 && (selected.size === 0 || onlySensitivesSelected);
 
   const renderApp = ({ item }: { item: InstalledApp }) => {
     const checked = selected.has(item.packageName);
+    const sensitive = SENSITIVE_APPS.get(item.packageName);
     return (
       <TouchableOpacity
         style={styles.row}
@@ -169,8 +386,18 @@ export function AppPickerSheet({
           </View>
         )}
         <View style={styles.appInfo}>
-          <Text style={styles.appName} numberOfLines={1}>{item.appName}</Text>
-          <Text style={styles.pkgName} numberOfLines={1}>{item.packageName}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={styles.appName} numberOfLines={1}>{item.appName}</Text>
+            {sensitive && (
+              <View style={styles.systemBadge}>
+                <Ionicons name="alert-circle-outline" size={10} color={COLORS.primary} />
+                <Text style={styles.systemBadgeText}>Sensitive</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.pkgName} numberOfLines={1}>
+            {sensitive ? `${sensitive.category} · ${item.packageName}` : item.packageName}
+          </Text>
         </View>
         <View style={[styles.checkbox, checked && styles.checkboxOn]}>
           {checked && <Ionicons name="checkmark" size={14} color="#fff" />}
@@ -262,21 +489,37 @@ export function AppPickerSheet({
         )}
       </View>
 
-      {/* Select All / Deselect All + count */}
+      {/* Select All / Deselect All + count.  Both buttons are always
+          visible so the user can jump from any state to "allow all" or
+          "block all" in a single tap (no more two-tap toggle dance). */}
       <View style={styles.controlRow}>
         <Text style={styles.countText}>
           {allChecked
             ? `All ${apps.length} apps allowed`
+            : noneSelected
+            ? `All apps blocked · ${sensitiveInstalled.size} sensitive kept allowed`
             : `${selected.size} of ${apps.length} allowed`}
         </Text>
-        <TouchableOpacity
-          onPress={allChecked ? deselectAll : selectAll}
-          style={styles.selectAllBtn}
-        >
-          <Text style={styles.selectAllText}>
-            {allChecked ? 'Deselect All' : 'Select All'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.controlBtnRow}>
+          <TouchableOpacity
+            onPress={selectAll}
+            style={[styles.selectAllBtn, allChecked && styles.selectAllBtnDisabled]}
+            disabled={allChecked}
+          >
+            <Text style={[styles.selectAllText, allChecked && styles.selectAllTextDisabled]}>
+              Select All
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={deselectAll}
+            style={[styles.selectAllBtn, noneSelected && styles.selectAllBtnDisabled]}
+            disabled={noneSelected}
+          >
+            <Text style={[styles.selectAllText, noneSelected && styles.selectAllTextDisabled]}>
+              Deselect All
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search bar */}
@@ -298,7 +541,12 @@ export function AppPickerSheet({
         />
       </View>
 
-      <Text style={styles.hint}>Checked apps are allowed during Focus Mode</Text>
+      <Text style={styles.hint}>
+        Checked apps are allowed during Focus. The &quot;Sensitive&quot; tag means an app
+        can be blocked but will warn first (e.g. Settings, Wallet). Truly
+        protected apps — your phone dialer, home launcher and WhatsApp — are
+        kept usable by the system and don&apos;t appear here at all.
+      </Text>
 
       {loading && (
         <View style={styles.loadingRow}>
@@ -488,11 +736,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: SPACING.md,
+    gap: SPACING.sm,
+    flexWrap: 'wrap',
+  },
+  controlBtnRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
   },
   countText: {
     fontSize: FONT.sm,
     color: COLORS.textSecondary,
     fontWeight: '500',
+    flexShrink: 1,
   },
   selectAllBtn: {
     paddingVertical: SPACING.xs,
@@ -502,10 +757,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  selectAllBtnDisabled: {
+    opacity: 0.4,
+  },
   selectAllText: {
     fontSize: FONT.sm,
     color: COLORS.primary,
     fontWeight: '600',
+  },
+  selectAllTextDisabled: {
+    color: COLORS.muted,
   },
   searchBar: {
     flexDirection: 'row',
@@ -588,6 +849,20 @@ const styles = StyleSheet.create({
   checkboxOn: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
+  },
+  systemBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primaryLight,
+  },
+  systemBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   separator: {
     height: SPACING.xs,

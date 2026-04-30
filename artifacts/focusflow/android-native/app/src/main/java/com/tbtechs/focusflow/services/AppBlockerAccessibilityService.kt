@@ -40,9 +40,12 @@ import org.json.JSONArray
  *
  *   1. TASK-BASED BLOCK (focus_active = true)
  *      - Blocks any app NOT in the "allowed_packages" list.
- *      - System UI, launchers, phone/dialer are ALWAYS allowed (see ALWAYS_ALLOWED).
- *      - Settings is ALWAYS_ALLOWED but specific sub-pages (accessibility settings,
- *        clear data dialogs, date/time) are intercepted and dismissed during focus.
+ *      - System UI, launchers, phone/dialer are bypassed by default unless the user
+ *        explicitly opts to block them via a confirmation warning in the UI
+ *        (see BLOCKABLE_AFTER_WARNING — formerly ALWAYS_ALLOWED).
+ *      - Settings is in BLOCKABLE_AFTER_WARNING but specific sub-pages (accessibility
+ *        settings, clear data dialogs, date/time) are intercepted and dismissed
+ *        during focus regardless.
  *      - Cleared automatically when task_end_ms is passed (native time authority).
  *
  *   2. STANDALONE BLOCK (standalone_block_active = true)
@@ -87,25 +90,63 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         const val PREF_DAILY_ALLOWANCE_USED  = "daily_allowance_used"
 
         const val PREF_BLOCKED_WORDS = "blocked_words"
+        const val PREF_SYSTEM_GUARD_ENABLED = "system_guard_enabled"
+
+        // Content-specific guard flags (opt-in). Each follows the same enforcement
+        // pattern as PREF_SYSTEM_GUARD_ENABLED: gated by (focusActive || saActive).
+        const val PREF_BLOCK_INSTALL_ACTIONS = "block_install_actions"   // Play Store / packageinstaller install/update/uninstall confirmations
+        const val PREF_BLOCK_YT_SHORTS       = "block_yt_shorts"          // YouTube Shorts player (YouTube otherwise allowed)
+        const val PREF_BLOCK_IG_REELS        = "block_ig_reels"           // Instagram Reels / clips viewer (Instagram otherwise allowed)
+
+        /**
+         * Always-on block enforcement — independent of any timed session.
+         *
+         * PREF_ALWAYS_BLOCK: Boolean — when true the AccessibilityService enforces
+         *   the PREF_ALWAYS_BLOCK_PKGS list and daily allowance rules at all times,
+         *   without requiring focus_active or standalone_block_active.
+         *
+         * PREF_ALWAYS_BLOCK_PKGS: String — JSON array of package names to block
+         *   whenever PREF_ALWAYS_BLOCK is true.  Stored separately from
+         *   standalone_blocked_packages so timed-session expiry never clears it.
+         *
+         * The UI "locked" state is NOT affected by these flags — the user can
+         * freely change their block list when no timed session is running.
+         */
+        const val PREF_ALWAYS_BLOCK      = "always_block_active"
+        const val PREF_ALWAYS_BLOCK_PKGS = "always_block_packages"
 
         /** Notification channel used to launch the block overlay via full-screen intent. */
         private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
         private const val BLOCK_ALERT_NOTIF_ID = 9001
 
         /**
-         * Packages that are NEVER blocked regardless of focus or standalone settings.
+         * BLOCKABLE_AFTER_WARNING (formerly ALWAYS_ALLOWED).
          *
-         * This must include every launcher / home screen variant and system-critical
-         * packages. Without this, pressing HOME sends the user to the launcher which
-         * then fires a TYPE_WINDOW_STATE_CHANGED event — the service would immediately
-         * block the launcher too, causing an infinite HOME-press loop.
+         * Packages in this set are bypassed by the accessibility service BY DEFAULT
+         * — but the user can still choose to block them by explicitly adding them
+         * to their standalone block list or removing them from their focus-allowed
+         * list. The TS UI shows a "Sensitive" badge and a confirmation dialog
+         * (see SENSITIVE_APPS in src/components/AppPickerSheet.tsx) before letting
+         * the user opt in, so the rename of this constant emphasises that these
+         * apps CAN be blocked AFTER a warning — they are not unconditionally
+         * allowed. Contrast with NEVER_BLOCK below, which is hard-locked and
+         * cannot be overridden by any setting.
          *
-         * Settings is included here but specific sub-pages are intercepted separately.
+         * Why include them at all? Two reasons:
+         *   1. Safety nets — launcher / dialer / SystemUI must keep working so
+         *      the user is not trapped on a blank screen during a session.
+         *   2. Loop prevention — pressing HOME sends the user to the launcher
+         *      which fires TYPE_WINDOW_STATE_CHANGED; without this set the
+         *      service would block the launcher too and create an infinite loop.
+         *
+         * Settings is included so the user can always reach FocusFlow's own
+         * settings to stop a session. Specific dangerous Settings sub-pages
+         * (accessibility, clear-data, date/time) are intercepted further down
+         * by content inspection during a session, regardless of this set.
          */
-        val ALWAYS_ALLOWED: Set<String> = setOf(
+        val BLOCKABLE_AFTER_WARNING: Set<String> = setOf(
             // Core Android OS
             "android",
-            // System UI (status bar, nav bar, quick settings)
             "com.android.systemui",
             "com.sec.android.app.systemui",
             "com.samsung.android.systemui",
@@ -113,6 +154,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.sec.android.app.launcher",          // Samsung One UI
             "com.samsung.android.app.launcher",
             "com.samsung.android.incallui",          // Samsung call screen
+            "com.samsung.android.app.powerkey",
             "com.google.android.apps.nexuslauncher", // Pixel
             "com.android.launcher3",                 // AOSP
             "com.android.launcher",
@@ -125,6 +167,10 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.android.phone",
             "com.android.dialer",
             "com.google.android.dialer",
+            "com.samsung.crane",
+            "com.samsung.android.dialer",
+            "com.android.providers.telephony",
+            "com.android.server.telecom",
             "com.samsung.android.app.telephonyui",
             // Settings (user must be able to reach FocusFlow settings to stop the session)
             // Specific dangerous sub-pages are blocked via content inspection below.
@@ -140,6 +186,33 @@ class AppBlockerAccessibilityService : AccessibilityService() {
          * passed through unconditionally before any other check.
          */
         val NEVER_BLOCK: Set<String> = setOf(
+            // ── Home launchers ─────────────────────────────────────────────────
+            // If a launcher is blocked the user has no way to reach the home
+            // screen during a session — pressing HOME just lands back on the
+            // block overlay. This protection cannot be overridden.
+            "com.android.launcher", "com.android.launcher2", "com.android.launcher3",
+            "com.sec.android.app.launcher",            // Samsung OneUI
+            "com.samsung.android.app.launcher",
+            "com.google.android.apps.nexuslauncher",   // Pixel / stock
+            "com.miui.home", "com.miui.launcher",      // Xiaomi / MIUI
+            "com.huawei.android.launcher",             // Huawei / EMUI
+            "com.hihonor.launcher",                    // Honor
+            "com.coloros.launcher",                    // Oppo / ColorOS
+            "com.oppo.launcher",                       // Oppo legacy
+            "com.oneplus.launcher",                    // OnePlus OxygenOS
+            "com.bbk.launcher2", "com.vivo.launcher",  // Vivo
+            "com.iqoo.launcher",                       // iQOO / Funtouch
+            "com.realme.launcher",                     // Realme UI
+            "com.motorola.launcher3",                  // Motorola
+            "com.nothing.launcher",                    // Nothing OS
+            "com.asus.launcher", "com.ZenUI.launcher", // Asus
+            "com.lge.launcher3",                       // LG
+            "com.htc.launcher",                        // HTC
+            "com.sonyericsson.home",                   // Sony Xperia
+            "com.tcl.launcher",                        // TCL
+            "com.nokia.launcher",                      // Nokia
+            "com.infinix.launcher",                    // Infinix
+            "com.transsion.launcher",                  // Transsion / itel / Tecno
             // ── Emergency / in-call UI ────────────────────────────────────────
             "com.android.phone",                       // AOSP telephony
             "com.android.dialer",                      // AOSP dialer
@@ -147,9 +220,13 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "com.android.emergencydialer",             // Emergency dialer (any OEM)
             "com.google.android.incallui",             // Google in-call UI
             // Samsung
+            "com.samsung.crane",
+            "com.samsung.android.dialer",
             "com.samsung.android.app.telephonyui",
             "com.samsung.android.incallui",
             "com.sec.android.app.dialertab",
+            "com.android.providers.telephony",
+            "com.android.server.telecom",
             // Xiaomi / MIUI
             "com.miui.dialer",
             "com.xiaomi.phone",
@@ -186,6 +263,18 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             // ── WhatsApp (messaging / calls) ─────────────────────────────────
             "com.whatsapp",
             "com.whatsapp.w4b",                        // WhatsApp Business
+            // ── Caller ID / spam-call protection ─────────────────────────────
+            "com.truecaller",                          // Truecaller — caller ID + spam block
+            "com.truecaller.pro",                      // Truecaller Premium variant
+            // ── Media / education / clock (legacy never-block list) ──────────
+            "org.videolan.vlc",
+            "com.gurukripa.publicapp",                 // Gurukripa (GCI) public app
+            "xyz.penpencil.physicswala",               // PhysicsWallah (PW)
+            "digital.allen.study",                     // Allen Digital
+            "com.sec.android.app.clockpackage",
+            "com.samsung.android.clockpackage",
+            "com.android.deskclock",
+            "com.google.android.deskclock",
         )
 
         val ALWAYS_BLOCKED: Set<String> = emptySet()
@@ -211,7 +300,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         /** Max number of rapid re-check attempts after a block dismissal. */
         private const val MAX_RETRY_ATTEMPTS = 5
         /** Interval between retry checks in milliseconds. */
-        private const val RETRY_INTERVAL_MS = 300L
+        private const val RETRY_INTERVAL_MS = 150L
 
         // ── Keyword blocker: URL / search field detection ─────────────────────
 
@@ -349,6 +438,16 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 saActive = false
             }
         }
+        // ── Always-on enforcement (session-independent) ───────────────────────
+        // When true, standalone block list + daily allowance are enforced even
+        // without an active focus task or timed standalone block session.
+        // Does NOT affect the UI lock — settings can be changed when no timed
+        // session is running (focusActive == false && saActive == false).
+        val alwaysBlockActive = prefs.getBoolean(PREF_ALWAYS_BLOCK, false)
+        val systemGuardEnabled = prefs.getBoolean(PREF_SYSTEM_GUARD_ENABLED, true)
+        val blockInstallActions = prefs.getBoolean(PREF_BLOCK_INSTALL_ACTIONS, false)
+        val blockYoutubeShorts  = prefs.getBoolean(PREF_BLOCK_YT_SHORTS, false)
+        val blockInstagramReels = prefs.getBoolean(PREF_BLOCK_IG_REELS, false)
 
         // ── Cooldown reset: fired when user taps ✕ to dismiss the overlay ───
         // BlockOverlayActivity writes this flag on intentional dismiss so the
@@ -360,14 +459,34 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
 
         val pkg = ev.packageName?.toString() ?: return
+        val cls = ev.className?.toString() ?: ""
 
         // Update foreground package tracker so retries can guard against
         // pressing Home when the user has already switched to an allowed app.
         lastSeenPkg = pkg
 
-        // Persist current foreground package so BlockOverlayActivity can check
-        // whether the user navigated to our own app (settings) and skip re-raise.
-        prefs.edit().putString("current_foreground_pkg", pkg).apply()
+        // Persist current foreground package AND class name.
+        // BlockOverlayActivity uses the class name to distinguish trusted FocusFlow
+        // screens (MainActivity, SettingsActivity) from any deeplink/custom-tab
+        // activity in the same package — which is the self-package loophole.
+        prefs.edit()
+            .putString("current_foreground_pkg", pkg)
+            .putString("current_foreground_cls", cls)
+            .apply()
+
+        // ── Recents screen block ─────────────────────────────────────────────
+        // During task-based focus only: the overview screen shows thumbnails of
+        // recent tasks, so the user could read blocked-app content without opening
+        // it.  We press HOME to prevent this.
+        // During standalone block we leave recents alone — the user is not in a
+        // timed focus session and being kicked out of the task switcher feels
+        // unexpected.
+        if (focusActive) {
+            if (isRecentsScreen(pkg, cls, ev)) {
+                handler.post { performGlobalAction(GLOBAL_ACTION_HOME) }
+                return
+            }
+        }
 
         // ── Timed allowance: accumulate usage when user switches away ─────────
         // If the user was in a time-limited allowed app and just switched to a
@@ -398,9 +517,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         //
         // This check intentionally lives AFTER the packageName guard above so
         // our own overlay activity never triggers the X-ready signal.
-        // It also lives BEFORE the ALWAYS_ALLOWED early-return below so that
-        // the launcher (which is ALWAYS_ALLOWED) correctly triggers it after
-        // the user presses HOME.
+        // It also lives BEFORE the BLOCKABLE_AFTER_WARNING early-return below
+        // so that the launcher (which is in BLOCKABLE_AFTER_WARNING) correctly
+        // triggers it after the user presses HOME.
         val awaitingPkg = prefs.getString("overlay_awaiting_pkg", "") ?: ""
         if (awaitingPkg.isNotEmpty() && !pkg.equals(awaitingPkg, ignoreCase = true)) {
             prefs.edit()
@@ -409,37 +528,46 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 .apply()
             // Also reveal directly on the WindowManager overlay (no polling needed)
             revealWindowXButton()
+            // Post a brief "session active" reminder on the home screen so the
+            // user is not silently returned to a blank launcher with no context.
+            postHomeScreenReminder()
         }
 
         // ── NEVER_BLOCK packages ──────────────────────────────────────────────
         // Phone dialers (all OEM variants) and WhatsApp are unconditionally
         // allowed. No user setting, standalone block, or focus session can
-        // override this. This check runs before ALWAYS_ALLOWED so that even
-        // if a user somehow adds one of these packages to a block list, the
-        // block is silently ignored.
+        // override this. This check runs before BLOCKABLE_AFTER_WARNING so
+        // that even if a user somehow adds one of these packages to a block
+        // list, the block is silently ignored.
         if (NEVER_BLOCK.any { pkg.equals(it, ignoreCase = true) }) {
             return
         }
 
-        // ── ALWAYS_ALLOWED packages ───────────────────────────────────────────
-        // Settings is always allowed at the package level but we intercept dangerous
-        // sub-pages (accessibility settings, clear data, date/time) during focus.
-        if (ALWAYS_ALLOWED.any { pkg.equals(it, ignoreCase = true) }) {
+        // ── BLOCKABLE_AFTER_WARNING packages ──────────────────────────────────
+        // These are bypassed by default so the user is never trapped (launcher,
+        // dialer, Settings, etc.) — but the user can opt to block any of them
+        // via the picker after the "Sensitive" confirmation dialog. We intercept
+        // dangerous Settings sub-pages (accessibility, clear data, date/time)
+        // separately during a focus session.
+        if (BLOCKABLE_AFTER_WARNING.any { pkg.equals(it, ignoreCase = true) }) {
 
-            // ── User explicit override ────────────────────────────────────────
-            // If the user deliberately added an ALWAYS_ALLOWED package (e.g. Settings)
-            // to their standalone blocked list or excluded it from their focus allowed
-            // list, honour that choice and bypass the protection entirely.
-            if (saActive) {
+            // ── User explicit opt-in ──────────────────────────────────────────
+            // If the user deliberately added a BLOCKABLE_AFTER_WARNING package
+            // (e.g. Settings) to their standalone blocked list or excluded it
+            // from their focus allowed list, honour that choice — the warning
+            // dialog already happened in the UI before they got here.
+            if (saActive || alwaysBlockActive) {
                 val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
-                if (parseJsonArray(saJson).any { it.equals(pkg, ignoreCase = true) }) {
+                val alwaysJson = prefs.getString(PREF_ALWAYS_BLOCK_PKGS, "[]") ?: "[]"
+                val combinedList = parseJsonArray(saJson) + parseJsonArray(alwaysJson)
+                if (combinedList.any { it.equals(pkg, ignoreCase = true) }) {
                     val samePackage = pkg == lastBlockedPkg
                     val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
                     if (!samePackage || cooldownExpired) {
                         lastBlockedPkg = pkg
                         lastBlockedAtMs = now
                         handleBlockedApp(pkg)
-                        scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                        scheduleRetryCheck(pkg, 1, focusActive, saActive, alwaysBlockActive)
                     }
                     return
                 }
@@ -454,33 +582,20 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                         lastBlockedPkg = pkg
                         lastBlockedAtMs = now
                         handleBlockedApp(pkg)
-                        scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                        scheduleRetryCheck(pkg, 1, focusActive, saActive, alwaysBlockActive)
                     }
                     return
                 }
             }
 
-            if (focusActive || saActive) {
-                // ── System UI: block notification panel + power menu ──────────
-                // When SystemUI packages fire a window event during a blocking
-                // session, check if it is the notification panel/quick-settings
-                // or the power-off dialog (GlobalActions).  Both are collapsed /
-                // dismissed immediately so the user cannot bypass the session.
-                //
-                // Samsung-specific: the power menu on One UI fires from the
-                // separate package com.samsung.android.app.powerkey rather than
-                // from SystemUI, so we must catch it independently.
+            // System Protection runs continuously whenever the toggle is on.
+            // It does NOT require an active focus session or standalone block —
+            // the user explicitly opted in to lock these system controls all the
+            // time (the toggle in Block Enforcement is off by default).
+            if (systemGuardEnabled) {
                 val isSamsungPowerKey = pkg == "com.samsung.android.app.powerkey"
-                if (isSamsungPowerKey) {
-                    // Long-press side button opened Samsung power menu — dismiss it.
-                    // Three-layer approach for maximum OEM coverage:
-                    //   1. ACTION_CLOSE_SYSTEM_DIALOGS broadcast — works on Android ≤ 11,
-                    //      silently ignored / no-op on Android 12+ (system restriction).
-                    //   2. GLOBAL_ACTION_BACK — closes the dialog on all API levels.
-                    //   3. GLOBAL_ACTION_HOME — guaranteed return to home on all OEMs.
-                    closeSystemDialogsBroadcast()
-                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
-                    handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
+                if (isSamsungPowerKey && isPowerMenu(ev)) {
+                    handlePowerMenuIntercepted()
                     return
                 }
 
@@ -488,26 +603,36 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     pkg == "com.sec.android.app.systemui" ||
                     pkg == "com.samsung.android.systemui"
                 if (isSystemUiPkg) {
-                    if (isPowerMenu(ev)) {
-                        // Power off / restart dialog opened — dismiss it.
-                        // Same three-layer approach as Samsung power key above.
-                        closeSystemDialogsBroadcast()
-                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 80L)
-                        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 350L)
-                        return
-                    }
+                    // FIX: notification shade events from SystemUI were being
+                    // misclassified as power-menu when notification text happened
+                    // to contain words like "restart" / "reboot" / "shut down".
+                    // Detect the notification panel FIRST and bail — only fall
+                    // through to power-menu detection when the shade is closed.
                     if (isNotificationPanelExpanded(ev)) {
-                        // Notification bar or quick-settings pulled down.
-                        // Layer 1: ACTION_CLOSE_SYSTEM_DIALOGS (Android ≤ 11 only).
-                        // Layer 2: StatusBarManager reflection (AOSP; silently fails elsewhere).
-                        // Layer 3: GLOBAL_ACTION_HOME — guaranteed on all OEMs.
-                        closeSystemDialogsBroadcast()
-                        handler.postDelayed({
-                            collapseStatusBarPanel()
-                            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 300L)
-                        }, 80L)
                         return
                     }
+                    if (isPowerMenu(ev)) {
+                        handlePowerMenuIntercepted()
+                        return
+                    }
+                    return
+                }
+
+                // ── Launcher power-off dialog (e.g. One UI Home long-press power button) ──
+                // Some OEMs (Samsung One UI) show the power-off confirmation from the launcher
+                // package rather than from SystemUI or the powerkey package.
+                val isLauncherPkg = pkg == "com.sec.android.app.launcher" ||
+                    pkg == "com.samsung.android.app.launcher" ||
+                    pkg == "com.google.android.apps.nexuslauncher" ||
+                    pkg == "com.android.launcher3" ||
+                    pkg == "com.android.launcher" ||
+                    pkg == "com.miui.home" ||
+                    pkg == "com.oneplus.launcher" ||
+                    pkg == "com.huawei.android.launcher" ||
+                    pkg == "com.oppo.launcher" ||
+                    pkg == "com.bbk.launcher2"
+                if (isLauncherPkg && isPowerMenu(ev)) {
+                    handlePowerMenuIntercepted()
                     return
                 }
 
@@ -565,13 +690,36 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
+        // ── Content-specific guards ──────────────────────────────────────────
+        // Each toggle is opt-in and runs continuously whenever it is on —
+        // independent of any focus session or standalone block. The user
+        // explicitly opted in by enabling the toggle in Block Enforcement.
+        //
+        //   • blockInstallActions  — Play Store / packageinstaller install,
+        //                            update, and uninstall confirmation dialogs.
+        //   • blockYoutubeShorts   — YouTube Shorts player (rest of YouTube OK).
+        //   • blockInstagramReels  — Instagram Reels / clips viewer (rest of IG OK).
+        if (blockInstallActions && isInstallActionContext(ev, pkg)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        if (blockYoutubeShorts && pkg == "com.google.android.youtube" && isYoutubeShorts(ev)) {
+            handleBlockedApp(pkg)
+            return
+        }
+        if (blockInstagramReels && pkg == "com.instagram.android" && isInstagramReels(ev)) {
+            handleBlockedApp(pkg)
+            return
+        }
+
         // ── Word blocking ─────────────────────────────────────────────────────
-        // During any active blocking session, if the current window content contains
-        // a user-defined blocked word, show the overlay and redirect immediately.
+        // The Keyword Blocker runs continuously whenever any blocked words are
+        // configured — the user explicitly added them, so enforcement is always
+        // on. No focus session or standalone block is required.
         //
         // For browser packages: also extract the URL bar text and do a substring
         // (non-whole-word) match, so "gaming" catches "gaming.com/news" in the URL.
-        if (focusActive || saActive) {
+        run {
             val blockedWords = getBlockedWords()
             if (blockedWords.isNotEmpty()) {
                 val isBrowser = BROWSER_PACKAGES.contains(pkg)
@@ -617,9 +765,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
-        // If neither session is active, nothing further to enforce.
-        if (!focusActive && !saActive) {
+        // If neither session nor always-on enforcement is active, nothing to enforce.
+        if (!focusActive && !saActive && !alwaysBlockActive) {
             lastBlockedPkg = null
+            return
+        }
+
+        // ── Explicit block check: standalone list or focus-mode blocked ──────
+        // If the app is explicitly in the standalone blocked list, or explicitly
+        // blocked by focus mode (not in the allowed list), it must be blocked
+        // immediately — daily allowance does NOT override an explicit block.
+        // This must run BEFORE the daily allowance check so that an app in both
+        // the block list and the allowance list is always blocked, never let through.
+        val explicitlyBlocked = isPackageBlocked(pkg, focusActive, saActive, alwaysBlockActive)
+        if (explicitlyBlocked) {
+            val samePackage = pkg == lastBlockedPkg
+            val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
+            if (!samePackage || cooldownExpired) {
+                lastBlockedPkg = pkg
+                lastBlockedAtMs = now
+                handleBlockedApp(pkg)
+                scheduleRetryCheck(pkg, 1, focusActive, saActive, alwaysBlockActive)
+            }
             return
         }
 
@@ -654,21 +821,19 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 lastBlockedPkg = null
                 return // Allowed — within allowance
             }
-            // Allowance exhausted — always block during any active session.
-            // This makes daily allowance act as a true "N opens then blocked" limit
-            // regardless of whether the app is also in the explicit standalone block list.
+            // Allowance exhausted — block during any active session or always-on mode.
             val samePackage = pkg == lastBlockedPkg
             val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
             if (!samePackage || cooldownExpired) {
                 lastBlockedPkg = pkg
                 lastBlockedAtMs = now
                 handleBlockedApp(pkg)
-                scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                scheduleRetryCheck(pkg, 1, focusActive, saActive, alwaysBlockActive)
             }
             return
         }
 
-        val isBlocked = isPackageBlocked(pkg, focusActive, saActive)
+        val isBlocked = isPackageBlocked(pkg, focusActive, saActive, alwaysBlockActive)
 
         if (isBlocked) {
             val samePackage = pkg == lastBlockedPkg
@@ -677,7 +842,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                 lastBlockedPkg = pkg
                 lastBlockedAtMs = now
                 handleBlockedApp(pkg)
-                scheduleRetryCheck(pkg, 1, focusActive, saActive)
+                scheduleRetryCheck(pkg, 1, focusActive, saActive, alwaysBlockActive)
             }
         } else {
             lastBlockedPkg = null
@@ -694,21 +859,38 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     /**
      * Schedules up to [MAX_RETRY_ATTEMPTS] re-checks at [RETRY_INTERVAL_MS] ms intervals
      * to catch apps that relaunch themselves after the initial dismissal.
+     *
+     * Each retry re-shows the block overlay AND presses BACK+HOME so the blocked
+     * app is forcefully removed from the foreground even on slow devices.
      */
-    private fun scheduleRetryCheck(pkg: String, attempt: Int, focusWasActive: Boolean, saWasActive: Boolean) {
+    private fun scheduleRetryCheck(
+        pkg: String,
+        attempt: Int,
+        focusWasActive: Boolean,
+        saWasActive: Boolean,
+        alwaysBlockWasActive: Boolean = false,
+    ) {
         if (attempt > MAX_RETRY_ATTEMPTS) return
         handler.postDelayed({
-            val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false)
-            val saActive = prefs.getBoolean(PREF_SA_ACTIVE, false)
-            if (!focusActive && !saActive) return@postDelayed
-            // Guard: only dismiss if the blocked package is still in the foreground.
+            val focusActive  = prefs.getBoolean(PREF_FOCUS_ON, false)
+            val saActive     = prefs.getBoolean(PREF_SA_ACTIVE, false)
+            val alwaysBlock  = prefs.getBoolean(PREF_ALWAYS_BLOCK, false)
+            if (!focusActive && !saActive && !alwaysBlock) return@postDelayed
+            // Guard: only act if the blocked package is still in the foreground.
             // Without this check, retries would press Home even after the user has
             // already navigated to a legitimate allowed app, causing false kicks.
             if (lastSeenPkg != pkg) return@postDelayed
-            val isBlocked = isPackageBlocked(pkg, focusActive, saActive)
-            if (isBlocked && findAllowanceEntry(pkg) == null) {
+            val isBlocked = isPackageBlocked(pkg, focusActive, saActive, alwaysBlock)
+            val allowanceExhausted = run {
+                val entry = findAllowanceEntry(pkg)
+                entry != null && !isAllowanceAvailable(pkg, entry)
+            }
+            if (isBlocked || allowanceExhausted) {
+                // Re-raise the overlay in case it was dismissed or never rendered,
+                // then kick the app out again.
+                launchBlockOverlay(pkg)
                 dismissPackage(pkg)
-                scheduleRetryCheck(pkg, attempt + 1, focusActive, saActive)
+                scheduleRetryCheck(pkg, attempt + 1, focusActive, saActive, alwaysBlock)
             }
         }, RETRY_INTERVAL_MS * attempt)
     }
@@ -748,23 +930,22 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         )
         if (powerKeywords.any { classLower.contains(it) }) return true
 
-        // Text-based fallback — some OEMs render the power dialog as a plain
-        // android.app.Dialog with no distinctive class name.
-        // Require only ONE matching keyword (previously 2 — too strict; some OEMs
-        // show "Power off" + "Emergency call" which only matched "power off").
-        val textLower = buildString {
-            event.text.forEach { append(it); append(' ') }
-            event.contentDescription?.let { append(it) }
-        }.lowercase()
+        val textLower = getEventAndNodeText(event, maxDepth = 5).lowercase()
+        // Pruned text-keyword fallback: removed single ambiguous words like
+        // "restart", "reboot", "shut down", "side key settings" because they
+        // appear inside common notifications (system updates, download prompts,
+        // app names) and were causing the notification shade to be misread as
+        // the power menu. Kept only high-signal full phrases.
         val powerTextKeywords = listOf(
             "power off",
             "power down",
-            "restart",
-            "reboot",
-            "emergency mode",
-            "emergency call",    // added — shown instead of "emergency mode" on many OEMs
-            "safe mode",
-            "shut down",
+            "tap again to turn off",         // Samsung One UI Home confirmation text
+            "tap again to power off",
+            "press again to power off",
+            "emergency mode saves battery power",
+            "providing only essential apps",
+            "turning off mobile data when the screen is off",
+            "emergency call",
         )
         return powerTextKeywords.any { it in textLower }
     }
@@ -773,17 +954,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Returns true when the SystemUI window event represents an expanded
      * notification panel or quick-settings panel.
      *
-     * Covers:
-     *   • AOSP:          NotificationPanelView, QSPanel, NotificationShadeWindowView
-     *   • Samsung One UI: CentralSurfaces, StatusBarWindowView, SamsungPhoneStatusBar,
-     *                     SamsungQSPanel, SamsungShadeViewController
-     *   • MIUI:          MiuiNotificationPanelViewController
-     *   • OnePlus:       OplusCentralSurfaces
-     *
-     * Strategy: match known class-name substrings first (fast path), then fall back to
-     * treating ANY TYPE_WINDOW_STATE_CHANGED from a SystemUI package as a panel open.
-     * The fallback is intentionally broad — during a block session we want to be strict,
-     * and collapsing the notification shade when it wasn't open is a harmless no-op.
+     * Covers notification shade / quick settings only. This intentionally has no
+     * package-level fallback because alarms and other full-screen OS surfaces may
+     * also arrive from SystemUI while the screen is off.
      */
     private fun isNotificationPanelExpanded(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString() ?: ""
@@ -799,30 +972,28 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             "qspanel",
             "quicksettings",
             "quicksettingscontroller",
-            "statusbar",
-            "shade",
             // Samsung One UI 4 / 5 / 6
-            "centralsurfaces",
-            "statusbarwindowview",
-            "samsungphonestatusbar",
             "samsungqspanel",
             "samsungshade",
-            "phonestatusbarview",
-            "collapsedstatusbarfragment",
             // MIUI
             "miuinotificationpanelviewcontroller",
             "miuiqspanel",
             // OnePlus / OxygenOS
-            "opluscentralsurfaces",
             "oplusqspanel",
         )
         if (panelKeywords.any { classLower.contains(it) }) return true
 
-        // Broad fallback: any TYPE_WINDOW_STATE_CHANGED from a SystemUI package
-        // during an active blocking session is treated as a panel/overlay opening.
-        // This catches OEM-specific classes we have not enumerated above.
-        // Collapsing when nothing is open is a harmless no-op.
-        return event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        val visibleText = getEventAndNodeText(event).lowercase()
+        val panelTextGroups = listOf(
+            listOf("quick settings"),
+            listOf("quick panel"),
+            listOf("notification settings"),
+            listOf("clear all", "notification"),
+            listOf("silent notifications"),
+            listOf("media output", "device control"),
+            listOf("brightness", "wi-fi", "bluetooth"),
+        )
+        return panelTextGroups.any { group -> group.all { it in visibleText } }
     }
 
     /**
@@ -1213,6 +1384,54 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Uses two distinctive items that always appear on the page together to avoid
      * false positives — "special access" alone is too generic.
      */
+
+    /**
+     * Returns true if [event] represents the Android recents / overview screen.
+     *
+     * The recents screen shows task thumbnails — the user can read blocked-app
+     * content (web pages, messages, etc.) without launching the app. We detect
+     * it by a combination of:
+     *   • Package name matching SystemUI variants across OEMs
+     *   • Class name containing "recents", "overview", or "launcher3.recents"
+     *   • Event text containing "recent apps" or "overview" titles
+     *
+     * When detected during an active session, the caller sends GLOBAL_ACTION_HOME
+     * to close the recents drawer immediately.
+     */
+    private fun isRecentsScreen(pkg: String, cls: String, event: AccessibilityEvent): Boolean {
+        val clsLower = cls.lowercase()
+
+        val isSystemUiPkg = pkg == "com.android.systemui" ||
+            pkg == "com.sec.android.app.systemui" ||
+            pkg == "com.samsung.android.systemui"
+
+        val isLauncherPkg = pkg == "com.android.launcher3" ||
+            pkg == "com.google.android.apps.nexuslauncher" ||
+            pkg == "com.miui.home" ||
+            pkg == "com.sec.android.app.launcher" ||
+            pkg == "com.samsung.android.app.launcher" ||
+            pkg == "com.oneplus.launcher" ||
+            pkg == "com.huawei.android.launcher" ||
+            pkg == "com.oppo.launcher" ||
+            pkg == "com.bbk.launcher2"
+
+        val classIndicatesRecents = clsLower.contains("recents") ||
+            clsLower.contains("overview") ||
+            clsLower.contains("recentstaskview") ||
+            clsLower.contains("fallbackrecentsactivity") ||
+            clsLower.contains("quickstepfallback")
+
+        if ((isSystemUiPkg || isLauncherPkg) && classIndicatesRecents) return true
+
+        val eventText = buildString {
+            event.text?.forEach { append(it); append(' ') }
+        }.lowercase()
+        if ((isSystemUiPkg || isLauncherPkg) &&
+            ("recent apps" in eventText || "overview" in eventText)) return true
+
+        return false
+    }
+
     private fun isSpecialAccessPage(event: AccessibilityEvent): Boolean {
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
@@ -1443,10 +1662,15 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     // ─── Block determination ──────────────────────────────────────────────────
 
-    private fun isPackageBlocked(pkg: String, focusActive: Boolean, saActive: Boolean): Boolean {
+    private fun isPackageBlocked(
+        pkg: String,
+        focusActive: Boolean,
+        saActive: Boolean,
+        alwaysBlockActive: Boolean = false,
+    ): Boolean {
         if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) return true
 
-        if (focusActive || saActive) {
+        if (focusActive || saActive || alwaysBlockActive) {
             if (INSTALLER_PACKAGES.any { pkg.equals(it, ignoreCase = true) }) return true
         }
 
@@ -1454,8 +1678,27 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             val allowedJson = prefs.getString(PREF_ALLOWED_PKG, "[]") ?: "[]"
             val allowedList = parseJsonArray(allowedJson)
             if (allowedList.isNotEmpty()) {
+                // Explicit per-task allow-list: block anything not on it.
                 val isAllowed = allowedList.any { a -> pkg.equals(a, ignoreCase = true) }
                 if (!isAllowed) return true
+            } else {
+                // No explicit allow-list.
+                // If daily allowance entries are configured, treat those packages
+                // as the effective allow-list so everything else is blocked.
+                // This enforces "only your budgeted apps can be opened in focus mode."
+                val allowanceConfig = prefs.getString(PREF_DAILY_ALLOWANCE_CONFIG, null)
+                if (!allowanceConfig.isNullOrBlank() && allowanceConfig != "null") {
+                    try {
+                        val arr = org.json.JSONArray(allowanceConfig)
+                        if (arr.length() > 0) {
+                            val inAllowance = (0 until arr.length()).any {
+                                arr.getJSONObject(it).optString("packageName", "")
+                                    .equals(pkg, ignoreCase = true)
+                            }
+                            if (!inAllowance) return true
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
 
@@ -1463,6 +1706,13 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             val saJson = prefs.getString(PREF_SA_PKGS, "[]") ?: "[]"
             val saList = parseJsonArray(saJson)
             if (saList.any { b -> pkg.equals(b, ignoreCase = true) }) return true
+        }
+
+        // Always-on block — enforced even without a timed session.
+        if (alwaysBlockActive) {
+            val alwaysJson = prefs.getString(PREF_ALWAYS_BLOCK_PKGS, "[]") ?: "[]"
+            val alwaysList = parseJsonArray(alwaysJson)
+            if (alwaysList.any { b -> pkg.equals(b, ignoreCase = true) }) return true
         }
 
         return false
@@ -1886,9 +2136,146 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_BACK)
         } else {
             performGlobalAction(GLOBAL_ACTION_BACK)
-            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 150L)
-            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 160L)
+            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 80L)
+            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 100L)
         }
+    }
+
+    /**
+     * Posts a brief heads-up ("peek") notification when the user returns to the home
+     * screen after being kicked from a blocked app.
+     *
+     * Without this, the home screen is silent — the user has no reminder that a
+     * session is still running and the block is still enforced. This notification:
+     *   • Has HIGH importance so it peeks from the top of the screen momentarily
+     *   • Auto-cancels after the user sees it (does not clutter the shade)
+     *   • Taps into FocusFlow (MainActivity) so the user can check their task
+     *   • Only fires when at least one blocking mode is still active
+     *
+     * Uses the existing BLOCK_ALERT_CHANNEL (HIGH importance) to avoid creating
+     * a new channel that the user would need to configure.
+     */
+    private fun postHomeScreenReminder() {
+        val focusActive      = prefs.getBoolean(PREF_FOCUS_ON, false)
+        val saActive         = prefs.getBoolean(PREF_SA_ACTIVE, false)
+        val alwaysBlockActive = prefs.getBoolean(PREF_ALWAYS_BLOCK, false)
+        if (!focusActive && !saActive && !alwaysBlockActive) return
+
+        val taskName = prefs.getString("task_name", null)
+        val title    = "Block enforcement active"
+        val text     = when {
+            !taskName.isNullOrBlank() -> "Working on: $taskName"
+            focusActive               -> "Focus session is running"
+            saActive                  -> "Standalone block is running"
+            else                      -> "App blocking is always on"
+        }
+
+        try {
+            val nm = getSystemService(android.app.NotificationManager::class.java) ?: return
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val existing = nm.getNotificationChannel(BLOCK_ALERT_CHANNEL)
+                if (existing == null) {
+                    val ch = android.app.NotificationChannel(
+                        BLOCK_ALERT_CHANNEL, "Block Alert",
+                        android.app.NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        setBypassDnd(true)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                    nm.createNotificationChannel(ch)
+                }
+            }
+
+            val tapIntent = android.content.Intent(
+                this,
+                Class.forName("${packageName}.MainActivity")
+            ).apply { flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP }
+
+            val tapPending = android.app.PendingIntent.getActivity(
+                this, 8800, tapIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notif = androidx.core.app.NotificationCompat.Builder(this,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) BLOCK_ALERT_CHANNEL else "default"
+            )
+                .setSmallIcon(com.tbtechs.focusflow.R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(tapPending)
+                .build()
+
+            nm.notify(8800, notif)
+
+            // Auto-cancel after 4 s — enough time for the user to notice,
+            // short enough that it doesn't clutter the notification shade.
+            handler.postDelayed({ nm.cancel(8800) }, 4_000L)
+
+        } catch (_: Exception) {
+            // Best-effort — never crash the accessibility service
+        }
+    }
+
+    /**
+     * Called whenever any power-menu dialog is detected by the system guard.
+     *
+     * Shows the block overlay immediately (so the user sees WHY they were blocked),
+     * then fires BACK + HOME to close the power menu.  A retry loop re-checks up
+     * to 3 times at 200 ms intervals in case the power menu re-asserts itself on
+     * slow devices or certain OEM configurations.
+     */
+    private fun handlePowerMenuIntercepted() {
+        // Show the block overlay straight away — user sees "Power Menu" blocked label
+        prefs.edit().putString("overlay_awaiting_pkg", "system.power_menu").apply()
+        launchBlockOverlay("system.power_menu")
+
+        // Dismiss immediately (no artificial delay for the first BACK)
+        closeSystemDialogsBroadcast()
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 100L)
+        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 220L)
+
+        // Schedule retries to catch slow / stubborn power menus
+        schedulePowerMenuRetry(1)
+    }
+
+    /**
+     * Retry loop for power menu dismissal.
+     *
+     * After the initial BACK+HOME, the power menu occasionally re-appears on
+     * Samsung devices (especially One UI 6+).  This fires at 200 ms, 400 ms,
+     * and 600 ms after the first interception and presses BACK+HOME again if a
+     * known power-system package is still the foreground window.
+     *
+     * Retries stop as soon as the foreground moves away from power-related
+     * packages (i.e. the user is back at the launcher or an allowed app).
+     */
+    private fun schedulePowerMenuRetry(attempt: Int) {
+        if (attempt > 3) return
+        handler.postDelayed({
+            val focusActive  = prefs.getBoolean(PREF_FOCUS_ON, false)
+            val saActive     = prefs.getBoolean(PREF_SA_ACTIVE, false)
+            val sysGuard     = prefs.getBoolean(PREF_SYSTEM_GUARD_ENABLED, true)
+            if ((!focusActive && !saActive) || !sysGuard) return@postDelayed
+
+            // Only retry for true system-level power packages, not the launcher
+            val lp = lastSeenPkg ?: return@postDelayed
+            val isPowerSystemPkg =
+                lp == "com.samsung.android.app.powerkey" ||
+                lp == "com.android.systemui" ||
+                lp == "com.sec.android.app.systemui" ||
+                lp == "com.samsung.android.systemui"
+
+            if (isPowerSystemPkg) {
+                closeSystemDialogsBroadcast()
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_HOME) }, 100L)
+                schedulePowerMenuRetry(attempt + 1)
+            }
+        }, 200L * attempt)
     }
 
     /**
@@ -1896,6 +2283,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * Falls back to the package name itself on any error.
      */
     private fun resolveAppDisplayName(packageName: String): String {
+        if (packageName == "system.power_menu") return "Power Menu"
         return try {
             val pm = applicationContext.packageManager
             val info = pm.getApplicationInfo(packageName, 0)
@@ -1981,15 +2369,17 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         val saActive    = prefs.getBoolean(PREF_SA_ACTIVE, false)
         if (!focusActive && !saActive) return
 
-        val words = getBlockedWords()
-        if (words.isEmpty()) return
-
         val pkg = event.packageName?.toString() ?: return
-        // Only process browser packages — too noisy for general apps
-        if (!BROWSER_PACKAGES.contains(pkg)) return
         if (pkg == packageName) return
 
         val now = System.currentTimeMillis()
+
+        // ── Blocked words — browser packages only (high-noise guard) ─────────
+        val words = getBlockedWords()
+        if (words.isEmpty()) return
+
+        if (!BROWSER_PACKAGES.contains(pkg)) return
+
         val lastScan = lastContentScanMs[pkg] ?: 0L
         if (now - lastScan < CONTENT_SCAN_THROTTLE_MS) return
         lastContentScanMs[pkg] = now
@@ -2129,6 +2519,188 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     // ─── Node text collectors ─────────────────────────────────────────────────
 
+    private fun getEventAndNodeText(event: AccessibilityEvent, maxDepth: Int = 4): String {
+        return buildString {
+            event.text?.forEach { t -> t?.let { append(it); append(' ') } }
+            event.contentDescription?.let { append(it); append(' ') }
+            event.source?.let { root ->
+                try {
+                    append(collectNodeTextShallow(root, maxDepth))
+                } finally {
+                    root.recycle()
+                }
+            }
+        }
+    }
+
+    /**
+     * Returns true when the current window represents an install / update / uninstall
+     * confirmation flow that originates from the Play Store, the system package
+     * installer (any OEM), or an OEM "App ops" Settings page surfacing the same dialog.
+     *
+     * Detection is multi-signal to minimise false positives:
+     *   1. Package must be Play Store, packageinstaller (any OEM), or Settings.
+     *   2. Either the activity class name OR the visible text must contain a confirm
+     *      keyword ("install", "update", "uninstall", "remove app", "delete app").
+     *
+     * Intentionally does NOT block ordinary Play Store browsing — only the actual
+     * "Install" / "Update" / "Uninstall" prompt screens.
+     */
+    private fun isInstallActionContext(event: AccessibilityEvent, pkg: String): Boolean {
+        val installerPkgs = setOf(
+            "com.android.vending",                       // Google Play Store
+            "com.android.packageinstaller",              // AOSP package installer
+            "com.google.android.packageinstaller",       // Google package installer
+            "com.samsung.android.packageinstaller",      // Samsung package installer
+            "com.miui.packageinstaller",                 // MIUI package installer
+            "com.coloros.packageinstaller",              // OPPO / ColorOS
+            "com.oppo.packageinstaller",                 // OPPO legacy
+            "com.huawei.packageinstaller",               // Huawei
+            "com.android.settings",                      // OEM "App info" → Uninstall flows
+            "com.samsung.android.app.settings",
+            "com.samsung.android.settings"
+        )
+        if (pkg !in installerPkgs) return false
+
+        val confirmKeywords = listOf("install", "update", "uninstall", "remove app", "delete app")
+        val className = event.className?.toString()?.lowercase() ?: ""
+        if (confirmKeywords.any { it in className }) return true
+
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it); append(' ') }
+        }.lowercase()
+        if (confirmKeywords.any { it in eventText }) return true
+
+        val root = event.source ?: return false
+        return try {
+            val nodeText = collectNodeText(root).lowercase()
+            confirmKeywords.any { it in nodeText }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Returns true when the YouTube app is currently showing the Shorts player.
+     *
+     * Multi-signal detection (any one is sufficient):
+     *   • Activity / view className contains "shorts" or YouTube's internal "reel" id.
+     *   • Window contains a node with viewIdResourceName matching one of the known
+     *     Shorts player resource ids (reel_recycler / reel_player_page_container).
+     *   • Visible text/contentDescription contains a Shorts-specific phrase.
+     *
+     * Returns false when the user is on the regular YouTube home / search / video
+     * watch page, so blocking Shorts does not break ordinary YouTube usage.
+     */
+    private fun isYoutubeShorts(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        if ("shortsactivity" in className || "shorts.activity" in className) return true
+
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it); append(' ') }
+        }.lowercase()
+        // "shorts player" / "shorts video" only appear inside the Shorts player itself.
+        if ("shorts player" in eventText || "shorts video" in eventText) return true
+
+        val shortsResIds = listOf(
+            "reel_player_page_container",
+            "reel_recycler",
+            "reel_watch_player",
+            "shorts_video_container",
+            "shorts_player"
+        )
+        val root = event.source ?: return false
+        return try {
+            if (containsAnyResId(root, shortsResIds)) {
+                true
+            } else {
+                val nodeText = collectNodeText(root).lowercase()
+                // "Remix" + "Subscribe" + "Shorts" together = Shorts player UI signature.
+                ("shorts" in nodeText && ("remix" in nodeText || "shorts player" in nodeText))
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Returns true when the Instagram app is currently showing the Reels viewer
+     * (full-screen Reels player or the Reels tab).
+     *
+     * Multi-signal detection (any one is sufficient):
+     *   • Activity / view className contains "clips" or "reels" (Instagram's internal
+     *     name for Reels is "clips").
+     *   • Window contains a node with viewIdResourceName matching one of the known
+     *     Reels viewer resource ids (clips_viewer_view_pager / reel_viewer_*).
+     *   • Visible text contains the Reels playback header signature.
+     *
+     * Returns false on the Instagram home feed / DMs / profile / explore grid so
+     * blocking Reels does not break ordinary Instagram usage.
+     */
+    private fun isInstagramReels(event: AccessibilityEvent): Boolean {
+        val className = event.className?.toString()?.lowercase() ?: ""
+        if ("clipsviewer" in className || "reelviewer" in className || "reelsviewer" in className) return true
+
+        val eventText = buildString {
+            event.text.forEach { append(it); append(' ') }
+            event.contentDescription?.let { append(it); append(' ') }
+        }.lowercase()
+        if ("reels player" in eventText) return true
+
+        val reelsResIds = listOf(
+            "clips_viewer_view_pager",
+            "clips_viewer",
+            "reel_viewer_root",
+            "reel_viewer_texture_view",
+            "reels_viewer_root",
+            "clips_video_player"
+        )
+        val root = event.source ?: return false
+        return try {
+            if (containsAnyResId(root, reelsResIds)) {
+                true
+            } else {
+                // Final fallback: Reels-only tab/header text combined with a video-player
+                // contentDescription — avoids matching "Reels" mentions on the home feed.
+                val nodeText = collectNodeText(root).lowercase()
+                ("clips" in nodeText && ("video player" in nodeText || "reel" in nodeText))
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    /**
+     * Walks the node tree rooted at [root] and returns true if any node's
+     * viewIdResourceName ends with any of the supplied lower-case suffixes.
+     * Suffix match (rather than equality) ignores the package prefix
+     * ("com.google.android.youtube:id/") so matches survive minor rename
+     * variations across app versions.
+     */
+    private fun containsAnyResId(root: AccessibilityNodeInfo, suffixes: List<String>): Boolean {
+        val match = booleanArrayOf(false)
+        fun walk(node: AccessibilityNodeInfo?) {
+            if (node == null || match[0]) return
+            val resId = node.viewIdResourceName?.lowercase()
+            if (resId != null && suffixes.any { resId.endsWith("/$it") || resId == it }) {
+                match[0] = true
+                return
+            }
+            for (i in 0 until node.childCount) {
+                if (match[0]) break
+                val child = node.getChild(i)
+                if (child != null) {
+                    walk(child)
+                    child.recycle()
+                }
+            }
+        }
+        walk(root)
+        return match[0]
+    }
+
     private fun collectNodeText(root: AccessibilityNodeInfo): String {
         return buildString {
             fun walk(node: AccessibilityNodeInfo) {
@@ -2189,7 +2761,14 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                                  cal.get(java.util.Calendar.MINUTE)
             for (i in 0 until arr.length()) {
                 val entry = arr.optJSONObject(i) ?: continue
-                if (!entry.optString("pkg").equals(pkg, ignoreCase = true)) continue
+                // Support multi-app windows (pkgs array) and legacy single-pkg string
+                val pkgsArr = entry.optJSONArray("pkgs")
+                val matchesPkg = if (pkgsArr != null && pkgsArr.length() > 0) {
+                    (0 until pkgsArr.length()).any { pkgsArr.optString(it).equals(pkg, ignoreCase = true) }
+                } else {
+                    entry.optString("pkg").equals(pkg, ignoreCase = true)
+                }
+                if (!matchesPkg) continue
                 val days = entry.optJSONArray("days") ?: continue
                 val dayMatch = (0 until days.length()).any { days.optInt(it) == currentDay }
                 if (!dayMatch) continue
@@ -2216,6 +2795,9 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         handler.postDelayed({
             if (lastSeenPkg != pkg) return@postDelayed
             if (isInGreyoutWindow(pkg)) {
+                // Re-raise overlay + kick app on each retry, consistent with the
+                // regular block retry behaviour.
+                launchBlockOverlay(pkg)
                 dismissPackage(pkg)
                 scheduleGreyoutRetryCheck(pkg, attempt + 1)
             }

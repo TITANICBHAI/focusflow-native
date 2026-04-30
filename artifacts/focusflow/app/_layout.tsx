@@ -11,6 +11,9 @@
  *   7. React component tree (providers + expo-router Stack)
  */
 
+// ─── 0. Polyfills — must run before any library import ───────────────────────
+import '@/polyfills';
+
 // ─── 1. Register all background tasks with the OS ────────────────────────────
 import '@/tasks/backgroundTasks';
 
@@ -30,21 +33,33 @@ import { useTheme } from '@/hooks/useTheme';
 import { EventBridge } from '@/services/eventBridge';
 import { navigateToTask, consumePendingTaskNavigation } from '@/navigation/navigationRef';
 import { registerBackgroundFetch, registerOverrunCheckTask } from '@/tasks/backgroundTasks';
-import { dismissPersistentNotification } from '@/services/notificationService';
 import { BlockedAppOverlay } from '@/components/BlockedAppOverlay';
+import { AchievementCelebrationModal } from '@/components/AchievementCelebrationModal';
+import { ConceptTourModal } from '@/components/ConceptTourModal';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { logger } from '@/services/startupLogger';
+
+// ─── Deferred notification action store ──────────────────────────────────────
+// Stores action from background notification tap so the app can handle it on resume.
+const pendingNotificationAction: { taskId: string | null; action: 'complete' | 'extend' | null } = {
+  taskId: null,
+  action: null,
+};
+export function consumePendingNotificationAction() {
+  const snap = { ...pendingNotificationAction };
+  pendingNotificationAction.taskId = null;
+  pendingNotificationAction.action = null;
+  return snap;
+}
 
 // ─── 2. Foreground notification display behaviour ─────────────────────────────
 Notifications.setNotificationHandler({
-  handleNotification: async (notification) => {
-    const data = notification.request.content.data as { type?: string };
-    // Suppress the internal persistent-dismiss bookkeeping notification silently.
-    // The focus persistent notification is now owned by the native ForegroundTaskService
-    // and never goes through Expo, so no suppression is needed for it here.
-    if (data?.type === 'persistent-dismiss') {
-      return { shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false };
-    }
-    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false };
-  },
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList:   true,
+    shouldPlaySound:  true,
+    shouldSetBadge:   false,
+  }),
 });
 
 // ─── 3. Connect native event channel ─────────────────────────────────────────
@@ -60,14 +75,55 @@ Notifications.addNotificationResponseReceivedListener((response) => {
     type?: string;
   };
   const actionId = response.actionIdentifier;
+  const taskId   = data?.taskId;
 
-  if (!data?.taskId) return;
+  // ── Standalone block expiry tap → open app ─────────────────────────────
+  if (data?.type === 'standalone-expiry') {
+    try { router.push('/(tabs)/focus'); } catch { /* headless */ }
+    return;
+  }
 
+  // ── Morning digest tap → open Stats on the Yesterday tab ──────────────
+  // The morning notification is a recap of yesterday, so landing on the
+  // Yesterday tab of Stats gives the user the most useful first view.
+  if (data?.type === 'morning-digest') {
+    try { router.push('/(tabs)/stats'); } catch { /* headless */ }
+    return;
+  }
+
+  if (!taskId) return;
+
+  // ── Tap the notification body or explicit VIEW button ─────────────────
   if (
     actionId === Notifications.DEFAULT_ACTION_IDENTIFIER ||
     actionId === 'VIEW'
   ) {
-    navigateToTask(data.taskId);
+    navigateToTask(taskId);
+    return;
+  }
+
+  // ── COMPLETE button: navigate to task list with highlight + action ─────
+  // The Schedule screen reads `highlightTaskId`; adding `autoComplete=1`
+  // lets it auto-open the completion sheet for that task.
+  if (actionId === 'COMPLETE') {
+    try {
+      router.push({ pathname: '/(tabs)', params: { highlightTaskId: taskId, autoComplete: '1' } });
+    } catch {
+      pendingNotificationAction.taskId  = taskId;
+      pendingNotificationAction.action  = 'complete';
+    }
+    return;
+  }
+
+  // ── EXTEND button: go directly to the Focus tab so the user can extend ─
+  if (actionId === 'EXTEND') {
+    try {
+      router.push({ pathname: '/(tabs)/focus', params: { autoExtend: taskId } });
+    } catch {
+      pendingNotificationAction.taskId  = taskId;
+      pendingNotificationAction.action  = 'extend';
+    }
+    return;
   }
 });
 
@@ -77,17 +133,11 @@ Notifications.addNotificationReceivedListener(async (notification) => {
     taskId?: string;
     type?: string;
   };
-  if (data?.type === 'LATE_START_WARNING' && data.taskId) {
-    // Handled by ScheduleScreen polling
-  }
-  if (data?.type === 'persistent-dismiss') {
-    // Auto-dismiss the persistent notification when the task ends
-    try {
-      await dismissPersistentNotification();
-    } catch {
-      // ignore
-    }
-  }
+  // LATE_START_WARNING: the Schedule screen's own polling already surfaces this.
+  // persistent-dismiss: the native ForegroundTaskService owns its own lifecycle;
+  // dismissPersistentNotification() is a no-op shim so nothing to do here.
+  // All other received notifications are shown by the handler above.
+  void data; // silence unused-variable warning
 });
 
 // ─── 7. Notification action categories ───────────────────────────────────────
@@ -134,7 +184,7 @@ function AppSplashOverlay() {
   const opacity = useRef(new Animated.Value(1)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   const logoScale = useRef(new Animated.Value(0.6)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoOpacity = useRef(new Animated.Value(0.3)).current;
   const textTranslate = useRef(new Animated.Value(20)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
   const [visible, setVisible] = React.useState(true);
@@ -250,11 +300,40 @@ function OnboardingGuard() {
       return;
     }
     if (!state.settings.onboardingComplete) {
-      if (pathname !== '/onboarding') router.replace('/onboarding');
+      // Allow both the permissions screen and the profile setup screen;
+      // everything else redirects to the start of the onboarding flow.
+      if (pathname !== '/onboarding' && pathname !== '/user-profile') {
+        router.replace('/onboarding');
+      }
     }
   }, [pathname, state.isDbReady, state.settings.onboardingComplete, state.settings.privacyAccepted]);
 
   return null;
+}
+
+// ─── Achievement celebration host ────────────────────────────────────────────
+// Reads `pendingAchievementCelebration` from settings and shows the
+// AchievementCelebrationModal once. On dismiss it clears the pending field
+// AND bumps `lastShownStreakMilestone` so the same milestone never fires
+// again (the next milestone the user crosses will fire the next celebration).
+
+function AchievementCelebrationHost() {
+  const { state, updateSettings } = useApp();
+  const milestone = state.settings.pendingAchievementCelebration ?? null;
+
+  const handleDismiss = () => {
+    const next = {
+      ...state.settings,
+      pendingAchievementCelebration: undefined,
+      lastShownStreakMilestone: Math.max(
+        state.settings.lastShownStreakMilestone ?? 0,
+        milestone ?? 0,
+      ),
+    };
+    void updateSettings(next);
+  };
+
+  return <AchievementCelebrationModal milestone={milestone} onDismiss={handleDismiss} />;
 }
 
 // ─── React component ──────────────────────────────────────────────────────────
@@ -262,21 +341,28 @@ function OnboardingGuard() {
 export default function RootLayout() {
   useEffect(() => {
     async function bootstrap() {
+      void logger.info('RootLayout', 'bootstrap() start');
       try {
         await SplashScreen.hideAsync().catch(() => {});
         await setupNotificationCategories();
         await registerBackgroundFetch();
         await registerOverrunCheckTask();
         consumePendingTaskNavigation();
+        void logger.info('RootLayout', 'bootstrap() setup complete');
 
         try {
           const { ForegroundServiceModule } = await import('@/native-modules/ForegroundServiceModule');
           await ForegroundServiceModule.requestBatteryOptimizationExemption();
+          void logger.info('RootLayout', 'Battery optimization exemption requested');
         } catch {
           // Native module not yet linked (dev build without EAS)
+          void logger.warn('RootLayout', 'Battery optimization exemption failed (native module unavailable)');
         }
+      } catch (e) {
+        void logger.error('RootLayout', `bootstrap() error: ${String(e)}`);
       } finally {
         setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 400);
+        void logger.info('RootLayout', 'bootstrap() done');
       }
     }
 
@@ -286,20 +372,27 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <AppProvider>
-          <AppSplashOverlay />
-          <OnboardingGuard />
-          <BlockedAppOverlay />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-            <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
-            <Stack.Screen name="permissions" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <ThemedStatusBar />
-        </AppProvider>
+        <ErrorBoundary screenName="RootLayout">
+          <AppProvider>
+            <AppSplashOverlay />
+            <OnboardingGuard />
+            <BlockedAppOverlay />
+            <AchievementCelebrationHost />
+            <ConceptTourModal />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+              <Stack.Screen name="terms-of-service" options={{ headerShown: false }} />
+              <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
+              <Stack.Screen name="permissions" options={{ headerShown: false }} />
+              <Stack.Screen name="block-defense" options={{ headerShown: false, presentation: 'card' }} />
+              <Stack.Screen name="keyword-blocker" options={{ headerShown: false, presentation: 'card' }} />
+              <Stack.Screen name="how-to-use" options={{ headerShown: false, presentation: 'card' }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <ThemedStatusBar />
+          </AppProvider>
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

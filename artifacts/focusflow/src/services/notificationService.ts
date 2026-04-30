@@ -11,8 +11,9 @@
 import * as Notifications from 'expo-notifications';
 import { SchedulableTriggerInputTypes } from 'expo-notifications';
 import { Platform } from 'react-native';
-import type { Task } from '@/data/types';
+import type { Task, UserProfile } from '@/data/types';
 import { formatTime, formatDuration, getRemainingMinutes } from './taskService';
+import { TaskAlarmModule } from '@/native-modules/TaskAlarmModule';
 
 type AndroidContent = Notifications.NotificationContentInput & {
   channelId?: string;
@@ -24,6 +25,7 @@ type AndroidContent = Notifications.NotificationContentInput & {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const REMINDER_CHANNEL_ID   = 'task-reminders';
+export const MORNING_DIGEST_CHANNEL_ID = 'morning-digest';
 
 // ─── Permissions ──────────────────────────────────────────────────────────────
 
@@ -50,12 +52,26 @@ export async function setupNotificationChannels(): Promise<void> {
     lightColor: '#6366f1',
     sound: 'default',
   });
+  // Morning digest channel — low-priority daily summary, no vibration.
+  await Notifications.setNotificationChannelAsync(MORNING_DIGEST_CHANNEL_ID, {
+    name: 'Morning Digest',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    vibrationPattern: [0, 200],
+    lightColor: '#f59e0b',
+    sound: 'default',
+  });
 }
 
 // ─── Schedule reminders for a task ───────────────────────────────────────────
 
 export async function scheduleTaskReminders(task: Task): Promise<void> {
   await cancelTaskReminders(task.id);
+
+  // Imported tasks are historical sessions from another device / blocker —
+  // they live in the DB only so the user keeps stats history. They MUST NOT
+  // ring alarms or fire notifications: the user never created them in this
+  // app session, and waking the device for them at 3am would be infuriating.
+  if (task.imported) return;
 
   const granted = await requestPermissions();
   if (!granted) return;
@@ -87,28 +103,21 @@ export async function scheduleTaskReminders(task: Task): Promise<void> {
         body:  r.body,
         data:  { taskId: task.id, type: r.isStart ? 'task-start' : 'reminder' },
         sound: 'default',
-        categoryIdentifier: 'task-reminder',
+        // At start time, show active controls (Complete, Extend, View).
+        // Pre-start reminders only need View + Done.
+        categoryIdentifier: r.isStart ? 'task-active' : 'task-reminder',
         channelId: REMINDER_CHANNEL_ID,
       } as AndroidContent,
       trigger: { type: SchedulableTriggerInputTypes.DATE, date: new Date(fireAt) },
     });
   }
 
-  // Schedule persistent notification dismissal when the task ends
-  if (endMs - now > 1000) {
-    await Notifications.scheduleNotificationAsync({
-      identifier: `${task.id}-persistent-dismiss`,
-      content: {
-        title: `Task ended: ${task.title}`,
-        body:  `Focus session complete.`,
-        data:  { taskId: task.id, type: 'persistent-dismiss' },
-        channelId: REMINDER_CHANNEL_ID,
-      } as AndroidContent,
-      trigger: { type: SchedulableTriggerInputTypes.DATE, date: new Date(endMs) },
-    });
-  }
-
   // Mid-session check-ins
+  // Only schedule when there is enough headroom before the task ends:
+  //   - 15 min check-in: only for tasks ≥ 25 min (at least 10 min remaining after it)
+  //   - 30 min check-in: only for tasks ≥ 40 min (at least 10 min remaining after it)
+  // This prevents noise on short tasks and avoids stacking with the wrap-up notification.
+  const MIN_HEADROOM_MS = 10 * 60_000; // 10 min of remaining time after the check-in fires
   const midSession: Array<{ offsetMs: number; body: string }> = [
     { offsetMs: 15 * 60_000, body: `15 minutes in — how's it going?` },
     { offsetMs: 30 * 60_000, body: `Half hour in — keep going!` },
@@ -116,7 +125,11 @@ export async function scheduleTaskReminders(task: Task): Promise<void> {
 
   for (const r of midSession) {
     const fireAt = startMs + r.offsetMs;
-    if (fireAt - now < 1000 || fireAt >= endMs) continue;
+    // Skip if already passed, if it fires after the task ends, or if there's
+    // not enough headroom before the end (to avoid stacking with wrap-up notif)
+    if (fireAt - now < 1000) continue;
+    if (fireAt >= endMs) continue;
+    if (endMs - fireAt < MIN_HEADROOM_MS) continue;
 
     await Notifications.scheduleNotificationAsync({
       identifier: `${task.id}-mid${r.offsetMs}`,
@@ -164,6 +177,20 @@ export async function scheduleTaskReminders(task: Task): Promise<void> {
       trigger: { type: SchedulableTriggerInputTypes.DATE, date: new Date(endMs) },
     });
   }
+
+  // Native AlarmManager backup — the *only* mechanism that survives Doze /
+  // app standby / foreground-service kill. expo-notifications schedules above
+  // are best-effort and the in-process Handler tick inside ForegroundTaskService
+  // is throttled when the screen has been off for ~10 minutes. AlarmManager
+  // (via setAlarmClock) is exempt from those restrictions and fires the
+  // full-screen TaskAlarmActivity even if the JS context has been torn down.
+  //
+  // Schedule for endMs (and only when in the future — the native side will
+  // post immediately if the trigger is in the past, which can happen if the
+  // user reschedules a task after its end time).
+  if (Platform.OS === 'android') {
+    void TaskAlarmModule.scheduleAlarm(task.id, task.title, endMs);
+  }
 }
 
 // ─── Cancel helpers ───────────────────────────────────────────────────────────
@@ -175,6 +202,12 @@ export async function cancelTaskReminders(taskId: string): Promise<void> {
       .filter((n) => n.identifier.startsWith(taskId))
       .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
   );
+  // Cancel the AlarmManager registration too — without this, a task that the
+  // user completes early or deletes still fires its full-screen alarm at the
+  // original end time, which feels broken.
+  if (Platform.OS === 'android') {
+    void TaskAlarmModule.cancelAlarm(taskId);
+  }
 }
 
 export async function cancelAllReminders(): Promise<void> {
@@ -194,6 +227,108 @@ export async function cancelAllReminders(): Promise<void> {
 export async function dismissPersistentNotification(): Promise<void> {
   // No-op: the native ForegroundTaskService owns the persistent notification.
   // It clears automatically when the service goes idle or is stopped.
+}
+
+// ─── Standalone block expiry warning ─────────────────────────────────────────
+// Fires 5 minutes before the standalone block expires, if applicable.
+
+export async function scheduleStandaloneBlockExpiry(untilMs: number, blockedCount: number): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync('standalone-expiry').catch(() => {});
+
+  const granted = await requestPermissions();
+  if (!granted) return;
+
+  const warnAt = untilMs - 5 * 60_000; // 5 min before expiry
+  if (warnAt - Date.now() < 1000) return; // already within 5 minutes
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: 'standalone-expiry',
+    content: {
+      title: '🔓 App Block Expiring Soon',
+      body:  `Your block on ${blockedCount} app${blockedCount !== 1 ? 's' : ''} expires in 5 minutes.`,
+      data:  { type: 'standalone-expiry' },
+      sound: 'default',
+      channelId: REMINDER_CHANNEL_ID,
+    } as AndroidContent,
+    trigger: { type: SchedulableTriggerInputTypes.DATE, date: new Date(warnAt) },
+  });
+}
+
+export async function cancelStandaloneBlockExpiry(): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync('standalone-expiry').catch(() => {});
+}
+
+// ─── Morning performance digest ───────────────────────────────────────────────
+// Scheduled once per day, fires at the user's wakeUpTime the following morning.
+// The content summarises yesterday's task completion and total focused time.
+// Uses identifier 'morning-digest' so re-scheduling overwrites the old one.
+
+export async function scheduleMorningDigest(
+  profile: UserProfile | undefined,
+  tasks: Task[], // tasks from the day being summarised (typically "today" when called in evening)
+): Promise<void> {
+  if (!profile?.wakeUpTime) return; // no wake-up time configured — nothing to schedule
+
+  const granted = await requestPermissions();
+  if (!granted) return;
+
+  // Parse wakeUpTime "HH:MM"
+  const [hStr, mStr] = profile.wakeUpTime.split(':');
+  const wakeHour   = parseInt(hStr, 10);
+  const wakeMinute = parseInt(mStr, 10);
+  if (isNaN(wakeHour) || isNaN(wakeMinute)) return;
+
+  // Schedule for tomorrow morning at the user's wake-up time
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(wakeHour, wakeMinute, 0, 0);
+  if (tomorrow.getTime() <= Date.now()) return; // sanity check
+
+  // Summarise task completion for the day
+  const completed = tasks.filter((t) => t.status === 'completed');
+  const skipped   = tasks.filter((t) => t.status === 'skipped');
+  const total     = tasks.filter((t) => t.status !== 'skipped'); // user-scheduled (non-skipped)
+  const focusMin  = completed.reduce((sum, t) => sum + t.durationMinutes, 0);
+  const focusHrs  = Math.floor(focusMin / 60);
+  const focusRem  = focusMin % 60;
+  const timeStr   = focusHrs > 0
+    ? `${focusHrs}h ${focusRem > 0 ? `${focusRem}m` : ''}`.trim()
+    : `${focusMin}m`;
+
+  const firstName = profile.name?.split(' ')[0] ?? null;
+  const greeting  = firstName ? `Good morning, ${firstName}! ☀️` : 'Good morning! ☀️';
+
+  let body = '';
+  if (total.length === 0) {
+    body = 'No tasks were scheduled yesterday. Ready to make today count?';
+  } else {
+    const ratio = `${completed.length}/${total.length} tasks done`;
+    const time  = focusMin > 0 ? ` · ${timeStr} focused` : '';
+    const names = completed.slice(0, 3).map((t) => t.title).join(', ');
+    const namesStr = names ? ` · ✅ ${names}${completed.length > 3 ? ` +${completed.length - 3} more` : ''}` : '';
+    const skipStr  = skipped.length > 0 ? ` · ⏭ ${skipped.length} skipped` : '';
+    body = `Yesterday: ${ratio}${time}${namesStr}${skipStr}`;
+  }
+
+  // Cancel any existing morning digest before scheduling a new one
+  await Notifications.cancelScheduledNotificationAsync('morning-digest').catch(() => {});
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: 'morning-digest',
+    content: {
+      title: greeting,
+      body,
+      data: { type: 'morning-digest' },
+      sound: 'default',
+      channelId: MORNING_DIGEST_CHANNEL_ID,
+    } as AndroidContent,
+    trigger: { type: SchedulableTriggerInputTypes.DATE, date: tomorrow },
+  });
+}
+
+export async function cancelMorningDigest(): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync('morning-digest').catch(() => {});
 }
 
 // ─── Late-start warning ───────────────────────────────────────────────────────

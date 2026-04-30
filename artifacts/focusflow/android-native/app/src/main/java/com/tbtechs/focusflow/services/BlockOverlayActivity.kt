@@ -59,6 +59,24 @@ class BlockOverlayActivity : Activity() {
         const val PREF_OVERLAY_X_READY = "overlay_x_ready"
         private const val X_POLL_INTERVAL_MS = 300L
 
+        /**
+         * Specific FocusFlow activity class name suffixes that are allowed to be in
+         * the foreground without triggering an overlay re-raise.
+         *
+         * Using the full package name as the only guard is a loophole: ANY activity
+         * inside com.tbtechs.focusflow (custom tabs, deeplinks, WebViews, etc.) would
+         * bypass the overlay. We only allow the real settings/main screen here.
+         *
+         * Add class name suffixes (not full names) so obfuscation-safe.
+         */
+        val TRUSTED_FOCUSFLOW_CLASSES: Set<String> = setOf(
+            "MainActivity",
+            "SettingsActivity",
+            "FocusActivity",
+            "ScheduleActivity",
+            "StatsActivity"
+        )
+
 
         private val DEFAULT_QUOTES = listOf(
             "The present moment is the only time over which we have dominion.",
@@ -190,17 +208,26 @@ class BlockOverlayActivity : Activity() {
         val saActive    = prefs.getBoolean(AppBlockerAccessibilityService.PREF_SA_ACTIVE, false)
         if (!focusActive && !saActive) return   // block session has ended — let it go
 
-        // Do NOT re-raise the overlay if the user navigated to our own app
-        // (e.g., to change settings). This lets them turn off features even while a
-        // block session is active, without the overlay fighting them.
+        // Do NOT re-raise the overlay if the user navigated to specific trusted
+        // FocusFlow screens (e.g., the main Settings activity).  Checking only
+        // packageName is too broad — any activity inside com.tbtechs.focusflow
+        // (including deeplinks or future custom tabs) would bypass the overlay.
+        // We instead check the specific class name of the current foreground window
+        // as written by AppBlockerAccessibilityService into "current_foreground_cls".
         val currentFg = prefs.getString("current_foreground_pkg", "") ?: ""
-        if (currentFg == packageName) return
+        val currentCls = prefs.getString("current_foreground_cls", "") ?: ""
+        val isTrustedFocusFlowScreen = currentFg == packageName &&
+            TRUSTED_FOCUSFLOW_CLASSES.any { trusted -> currentCls.endsWith(trusted, ignoreCase = true) }
+        if (isTrustedFocusFlowScreen) return
 
         handler.postDelayed({
             if (!isFinishing && !isDestroyed && !intentionalFinish) {
-                // Re-check: still don't re-raise if FocusFlow is in the foreground.
-                val fg = prefs.getString("current_foreground_pkg", "") ?: ""
-                if (fg == packageName) return@postDelayed
+                // Re-check: still don't re-raise if a trusted FocusFlow screen is foreground.
+                val fg  = prefs.getString("current_foreground_pkg", "") ?: ""
+                val cls = prefs.getString("current_foreground_cls", "") ?: ""
+                val trusted = fg == packageName &&
+                    TRUSTED_FOCUSFLOW_CLASSES.any { cls.endsWith(it, ignoreCase = true) }
+                if (trusted) return@postDelayed
                 try {
                     val reRaise = android.content.Intent(
                         applicationContext, BlockOverlayActivity::class.java
@@ -229,7 +256,8 @@ class BlockOverlayActivity : Activity() {
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                 WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_SECURE
             )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -295,24 +323,26 @@ class BlockOverlayActivity : Activity() {
                 }
             } catch (_: Exception) { }
         } else {
-            // No custom image — show the system wallpaper at 82 % opacity so the
-            // overlay still looks contextual (user recognises their own wallpaper)
-            // while remaining clearly distinct from the home screen.
-            try {
-                val wm = WallpaperManager.getInstance(this)
-                val wallpaperDrawable = wm.drawable
-                if (wallpaperDrawable != null) {
-                    root.addView(ImageView(this).apply {
-                        layoutParams = FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT
-                        )
-                        setImageDrawable(wallpaperDrawable)
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        alpha = 0.82f
-                    })
-                }
-            } catch (_: Exception) { }
+            // No custom image — try to show the system (home screen) wallpaper so
+            // the overlay still looks contextual.
+            //
+            // Android 13+ restricts READ_WALLPAPER_INTERNAL to system apps, so
+            // WallpaperManager may return null on newer devices. We try three paths
+            // in order: peekDrawable() → drawable → fallback gradient (already set).
+            val wallpaperDrawable = resolveSystemWallpaper()
+            if (wallpaperDrawable != null) {
+                root.addView(ImageView(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                    setImageDrawable(wallpaperDrawable)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    alpha = 0.82f
+                })
+            }
+            // If both methods return null (Android 13+ permission restriction),
+            // the branded gradient fallback set on `root` above is already in place.
         }
 
         // Dark scrim — keeps text legible regardless of background
@@ -469,6 +499,40 @@ class BlockOverlayActivity : Activity() {
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Attempts to retrieve the user's current home-screen wallpaper as a Drawable.
+     *
+     * Android 13+ (API 33) restricts READ_WALLPAPER_INTERNAL to system/privileged apps,
+     * so both WallpaperManager methods may return null on those devices.  We try three
+     * paths in order and return the first non-null result:
+     *
+     *   1. peekDrawable()  — returns a cached copy; no I/O, lower permission requirement.
+     *   2. drawable        — the standard accessor; works on API ≤ 32 for regular apps.
+     *   3. null            — let the caller fall back to the branded gradient.
+     *
+     * Both calls are wrapped individually so a SecurityException from one doesn't
+     * prevent the other from running.
+     */
+    private fun resolveSystemWallpaper(): android.graphics.drawable.Drawable? {
+        val wm = try { WallpaperManager.getInstance(this) } catch (_: Exception) { return null }
+
+        // Path 1: peekDrawable — backed by a cached bitmap, may succeed where
+        // getDrawable fails because it avoids the permission check on some ROMs.
+        try {
+            val peeked = wm.peekDrawable()
+            if (peeked != null) return peeked
+        } catch (_: Exception) { }
+
+        // Path 2: getDrawable — standard path, works on Android ≤ 12.
+        try {
+            val drawn = wm.drawable
+            if (drawn != null) return drawn
+        } catch (_: Exception) { }
+
+        // Path 3: give up — caller will use the branded gradient fallback.
+        return null
+    }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()

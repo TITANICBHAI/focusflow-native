@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   Modal,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   Image,
@@ -17,9 +18,157 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { InstalledAppsModule, InstalledApp } from '@/native-modules/InstalledAppsModule';
+import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
-import type { DailyAllowanceEntry, AllowanceMode } from '@/data/types';
+import type { DailyAllowanceEntry, AllowanceMode, BlockPreset, RecurringBlockSchedule } from '@/data/types';
+
+// ─── App Categories ───────────────────────────────────────────────────────────
+// Known Android package names for common app categories.
+// Used to let users block an entire category in one tap.
+
+interface AppCategory {
+  id: string;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  color: string;
+  packages: string[];
+}
+
+// ─── System app block protection ─────────────────────────────────────────────
+// These apps must NEVER be added to the block list.  Blocking them via the
+// AccessibilityService can cause a soft brick or safety emergency:
+//   • Home launchers → no way back to home screen (soft brick)
+//   • SystemUI → status bar / quick settings disappear (device unusable without ADB)
+//   • Phone/dialer → user cannot dial 112 / 911 in an emergency
+//   • Google Play Services → nearly all apps crash or fail authentication
+//   • Package installers → OTA updates silently fail
+//   • Digital wallets → user stranded at payment terminal
+//
+// Note: Android Settings IS allowed in the standalone block list — the user
+// has explicitly asked to be able to block it.  AppPickerSheet still surfaces
+// it as a sensitive category with a warning before adding it to the list.
+
+const SYSTEM_NEVER_BLOCK = new Set([
+  'com.android.launcher', 'com.android.launcher2', 'com.android.launcher3',
+  'com.sec.android.app.launcher', 'com.google.android.apps.nexuslauncher',
+  'com.miui.launcher', 'com.huawei.android.launcher', 'com.coloros.launcher',
+  'com.oneplus.launcher', 'com.oppo.launcher', 'com.motorola.launcher3',
+  'com.nothing.launcher', 'com.realme.launcher', 'com.iqoo.launcher',
+  'com.vivo.launcher', 'com.asus.launcher', 'com.ZenUI.launcher',
+  'com.lge.launcher3', 'com.htc.launcher', 'com.sonyericsson.home',
+  'com.tcl.launcher', 'com.nokia.launcher', 'com.infinix.launcher',
+  'com.transsion.launcher', 'com.hihonor.launcher',
+  'com.android.systemui',
+  'com.android.phone', 'com.android.server.telecom',
+  'com.samsung.android.incallui', 'com.google.android.dialer',
+  'com.google.android.apps.googledialer',
+  'com.google.android.gms',
+  'com.android.packageinstaller', 'com.google.android.packageinstaller',
+  'com.samsung.android.packageinstaller',
+  'com.samsung.android.wallet', 'com.samsung.android.samsungpay',
+  'com.google.android.apps.walletnfcrel',
+  'com.tbtechs.focusflow',
+]);
+
+const APP_CATEGORIES: AppCategory[] = [
+  {
+    id: 'social',
+    label: 'Social',
+    icon: 'people-outline',
+    color: '#3b82f6',
+    packages: [
+      'com.facebook.katana',
+      'com.instagram.android',
+      'com.twitter.android',
+      'com.zhiliaoapp.musically',   // TikTok
+      'com.snapchat.android',
+      'com.reddit.frontpage',
+      'com.pinterest',
+      'com.linkedin.android',
+      'com.whatsapp',
+      'org.telegram.messenger',
+      'com.discord',
+      'com.bereal.android',
+      'com.tumblr',
+      'com.vkontakte.android',
+      'jp.naver.line.android',
+    ],
+  },
+  {
+    id: 'video',
+    label: 'Video',
+    icon: 'play-circle-outline',
+    color: '#ef4444',
+    packages: [
+      'com.google.android.youtube',
+      'com.netflix.mediaclient',
+      'com.amazon.avod.thirdpartyclient',
+      'com.disney.disneyplus',
+      'tv.twitch.android.app',
+      'com.hulu.plus',
+      'com.max.android',
+      'com.peacocktv.peacockandroid',
+      'tv.pluto.android',
+      'com.roku.remote',
+      'com.apple.android.music', // Apple TV
+    ],
+  },
+  {
+    id: 'shopping',
+    label: 'Shopping',
+    icon: 'bag-outline',
+    color: '#f59e0b',
+    packages: [
+      'com.amazon.mShop.android.shopping',
+      'com.ebay.mobile',
+      'com.shein.app.us',
+      'com.walmart.android',
+      'com.etsy.android',
+      'com.target.ui',
+      'com.wish.android',
+      'com.alibaba.aliexpresshd',
+      'com.temu.app',
+      'com.bestbuy.android',
+    ],
+  },
+  {
+    id: 'news',
+    label: 'News',
+    icon: 'newspaper-outline',
+    color: '#8b5cf6',
+    packages: [
+      'com.google.android.apps.magazines',
+      'com.nytimes.android',
+      'com.cnn.mobile.android.phone',
+      'com.bbc.news',
+      'com.nbcnews.android',
+      'com.fox.news',
+      'com.reddit.frontpage',
+      'flipboard.app',
+      'com.apple.news',
+      'com.feedly.android',
+    ],
+  },
+  {
+    id: 'games',
+    label: 'Games',
+    icon: 'game-controller-outline',
+    color: '#10b981',
+    packages: [
+      'com.king.candycrushsaga',
+      'com.supercell.clashofclans',
+      'com.mojang.minecraftpe',
+      'com.roblox.client',
+      'com.ea.gp.fifamobile',
+      'com.epicgames.fortnite',
+      'com.pubg.krmobile',
+      'com.garena.game.freefire',
+      'com.supercell.brawlstars',
+      'com.activision.callofduty.shooter',
+    ],
+  },
+];
 
 interface Props {
   visible: boolean;
@@ -27,7 +176,12 @@ interface Props {
   blockUntil: string | null;
   locked?: boolean;
   dailyAllowanceEntries?: DailyAllowanceEntry[];
+  blockPresets?: BlockPreset[];
+  recurringBlockSchedules?: RecurringBlockSchedule[];
   onSave: (packages: string[], untilMs: number | null, allowanceEntries: DailyAllowanceEntry[]) => void | Promise<void>;
+  onSavePreset?: (preset: BlockPreset) => void | Promise<void>;
+  onDeletePreset?: (id: string) => void | Promise<void>;
+  onSaveRecurringSchedules?: (schedules: RecurringBlockSchedule[]) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -72,7 +226,12 @@ export function StandaloneBlockModal({
   blockUntil,
   locked = false,
   dailyAllowanceEntries = [],
+  blockPresets = [],
+  recurringBlockSchedules = [],
   onSave,
+  onSavePreset,
+  onDeletePreset,
+  onSaveRecurringSchedules,
   onClose,
 }: Props) {
   const { theme } = useTheme();
@@ -82,12 +241,18 @@ export function StandaloneBlockModal({
   const [dailyEntriesMap, setDailyEntriesMap] = useState<Map<string, DailyAllowanceEntry>>(
     new Map(dailyAllowanceEntries.map((e) => [e.packageName, e]))
   );
+  const [originalDailyPkgs, setOriginalDailyPkgs] = useState<Set<string>>(
+    new Set(dailyAllowanceEntries.map((e) => e.packageName))
+  );
   const dailyAllowed = useMemo(() => new Set(dailyEntriesMap.keys()), [dailyEntriesMap]);
   const [search, setSearch] = useState('');
   const [loadingApps, setLoadingApps] = useState(false);
   const [saving, setSaving] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [manualPackages, setManualPackages] = useState<string[]>([]);
+  const [showSavePreset, setShowSavePreset] = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const defaultUntil = blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate();
   const [untilDate, setUntilDate] = useState<Date>(defaultUntil);
@@ -98,8 +263,10 @@ export function StandaloneBlockModal({
     if (!visible) return;
     setSelected(new Set(blockedPackages));
     setDailyEntriesMap(new Map(dailyAllowanceEntries.map((e) => [e.packageName, e])));
+    setOriginalDailyPkgs(new Set(dailyAllowanceEntries.map((e) => e.packageName)));
     setSearch('');
     setManualInput('');
+    setShowAdvanced(false);
     setUntilDate(blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate());
 
     // Derive manual packages from existing blocked list before apps load
@@ -116,9 +283,10 @@ export function StandaloneBlockModal({
     setLoadingApps(true);
     try {
       const result = await InstalledAppsModule.getInstalledApps();
-      const sorted = result.slice().sort((a, b) =>
-        a.appName.toLowerCase().localeCompare(b.appName.toLowerCase())
-      );
+      const sorted = result
+        .filter((a) => !SYSTEM_NEVER_BLOCK.has(a.packageName)) // never show system-critical apps
+        .slice()
+        .sort((a, b) => a.appName.toLowerCase().localeCompare(b.appName.toLowerCase()));
       setApps(sorted);
       // Re-derive manual packages now that we have the installed list
       setManualPackages((prev) => {
@@ -145,6 +313,7 @@ export function StandaloneBlockModal({
   }, [apps, search]);
 
   const toggle = (packageName: string) => {
+    if (SYSTEM_NEVER_BLOCK.has(packageName)) return; // cannot block critical system apps
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(packageName)) {
@@ -157,7 +326,10 @@ export function StandaloneBlockModal({
     });
   };
 
+  const isDailyEntryLocked = (packageName: string) => locked && originalDailyPkgs.has(packageName);
+
   const toggleDailyAllowed = (packageName: string) => {
+    if (isDailyEntryLocked(packageName)) return;
     setDailyEntriesMap((prev) => {
       const next = new Map(prev);
       if (next.has(packageName)) {
@@ -200,6 +372,87 @@ export function StandaloneBlockModal({
     setManualInput('');
   };
 
+  const applyPreset = useCallback((preset: BlockPreset) => {
+    // Filter out system-critical apps that must never be blocked
+    const safe = preset.packages.filter((p) => !SYSTEM_NEVER_BLOCK.has(p));
+    if (locked) {
+      // Active session: only ADD packages that aren't already selected.
+      // Never remove apps the user has already chosen to block.
+      setSelected((prev) => new Set([...prev, ...safe]));
+    } else {
+      // No active session: replace selection with the preset's package list.
+      setSelected(new Set(safe));
+    }
+  }, [locked]);
+
+  // ── Category helpers ──────────────────────────────────────────────────────
+
+  const installedPkgSet = useMemo(() => new Set(apps.map((a) => a.packageName)), [apps]);
+
+  const categoryInstalledCount = useCallback((cat: AppCategory) => {
+    return cat.packages.filter((pkg) => installedPkgSet.has(pkg)).length;
+  }, [installedPkgSet]);
+
+  const handleSelectCategory = useCallback((cat: AppCategory) => {
+    const installedInCat = cat.packages.filter((pkg) => installedPkgSet.has(pkg));
+    if (installedInCat.length === 0) {
+      // If none installed, still add the known packages
+      setSelected((prev) => new Set([...prev, ...cat.packages]));
+      return;
+    }
+    const allAlreadySelected = installedInCat.every((pkg) => selected.has(pkg));
+    if (allAlreadySelected) {
+      // Deselect all from this category
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const pkg of cat.packages) next.delete(pkg);
+        return next;
+      });
+    } else {
+      // Select all installed from this category
+      setSelected((prev) => new Set([...prev, ...installedInCat]));
+    }
+  }, [installedPkgSet, selected]);
+
+  const isCategoryFullySelected = useCallback((cat: AppCategory) => {
+    const installed = cat.packages.filter((pkg) => installedPkgSet.has(pkg));
+    if (installed.length === 0) return false;
+    return installed.every((pkg) => selected.has(pkg));
+  }, [installedPkgSet, selected]);
+
+
+  const handleSaveCurrentAsPreset = useCallback(async () => {
+    const name = presetNameInput.trim();
+    if (!name) return;
+    if (selected.size === 0) {
+      Alert.alert('No Apps Selected', 'Select apps first, then save as preset.');
+      return;
+    }
+    const preset: BlockPreset = {
+      id: Date.now().toString(),
+      name,
+      packages: Array.from(selected),
+    };
+    await onSavePreset?.(preset);
+    setPresetNameInput('');
+    setShowSavePreset(false);
+  }, [presetNameInput, selected, onSavePreset]);
+
+  const handleDeletePreset = useCallback((preset: BlockPreset) => {
+    Alert.alert(
+      `Delete "${preset.name}"?`,
+      'This preset will be permanently removed.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => onDeletePreset?.(preset.id),
+        },
+      ]
+    );
+  }, [onDeletePreset]);
+
   const handleSave = async () => {
     if (selected.size === 0) {
       Alert.alert(
@@ -217,6 +470,28 @@ export function StandaloneBlockModal({
       );
       return;
     }
+    // Check that the required permissions are in place before committing the block.
+    if (Platform.OS === 'android') {
+      const hasAccessibility = await UsageStatsModule.hasAccessibilityPermission().catch(() => false);
+      const hasUsage = await UsageStatsModule.hasPermission().catch(() => false);
+      if (!hasAccessibility || !hasUsage) {
+        Alert.alert(
+          'Permissions Required',
+          'FocusFlow needs Accessibility and Usage Access permissions to block apps.\n\nGo to Settings → Permissions to grant them, then try again.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Open Permissions',
+              onPress: async () => {
+                if (!hasAccessibility) await UsageStatsModule.openAccessibilitySettings().catch(() => {});
+                else await UsageStatsModule.openUsageAccessSettings().catch(() => {});
+              },
+            },
+          ]
+        );
+        return;
+      }
+    }
     setSaving(true);
     try {
       // Pass both block packages and daily allowance entries together so the
@@ -233,7 +508,7 @@ export function StandaloneBlockModal({
   const handleClear = async () => {
     Alert.alert(
       'Clear Block',
-      'This will disable the app block schedule and allow all apps again.',
+      'This will disable the app block batch and allow all apps again.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -285,17 +560,22 @@ export function StandaloneBlockModal({
   const renderDailyControls = (packageName: string) => {
     const isDaily = dailyAllowed.has(packageName);
     const dailyEntry = dailyEntriesMap.get(packageName);
+    const entryLocked = isDailyEntryLocked(packageName);
     return (
       <View style={[styles.dailyRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isDaily && styles.dailyRowActive]}>
         <View style={styles.dailyTopLine}>
-          <TouchableOpacity style={styles.dailyToggle} onPress={() => toggleDailyAllowed(packageName)} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.dailyToggle}
+            onPress={() => toggleDailyAllowed(packageName)}
+            activeOpacity={entryLocked ? 1 : 0.7}
+          >
             <Ionicons
-              name={isDaily ? 'sunny' : 'sunny-outline'}
+              name={isDaily ? (entryLocked ? 'lock-closed-outline' : 'sunny') : 'sunny-outline'}
               size={13}
-              color={isDaily ? COLORS.orange : COLORS.muted}
+              color={isDaily ? (entryLocked ? COLORS.muted : COLORS.orange) : COLORS.muted}
             />
-            <Text style={[styles.dailyText, isDaily && styles.dailyTextActive]}>
-              {isDaily ? 'Daily allowance:' : 'Add daily allowance'}
+            <Text style={[styles.dailyText, isDaily && !entryLocked && styles.dailyTextActive]}>
+              {isDaily ? (entryLocked ? 'Daily allowance (locked):' : 'Daily allowance:') : 'Add daily allowance'}
             </Text>
           </TouchableOpacity>
           {isDaily && dailyEntry && (
@@ -308,16 +588,16 @@ export function StandaloneBlockModal({
               {ALL_MODES.map((mode) => (
                 <TouchableOpacity
                   key={mode}
-                  style={[styles.modePill, dailyEntry.mode === mode && styles.modePillActive]}
-                  onPress={() => updateDailyEntry(packageName, { mode })}
-                  activeOpacity={0.75}
+                  style={[styles.modePill, dailyEntry.mode === mode && styles.modePillActive, entryLocked && { opacity: 0.45 }]}
+                  onPress={() => { if (!entryLocked) updateDailyEntry(packageName, { mode }); }}
+                  activeOpacity={entryLocked ? 1 : 0.75}
                 >
                   <Ionicons
                     name={MODE_ICONS[mode]}
                     size={12}
-                    color={dailyEntry.mode === mode ? COLORS.orange : COLORS.muted}
+                    color={dailyEntry.mode === mode ? (entryLocked ? COLORS.muted : COLORS.orange) : COLORS.muted}
                   />
-                  <Text style={[styles.modePillText, dailyEntry.mode === mode && styles.modePillTextActive]}>
+                  <Text style={[styles.modePillText, dailyEntry.mode === mode && !entryLocked && styles.modePillTextActive]}>
                     {MODE_LABELS[mode]}
                   </Text>
                 </TouchableOpacity>
@@ -328,8 +608,9 @@ export function StandaloneBlockModal({
                 label="Opens per day"
                 value={dailyEntry.countPerDay ?? 1}
                 suffix=""
-                onMinus={() => adjustDailyValue(packageName, 'countPerDay', -1, 1, 20)}
-                onPlus={() => adjustDailyValue(packageName, 'countPerDay', 1, 1, 20)}
+                onMinus={() => { if (!entryLocked) adjustDailyValue(packageName, 'countPerDay', -1, 1, 20); }}
+                onPlus={() => { if (!entryLocked) adjustDailyValue(packageName, 'countPerDay', 1, 1, 20); }}
+                disabled={entryLocked}
               />
             )}
             {dailyEntry.mode === 'time_budget' && (
@@ -337,8 +618,9 @@ export function StandaloneBlockModal({
                 label="Minutes per day"
                 value={dailyEntry.budgetMinutes ?? 30}
                 suffix=" min"
-                onMinus={() => adjustDailyValue(packageName, 'budgetMinutes', -5, 1, 480)}
-                onPlus={() => adjustDailyValue(packageName, 'budgetMinutes', 5, 1, 480)}
+                onMinus={() => { if (!entryLocked) adjustDailyValue(packageName, 'budgetMinutes', -5, 1, 480); }}
+                onPlus={() => { if (!entryLocked) adjustDailyValue(packageName, 'budgetMinutes', 5, 1, 480); }}
+                disabled={entryLocked}
               />
             )}
             {dailyEntry.mode === 'interval' && (
@@ -347,15 +629,17 @@ export function StandaloneBlockModal({
                   label="Minutes per window"
                   value={dailyEntry.intervalMinutes ?? 5}
                   suffix=" min"
-                  onMinus={() => adjustDailyValue(packageName, 'intervalMinutes', -1, 1, 120)}
-                  onPlus={() => adjustDailyValue(packageName, 'intervalMinutes', 1, 1, 120)}
+                  onMinus={() => { if (!entryLocked) adjustDailyValue(packageName, 'intervalMinutes', -1, 1, 120); }}
+                  onPlus={() => { if (!entryLocked) adjustDailyValue(packageName, 'intervalMinutes', 1, 1, 120); }}
+                  disabled={entryLocked}
                 />
                 <StepperRow
                   label="Window size"
                   value={dailyEntry.intervalHours ?? 1}
                   suffix=" hr"
-                  onMinus={() => adjustDailyValue(packageName, 'intervalHours', -1, 1, 24)}
-                  onPlus={() => adjustDailyValue(packageName, 'intervalHours', 1, 1, 24)}
+                  onMinus={() => { if (!entryLocked) adjustDailyValue(packageName, 'intervalHours', -1, 1, 24); }}
+                  onPlus={() => { if (!entryLocked) adjustDailyValue(packageName, 'intervalHours', 1, 1, 24); }}
+                  disabled={entryLocked}
                 />
               </>
             )}
@@ -422,7 +706,7 @@ export function StandaloneBlockModal({
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={[styles.title, { color: theme.text }]}>{locked ? '🔒 Block Active' : 'Block Schedule'}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{locked ? '🔒 Block Active' : 'Block Batch'}</Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={saving}>
             <Text style={[styles.saveText, saving && { opacity: 0.5 }]}>Save</Text>
           </TouchableOpacity>
@@ -441,7 +725,7 @@ export function StandaloneBlockModal({
         {/* Expiry date/time pickers */}
         <View style={[styles.expirySection, { backgroundColor: theme.card, borderColor: theme.border }, locked && styles.expirySectionLocked]}>
           <Text style={[styles.expirySectionLabel, { color: theme.textSecondary }]}>
-            Block until{locked ? ' (locked)' : ''}
+            {locked ? 'BLOCK UNTIL (LOCKED)' : 'BLOCK UNTIL'}
           </Text>
           <View style={styles.expiryRow}>
             <TouchableOpacity
@@ -465,6 +749,23 @@ export function StandaloneBlockModal({
               </Text>
             </TouchableOpacity>
           </View>
+          {locked && (
+            <View style={styles.addTimeRow}>
+              <Text style={[styles.addTimeLabel, { color: theme.textSecondary }]}>Add time:</Text>
+              {[30, 60, 120, 240].map((mins) => (
+                <TouchableOpacity
+                  key={mins}
+                  style={[styles.addTimeBtn, { borderColor: COLORS.primary + '55' }]}
+                  onPress={() => setUntilDate((prev) => dayjs(prev).add(mins, 'minute').toDate())}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.addTimeBtnText, { color: COLORS.primary }]}>
+                    +{mins >= 60 ? `${mins / 60}h` : `${mins}m`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {showDatePicker && (
@@ -494,47 +795,132 @@ export function StandaloneBlockModal({
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <>
-              {/* Manual entry — always shown at the top, primary option */}
-              <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>ADD BY PACKAGE NAME</Text>
-                <Text style={[styles.manualHint, { color: theme.textSecondary }]}>
-                  Enter app package name, e.g. com.instagram.android
-                </Text>
-                <View style={[styles.installerTip, { backgroundColor: theme.surface }]}>
-                  <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
-                  <Text style={[styles.installerTipText, { color: theme.textSecondary }]}>
-                    To block the Android Package Installer / Uninstaller, add it manually:{' '}
-                    <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
-                  </Text>
-                </View>
-                <View style={styles.manualInputRow}>
-                  <TextInput
-                    style={[styles.manualInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
-                    placeholder="com.example.app"
-                    placeholderTextColor={COLORS.muted}
-                    value={manualInput}
-                    onChangeText={setManualInput}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onSubmitEditing={handleAddManual}
-                    returnKeyType="done"
-                  />
-                  <TouchableOpacity
-                    style={[styles.addBtn, !manualInput.trim().includes('.') && styles.addBtnDisabled]}
-                    onPress={handleAddManual}
-                    disabled={!manualInput.trim().includes('.')}
-                  >
-                    <Text style={styles.addBtnText}>Add</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              {/* ── Presets section ── */}
+              {(blockPresets.length > 0 || selected.size > 0) && (
+                <View style={[styles.presetSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                  <View style={styles.presetHeaderRow}>
+                    <Text style={[styles.presetSectionLabel, { color: theme.muted }]}>PRESETS</Text>
+                    {selected.size > 0 && !showSavePreset && (
+                      <TouchableOpacity onPress={() => setShowSavePreset(true)}>
+                        <Text style={styles.savePresetLink}>+ Save current selection</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
-              {/* Manually added packages */}
-              {manualPackages.length > 0 && (
-                <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                  <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>MANUALLY ADDED</Text>
-                  {manualPackages.map(renderManualPackage)}
+                  {blockPresets.length > 0 && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+                      {blockPresets.map((preset) => (
+                        <TouchableOpacity
+                          key={preset.id}
+                          style={[styles.presetChip, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                          onPress={() => applyPreset(preset)}
+                          onLongPress={() => handleDeletePreset(preset)}
+                          delayLongPress={500}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.presetChipName, { color: theme.text }]} numberOfLines={1}>{preset.name}</Text>
+                          <Text style={[styles.presetChipCount, { color: COLORS.muted }]}>{preset.packages.length} app{preset.packages.length !== 1 ? 's' : ''}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {blockPresets.length === 0 && !showSavePreset && (
+                    <Text style={[styles.presetEmpty, { color: theme.muted }]}>
+                      Select apps below then tap "+ Save current selection" to create your first preset.
+                    </Text>
+                  )}
+
+                  {showSavePreset && (
+                    <View style={styles.savePresetRow}>
+                      <TextInput
+                        style={[styles.savePresetInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+                        placeholder="Preset name (e.g. Social Media)…"
+                        placeholderTextColor={COLORS.muted}
+                        value={presetNameInput}
+                        onChangeText={setPresetNameInput}
+                        autoFocus
+                        returnKeyType="done"
+                        onSubmitEditing={() => { void handleSaveCurrentAsPreset(); }}
+                      />
+                      <TouchableOpacity
+                        style={[styles.savePresetConfirmBtn, !presetNameInput.trim() && { opacity: 0.4 }]}
+                        onPress={() => { void handleSaveCurrentAsPreset(); }}
+                        disabled={!presetNameInput.trim()}
+                      >
+                        <Text style={styles.savePresetConfirmText}>Save</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => { setShowSavePreset(false); setPresetNameInput(''); }}
+                        style={{ paddingHorizontal: 4 }}
+                      >
+                        <Ionicons name="close" size={20} color={COLORS.muted} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
+              )}
+
+              {/* ── (Categories and Recurring sections removed) ── */}
+
+              {/* ── Advanced toggle (Add by Package Name) ── */}
+              <TouchableOpacity
+                style={[styles.recurringToggleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+                onPress={() => setShowAdvanced((v) => !v)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="settings-outline" size={16} color={COLORS.muted} />
+                <Text style={[styles.recurringToggleLabel, { color: theme.text }]}>Advanced</Text>
+                <Ionicons
+                  name={showAdvanced ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  color={COLORS.muted}
+                />
+              </TouchableOpacity>
+
+              {showAdvanced && (
+                <>
+                  <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                    <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>ADD BY PACKAGE NAME</Text>
+                    <Text style={[styles.manualHint, { color: theme.textSecondary }]}>
+                      Enter app package name, e.g. com.instagram.android
+                    </Text>
+                    <View style={[styles.installerTip, { backgroundColor: theme.surface }]}>
+                      <Ionicons name="information-circle-outline" size={14} color={COLORS.muted} />
+                      <Text style={[styles.installerTipText, { color: theme.textSecondary }]}>
+                        To block the Android Package Installer / Uninstaller, add it manually:{' '}
+                        <Text style={styles.installerTipCode}>com.android.packageinstaller</Text>
+                      </Text>
+                    </View>
+                    <View style={styles.manualInputRow}>
+                      <TextInput
+                        style={[styles.manualInput, { backgroundColor: theme.surface, color: theme.text, borderColor: theme.border }]}
+                        placeholder="com.example.app"
+                        placeholderTextColor={COLORS.muted}
+                        value={manualInput}
+                        onChangeText={setManualInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onSubmitEditing={handleAddManual}
+                        returnKeyType="done"
+                      />
+                      <TouchableOpacity
+                        style={[styles.addBtn, !manualInput.trim().includes('.') && styles.addBtnDisabled]}
+                        onPress={handleAddManual}
+                        disabled={!manualInput.trim().includes('.')}
+                      >
+                        <Text style={styles.addBtnText}>Add</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {manualPackages.length > 0 && (
+                    <View style={[styles.manualSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <Text style={[styles.manualSectionLabel, { color: theme.muted }]}>MANUALLY ADDED</Text>
+                      {manualPackages.map(renderManualPackage)}
+                    </View>
+                  )}
+                </>
               )}
 
               {/* Search and installed apps header */}
@@ -594,22 +980,24 @@ function StepperRow({
   suffix,
   onMinus,
   onPlus,
+  disabled = false,
 }: {
   label: string;
   value: number;
   suffix: string;
   onMinus: () => void;
   onPlus: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <View style={styles.stepperRow}>
+    <View style={[styles.stepperRow, disabled && { opacity: 0.45 }]}>
       <Text style={styles.stepperLabel}>{label}</Text>
       <View style={styles.dailyStepper}>
-        <TouchableOpacity onPress={onMinus} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={onMinus} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} disabled={disabled}>
           <Ionicons name="remove-circle-outline" size={18} color={COLORS.orange} />
         </TouchableOpacity>
         <Text style={styles.dailyCountText}>{value}{suffix}</Text>
-        <TouchableOpacity onPress={onPlus} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={onPlus} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} disabled={disabled}>
           <Ionicons name="add-circle-outline" size={18} color={COLORS.orange} />
         </TouchableOpacity>
       </View>
@@ -686,10 +1074,32 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   expirySectionLocked: {
-    opacity: 0.5,
+    // no longer dim the whole section — user can still add time
   },
   expiryBtnLocked: {
     backgroundColor: COLORS.border,
+  },
+  addTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+    flexWrap: 'wrap',
+  },
+  addTimeLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '500',
+    marginRight: 2,
+  },
+  addTimeBtn: {
+    borderWidth: 1,
+    borderRadius: RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  addTimeBtnText: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
   },
   lockedBanner: {
     flexDirection: 'row',
@@ -980,5 +1390,286 @@ const styles = StyleSheet.create({
     fontSize: FONT.sm,
     fontWeight: '600',
     color: COLORS.red,
+  },
+  presetSection: {
+    marginBottom: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  presetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  presetSectionLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  savePresetLink: {
+    fontSize: FONT.xs,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  presetScroll: {
+    marginTop: SPACING.xs,
+  },
+  presetChip: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginRight: SPACING.sm,
+    minWidth: 90,
+  },
+  presetChipName: {
+    fontSize: FONT.sm,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  presetChipCount: {
+    fontSize: FONT.xs,
+  },
+  presetEmpty: {
+    fontSize: FONT.xs,
+    lineHeight: 18,
+    marginTop: SPACING.xs,
+  },
+  savePresetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  savePresetInput: {
+    flex: 1,
+    height: 38,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    fontSize: FONT.sm,
+  },
+  savePresetConfirmBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  savePresetConfirmText: {
+    color: '#fff',
+    fontSize: FONT.sm,
+    fontWeight: '600',
+  },
+
+  // ── Category styles ────────────────────────────────────────────────────────
+  categorySection: {
+    marginTop: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  categoryHint: {
+    fontSize: FONT.xs,
+    lineHeight: 16,
+  },
+  categoryScroll: {
+    marginTop: SPACING.xs,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    marginRight: SPACING.sm,
+  },
+  categoryChipLabel: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+  },
+  categoryChipCount: {
+    fontSize: FONT.xs,
+    fontWeight: '600',
+  },
+
+  // ── Recurring schedule styles ──────────────────────────────────────────────
+  recurringToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+  },
+  recurringToggleLabel: {
+    flex: 1,
+    fontSize: FONT.sm,
+    fontWeight: '700',
+  },
+  recurringBadge: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.full,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  recurringBadgeText: {
+    color: '#fff',
+    fontSize: FONT.xs,
+    fontWeight: '700',
+  },
+  recurringSection: {
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  recurringSectionHint: {
+    fontSize: FONT.xs,
+    lineHeight: 16,
+  },
+  recurringItem: {
+    borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.sm,
+  },
+  recurringItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  recurringItemName: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+  },
+  recurringItemMeta: {
+    fontSize: FONT.xs,
+    marginTop: 1,
+  },
+  addRecurringBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+  },
+  addRecurringBtnText: {
+    fontSize: FONT.sm,
+    fontWeight: '600',
+  },
+  recurringForm: {
+    borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+  },
+  recurringFormTitle: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  recurringNameInput: {
+    height: 40,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.md,
+    fontSize: FONT.sm,
+  },
+  recurringFormLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  recurringFormValue: {
+    fontSize: FONT.xs,
+    marginTop: 2,
+  },
+  recurringDayRow: {
+    flexDirection: 'row',
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+  },
+  recurringDayBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 32,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  recurringDayBtnActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  recurringDayLabel: {
+    fontSize: FONT.xs,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  recurringDayLabelActive: {
+    color: '#fff',
+  },
+  recurringTimeRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginTop: SPACING.xs,
+  },
+  recurringTimeSteppers: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: 4,
+  },
+  recurringTimeValue: {
+    fontSize: FONT.sm,
+    fontWeight: '700',
+    minWidth: 60,
+    textAlign: 'center',
+  },
+  recurringFormActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  recurringCancelBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+  },
+  recurringCancelBtnText: {
+    fontSize: FONT.sm,
+    fontWeight: '600',
+  },
+  recurringSaveBtn: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary,
+  },
+  recurringSaveBtnText: {
+    color: '#fff',
+    fontSize: FONT.sm,
+    fontWeight: '700',
   },
 });

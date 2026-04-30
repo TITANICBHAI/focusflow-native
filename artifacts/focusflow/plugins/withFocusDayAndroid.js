@@ -253,6 +253,27 @@ function withFocusDayManifest(config) {
       });
     }
 
+    // ── Task End Alarm Receiver ───────────────────────────────────────────────
+    // TaskEndAlarmReceiver is fired by AlarmManager.setAlarmClock() at a task's
+    // end time. It posts the heads-up + full-screen-intent alarm notification
+    // independently of the foreground service, so alarms still fire after the
+    // device has been in Doze for hours or after the OS has killed the service.
+    // exported=false because the alarm PendingIntent targets the receiver by
+    // explicit class — no third-party app should ever send us this broadcast.
+    const taskEndAlarmExists = (app.receiver || []).some(
+      (r) => r.$['android:name'] === 'com.tbtechs.focusflow.services.TaskEndAlarmReceiver'
+    );
+    if (!taskEndAlarmExists) {
+      if (!app.receiver) app.receiver = [];
+      app.receiver.push({
+        $: {
+          'android:name':     'com.tbtechs.focusflow.services.TaskEndAlarmReceiver',
+          'android:enabled':  'true',
+          'android:exported': 'false',
+        },
+      });
+    }
+
     // ── Notification Action Receiver ──────────────────────────────────────────
     // NotificationActionReceiver is a static BroadcastReceiver that handles taps
     // on the foreground notification action buttons (Done / +15m / +30m / Skip).
@@ -311,6 +332,34 @@ function withFocusDayManifest(config) {
             'android:name':     'android.appwidget.provider',
             'android:resource': '@xml/widget_info',
           },
+        }],
+      });
+    }
+
+    // ── PackageInstallReceiver ────────────────────────────────────────────────
+    // Listens for ACTION_PACKAGE_ADDED so newly installed apps during a focus
+    // session are immediately flagged and — when standalone block is active —
+    // automatically added to the blocked list.
+    // android:exported="true" is required for system-broadcast receivers;
+    // data scheme="package" restricts the receiver to package events only.
+    const pkgInstallExists = (app.receiver || []).some(
+      (r) => r.$['android:name'] === 'com.tbtechs.focusflow.services.PackageInstallReceiver'
+    );
+    if (!pkgInstallExists) {
+      if (!app.receiver) app.receiver = [];
+      app.receiver.push({
+        $: {
+          'android:name':     'com.tbtechs.focusflow.services.PackageInstallReceiver',
+          'android:enabled':  'true',
+          'android:exported': 'true',
+        },
+        'intent-filter': [{
+          action: [
+            { $: { 'android:name': 'android.intent.action.PACKAGE_ADDED' } },
+          ],
+          data: [
+            { $: { 'android:scheme': 'package' } },
+          ],
         }],
       });
     }

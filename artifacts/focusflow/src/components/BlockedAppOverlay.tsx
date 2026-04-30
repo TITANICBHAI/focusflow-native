@@ -96,8 +96,8 @@ export function BlockedAppOverlay() {
           {/* Description */}
           <Text style={styles.description}>
             {isInstaller
-              ? 'The package installer is blocked while focus mode or a block schedule is active.'
-              : 'This app is blocked while focus mode or a block schedule is active.'}
+              ? 'The package installer is blocked while focus mode or a block batch is active.'
+              : 'This app is blocked while focus mode or a block batch is active.'}
           </Text>
 
           {/* Divider */}
@@ -109,7 +109,7 @@ export function BlockedAppOverlay() {
             <Text style={styles.statusText}>FocusFlow is protecting your focus</Text>
           </View>
 
-          <Text style={styles.dismissHint}>This will dismiss automatically</Text>
+          <Text style={styles.dismissHint}>Tap home or back to leave this app</Text>
         </Animated.View>
       </View>
     </Modal>

@@ -175,7 +175,12 @@ async function checkStatus(id: string): Promise<PermStatus> {
 }
 
 export default function OnboardingScreen() {
-  const { state, updateSettings } = useApp();
+  const { updateSettings: _updateSettings, state: _state } = useApp();
+  // The "Switching from another blocker?" entry was relocated from this
+  // permissions screen to the profile screen (user-profile.tsx) so that new
+  // users finish the permissions checklist first — importing a block list
+  // is meaningless until accessibility + usage access are actually granted.
+  void _updateSettings; void _state;
   const { theme } = useTheme();
   const [statuses, setStatuses] = useState<Record<string, PermStatus>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -244,8 +249,9 @@ export default function OnboardingScreen() {
   const allGranted = grantedCount === PERMISSIONS.length;
 
   const handleFinish = async () => {
-    await updateSettings({ ...state.settings, onboardingComplete: true });
-    router.replace('/');
+    // Don't mark onboardingComplete here — user-profile.tsx does that
+    // so we know the user has seen (or skipped) the profile setup step.
+    router.replace('/user-profile');
   };
 
   return (
@@ -404,9 +410,7 @@ export default function OnboardingScreen() {
           onPress={handleFinish}
           activeOpacity={0.85}
         >
-          <Text style={styles.enterBtnText}>
-            {allGranted ? 'Get Started →' : 'Enter FocusFlow →'}
-          </Text>
+          <Text style={styles.enterBtnText}>Continue →</Text>
         </TouchableOpacity>
 
         <Text style={[styles.footerNote, { color: theme.muted }]}>

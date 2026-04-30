@@ -73,6 +73,17 @@ jobs:
         working-directory: artifacts/focusflow
         run: npx expo prebuild --platform android --clean --no-install
 
+      - name: Bundle JavaScript into APK assets
+        working-directory: artifacts/focusflow
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed \
+            --platform android \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res \
+            --dev false \
+            --reset-cache
+
       - name: Build debug APK
         working-directory: artifacts/focusflow/android
         env:

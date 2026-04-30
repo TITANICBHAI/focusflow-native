@@ -24,13 +24,14 @@ import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
 
-import { dbGetTasksForDate, dbUpdateTask } from '@/data/database';
+import { dbGetTasksForDate, dbUpdateTask, dbGetSettings } from '@/data/database';
 import { rebalanceAfterOverrun } from '@/services/schedulerEngine';
 import {
   cancelTaskReminders,
   scheduleTaskReminders,
   fireLateStartWarning,
   dismissPersistentNotification,
+  scheduleMorningDigest,
 } from '@/services/notificationService';
 import { navigateToTask } from '@/navigation/navigationRef';
 
@@ -124,6 +125,24 @@ TaskManager.defineTask(TASK_BACKGROUND_FETCH, async () => {
     }
 
     console.log('[BgFetch] Re-armed', rearmedCount, 'upcoming task reminders');
+
+    // ── Evening morning-digest scheduling ──────────────────────────────────
+    // If it's evening (20:00 – 23:59) and the user has a wakeUpTime set,
+    // schedule tomorrow's morning digest with today's task summary.
+    // Uses a fixed notification identifier so repeated calls are idempotent.
+    const currentHour = new Date().getHours();
+    if (currentHour >= 20) {
+      try {
+        const settings = await dbGetSettings();
+        if (settings.userProfile?.wakeUpTime) {
+          await scheduleMorningDigest(settings.userProfile, tasks);
+          console.log('[BgFetch] Scheduled morning digest for', settings.userProfile.wakeUpTime);
+        }
+      } catch (e) {
+        console.warn('[BgFetch] Morning digest scheduling failed:', e);
+      }
+    }
+
     return rearmedCount > 0
       ? BackgroundFetch.BackgroundFetchResult.NewData
       : BackgroundFetch.BackgroundFetchResult.NoData;

@@ -3,6 +3,7 @@ package com.tbtechs.focusflow.services
 import android.app.*
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.media.AudioAttributes
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
@@ -57,6 +58,7 @@ class ForegroundTaskService : Service() {
         const val EXTRA_TASK_ID     = "taskId"
         const val EXTRA_TASK_NAME   = "taskName"
         const val EXTRA_END_MS      = "endTimeMs"
+        const val EXTRA_START_MS    = "startTimeMs"
         const val EXTRA_NEXT_NAME   = "nextName"
 
         private const val PREFS_NAME = "focusday_prefs"
@@ -77,6 +79,106 @@ class ForegroundTaskService : Service() {
         /** Notification channel for full-screen block-overlay intent. */
         private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
         private const val BLOCK_ALERT_NOTIF_ID = 9001
+
+        /**
+         * Notification channel for the full-screen task-end alarm.  Must be
+         * IMPORTANCE_HIGH with sound + vibration so the heads-up presents and
+         * the full-screen intent is honoured even on locked / asleep devices.
+         */
+        const val TASK_ALARM_CHANNEL   = "task_alarm"
+        const val TASK_ALARM_NOTIF_ID  = 9101
+        private const val PI_TASK_ALARM = 7
+
+        /**
+         * Posts the heads-up + full-screen-intent task-end alarm notification.
+         *
+         * Exposed as a static helper so [TaskEndAlarmReceiver] (fired by
+         * AlarmManager) can post the same alarm UI as the in-process Handler
+         * tick. Without this split, only the foreground service could trigger
+         * the full-screen alarm — which silently fails the moment Android
+         * Doze pauses the service's main looper, which is exactly the bug
+         * users hit when alarms "didn't go off" after the screen had been
+         * off for a while.
+         *
+         * Idempotent: the notification ID is fixed ([TASK_ALARM_NOTIF_ID]),
+         * so a second post just replaces the first if the service tick races
+         * the AlarmManager broadcast.
+         */
+        fun postTaskEndAlarmNotification(
+            context: Context,
+            endedTaskId: String,
+            endedTaskName: String,
+            endedAtMs: Long,
+        ) {
+            try {
+                val app = context.applicationContext
+                val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+                // Ensure the high-importance alarm channel exists. Channels are
+                // sticky once created so this is a cheap idempotent call, but we
+                // can't assume the foreground service has run yet (the receiver
+                // may fire after a process death where onCreate never executed).
+                val existing = nm.getNotificationChannel(TASK_ALARM_CHANNEL)
+                if (existing == null) {
+                    val attrs = android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    val sound = android.media.RingtoneManager.getDefaultUri(
+                        android.media.RingtoneManager.TYPE_ALARM
+                    )
+                    val channel = android.app.NotificationChannel(
+                        TASK_ALARM_CHANNEL,
+                        "Task End Alarm",
+                        NotificationManager.IMPORTANCE_HIGH,
+                    ).apply {
+                        description = "Wakes the device when a task ends."
+                        enableLights(true)
+                        enableVibration(true)
+                        setSound(sound, attrs)
+                        setBypassDnd(true)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                    nm.createNotificationChannel(channel)
+                }
+
+                val activityIntent = Intent(app, TaskAlarmActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_NO_HISTORY
+                    putExtra(TaskAlarmActivity.EXTRA_TASK_ID,   endedTaskId)
+                    putExtra(TaskAlarmActivity.EXTRA_TASK_NAME, endedTaskName)
+                    putExtra(TaskAlarmActivity.EXTRA_END_MS,    endedAtMs)
+                }
+                val fullScreenPi = PendingIntent.getActivity(
+                    app, PI_TASK_ALARM, activityIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+
+                val displayName = if (endedTaskName.isNotEmpty()) endedTaskName else "Your task"
+
+                val notif = NotificationCompat.Builder(app, TASK_ALARM_CHANNEL)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle("\u23F0 Time's up")
+                    .setContentText("$displayName has ended — tap to choose")
+                    .setContentIntent(fullScreenPi)
+                    .setFullScreenIntent(fullScreenPi, true)
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setAutoCancel(true)
+                    .setOngoing(true)
+                    .build()
+                nm.notify(TASK_ALARM_NOTIF_ID, notif)
+
+                // Belt-and-braces: on some OEM ROMs the full-screen intent is
+                // delayed until the user unlocks. Fire startActivity directly
+                // too — the system simply ignores it if the activity is
+                // already up. From a BroadcastReceiver context this requires
+                // FLAG_ACTIVITY_NEW_TASK which we already set above.
+                try { app.startActivity(activityIntent) } catch (_: Exception) {}
+            } catch (_: Exception) { /* alarm is best-effort */ }
+        }
     }
 
     private var taskId: String    = ""
@@ -85,6 +187,11 @@ class ForegroundTaskService : Service() {
     private var startTimeMs: Long = 0L
     private var nextName: String? = null
     private var isActiveMode: Boolean = false
+
+    /** Wall-clock ms when this service process first called onCreate(). Used
+     *  by the idle notification chronometer so it always counts up from when
+     *  monitoring started, not from when the latest goIdle() was called. */
+    private var serviceStartMs: Long = 0L
 
     // ── Fallback blocker state (used only when accessibility is not granted) ──
     private lateinit var blockPrefs: SharedPreferences
@@ -96,10 +203,17 @@ class ForegroundTaskService : Service() {
         override fun run() {
             val remaining = endTimeMs - System.currentTimeMillis()
             if (remaining <= 0) {
+                // Capture identity BEFORE clearing — goIdle() resets these fields.
+                val endedTaskId   = taskId
+                val endedTaskName = taskName
                 clearFocusActive()
                 sendBroadcast(Intent(ACTION_TASK_ENDED).apply {
                     `package` = applicationContext.packageName
                 })
+                // Wake the device with a full-screen alarm so the user doesn't
+                // miss the end of their task.  The task itself stays in the
+                // awaiting-decision state until the user picks Done / Extend / Skip.
+                triggerTaskAlarm(endedTaskId, endedTaskName, endTimeMs)
                 goIdle()
                 return
             }
@@ -168,8 +282,13 @@ class ForegroundTaskService : Service() {
                 return
             }
 
-            // ── 4. Skip always-allowed packages ───────────────────────────
-            if (AppBlockerAccessibilityService.ALWAYS_ALLOWED.any {
+            // ── 4. Skip BLOCKABLE_AFTER_WARNING packages ──────────────────
+            // These are launcher / dialer / Settings etc. — bypassed by
+            // default so the user is never trapped. They can still be
+            // blocked if the user explicitly opts in via the picker (after
+            // a confirmation warning), but the AccessibilityService handles
+            // that opt-in path; the fallback poller skips them outright.
+            if (AppBlockerAccessibilityService.BLOCKABLE_AFTER_WARNING.any {
                     pkg.equals(it, ignoreCase = true)
                 }) {
                 handler.postDelayed(this, FALLBACK_POLL_MS)
@@ -198,6 +317,7 @@ class ForegroundTaskService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceStartMs = System.currentTimeMillis()
         blockPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildIdleNotification())
@@ -222,10 +342,11 @@ class ForegroundTaskService : Service() {
                 return START_STICKY
             }
             else -> {
-                val id    = intent?.getStringExtra(EXTRA_TASK_ID)
-                val name  = intent?.getStringExtra(EXTRA_TASK_NAME)
-                val endMs = intent?.getLongExtra(EXTRA_END_MS, 0L) ?: 0L
-                val next  = intent?.getStringExtra(EXTRA_NEXT_NAME)
+                val id      = intent?.getStringExtra(EXTRA_TASK_ID)
+                val name    = intent?.getStringExtra(EXTRA_TASK_NAME)
+                val endMs   = intent?.getLongExtra(EXTRA_END_MS, 0L) ?: 0L
+                val startMs = intent?.getLongExtra(EXTRA_START_MS, 0L) ?: 0L
+                val next    = intent?.getStringExtra(EXTRA_NEXT_NAME)
 
                 if (name != null && endMs > 0L) {
                     taskId    = id ?: ""
@@ -238,7 +359,9 @@ class ForegroundTaskService : Service() {
                     // a +15m / +30m extend) — preserve the original startTimeMs so the
                     // notification progress bar continues from where it was, not from 0%.
                     if (!isActiveMode) {
-                        startTimeMs  = System.currentTimeMillis()
+                        // Prefer the actual task startTime from the JS layer (EXTRA_START_MS).
+                        // Fall back to System.currentTimeMillis() only when not provided.
+                        startTimeMs  = if (startMs > 0L) startMs else System.currentTimeMillis()
                         isActiveMode = true
                         // Persist start time so the widget can compute progress correctly
                         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -370,7 +493,52 @@ class ForegroundTaskService : Service() {
             }
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.createNotificationChannel(channel)
+            // Also create the high-importance task-alarm channel up front so the
+            // first task end is not delayed waiting for channel creation.
+            createTaskAlarmChannel(nm)
         }
+    }
+
+    /**
+     * High-importance task-alarm channel.  Must include sound + vibration so
+     * the heads-up notification presents and the full-screen-intent is honoured
+     * even when the screen is off.
+     */
+    private fun createTaskAlarmChannel(nm: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val existing = nm.getNotificationChannel(TASK_ALARM_CHANNEL)
+        if (existing != null) return
+        val alarmUri = android.media.RingtoneManager.getDefaultUri(
+            android.media.RingtoneManager.TYPE_ALARM
+        )
+        val attrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val channel = NotificationChannel(
+            TASK_ALARM_CHANNEL,
+            "Task Alarm",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Wakes the screen with a full-screen alarm when a task ends"
+            enableVibration(true)
+            vibrationPattern = longArrayOf(0L, 600L, 600L, 600L)
+            enableLights(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            setBypassDnd(true)
+            setShowBadge(true)
+            if (alarmUri != null) setSound(alarmUri, attrs)
+        }
+        nm.createNotificationChannel(channel)
+    }
+
+    /**
+     * Instance-level wrapper kept for the in-process tick path. Delegates to
+     * the static [postTaskEndAlarmNotification] helper so the AlarmManager
+     * receiver and the Handler tick share one canonical implementation.
+     */
+    private fun triggerTaskAlarm(endedTaskId: String, endedTaskName: String, endedAtMs: Long) {
+        postTaskEndAlarmNotification(applicationContext, endedTaskId, endedTaskName, endedAtMs)
     }
 
     private fun buildIdleNotification(): Notification {
@@ -381,6 +549,12 @@ class ForegroundTaskService : Service() {
             this, PI_TAP, tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // Chronometer base: convert the wall-clock serviceStartMs to an
+        // elapsedRealtime value so the chronometer counts UP from that point.
+        // This shows the true "monitoring active since X" elapsed time rather
+        // than resetting to zero every time goIdle() rebuilds the notification.
+        val idleChronometerBase = SystemClock.elapsedRealtime() -
+                (System.currentTimeMillis() - serviceStartMs)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("FocusFlow")
             .setContentText("Monitoring active — tap to open")
@@ -389,6 +563,10 @@ class ForegroundTaskService : Service() {
             .setOnlyAlertOnce(true)
             .setContentIntent(tapPending)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setWhen(idleChronometerBase)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(false)
+            .setShowWhen(true)
             .build()
     }
 

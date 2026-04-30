@@ -30,14 +30,19 @@ export const ForegroundServiceModule = {
     }
   },
 
-  async startService(taskId: string, taskName: string, endTimeMs: number, nextTaskName: string | null): Promise<void> {
+  async startService(taskId: string, taskName: string, startTimeMs: number, endTimeMs: number, nextTaskName: string | null): Promise<void> {
     if (!ForegroundService) return;
-    return ForegroundService.startService(taskId, taskName, endTimeMs, nextTaskName);
+    return ForegroundService.startService(taskId, taskName, startTimeMs, endTimeMs, nextTaskName);
   },
 
-  async stopService(): Promise<void> {
+  /**
+   * Switches the service to idle mode (session ends).
+   * If a session PIN is configured, pinHash must be the SHA-256 hex digest of
+   * the PIN — otherwise the native layer will reject the call.
+   */
+  async stopService(pinHash: string | null = null): Promise<void> {
     if (!ForegroundService) return;
-    return ForegroundService.stopService();
+    return ForegroundService.stopService(pinHash);
   },
 
   async updateNotification(taskId: string, taskName: string, endTimeMs: number, nextTaskName: string | null): Promise<void> {

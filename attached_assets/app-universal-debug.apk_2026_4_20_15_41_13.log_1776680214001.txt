@@ -1,0 +1,246 @@
+04-20 10:10:44.132 W/PlayMovies( 5250): bjc.onCreate:76 Installer Package: null
+04-20 10:10:44.132 W/PlayMovies( 5250):
+04-20 10:10:44.168 W/MediaSessionCompat( 5250): Couldn't find a unique registered media button receiver in the given context.
+04-20 10:10:44.215 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.USER_PRESENT flg=0x24200010 } to com.google.android.gms/.auth.setup.devicesignals.LockScreenReceiver
+04-20 10:10:44.222 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.USER_PRESENT flg=0x24200010 } to com.google.android.gms/.chimera.GmsIntentOperationService$PersistentTrustedReceiver
+04-20 10:10:44.222 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.USER_PRESENT flg=0x24200010 } to com.microsoft.emmx/org.chromium.chrome.browser.sharing.click_to_call.ClickToCallMessageHandler$PhoneUnlockedReceiver
+04-20 10:10:44.283 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:44.331 W/GrowthKit( 4720): Failed to get phenotypeManager in PhenotypeBroadcastReceiver
+04-20 10:10:44.331 W/GrowthKit( 4720): java.lang.NullPointerException: Unable to get GrowthKit Component from host app: com.google.android.calendar
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at cal.rll.a(PG:6)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at com.google.android.libraries.internal.growth.growthkit.internal.experiments.impl.PhenotypeBroadcastReceiver.onReceive(PG:1)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.app.ActivityThread.handleReceiver(ActivityThread.java:4312)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.app.ActivityThread.access$1600(ActivityThread.java:247)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2068)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.os.Handler.dispatchMessage(Handler.java:106)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.os.Looper.loopOnce(Looper.java:201)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.os.Looper.loop(Looper.java:288)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at android.app.ActivityThread.main(ActivityThread.java:7843)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at java.lang.reflect.Method.invoke(Native Method)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:548)
+04-20 10:10:44.331 W/GrowthKit( 4720): 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1003)
+04-20 10:10:45.052 W/PackageManager(22953): User 0 is not ready. Restore at install didn't take place.
+04-20 10:10:45.053 E/installd(  845): Couldn't opendir /data/app/vmdl1141577614.tmp: No such file or directory
+04-20 10:10:45.054 E/installd(  845): Failed to delete /data/app/vmdl1141577614.tmp: No such file or directory
+04-20 10:10:45.055 W/ProcessStats(22953): Tracking association SourceState{a6efe73 system/1000 BTopFgs #63375} whose proc state 2 is better than process ProcessState{2bb9130 com.browserstack.reversetether/10244 pkg=com.browserstack.reversetether} proc state 3 (479 skipped)
+04-20 10:10:45.060 W/SHANNON_IMS(23397): 6155 [RULE] imsEnabled: false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isImsEnabled:92)
+04-20 10:10:45.061 W/SHANNON_IMS(23397): 6156 [RULE] VOC is NOT ready, isWifiConnectionEnabled() is false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isVocReady:69)
+04-20 10:10:45.079 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.packageinstaller/com.android.packageinstaller.PackageInstalledReceiver
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.android.vending/com.google.android.finsky.packagemonitor.impl.PackageMonitorReceiverImpl$RegisteredReceiver
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.android.vending/com.google.android.finsky.packagemonitor.backgroundimpl.BackgroundPackageMonitorReceiverImpl$RegisteredReceiver
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.gms/.chimera.GmsIntentOperationService$PersistentTrustedReceiver
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.gms/.games.chimera.GamesSystemBroadcastReceiverProxy
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.gms/.gass.chimera.PackageChangeBroadcastReceiver
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.googlequicksearchbox/com.google.android.apps.gsa.googlequicksearchbox.GelStubAppWatcher
+04-20 10:10:45.100 W/BroadcastQueue(22953): Background execution not allowed: receiving Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 (has extras) } to com.google.android.ims/.receivers.RcsAutoStartReceiver
+04-20 10:10:45.131 W/GCM     (14935): Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+04-20 10:10:45.136 W/NetworkScheduler(14935): Unexpected forwarded intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package:com.tbtechs.focusflow flg=0x4000010 pkg=com.google.android.gms cmp=com.google.android.gms/.chimera.PersistentIntentOperationService (has extras) }
+04-20 10:10:45.141 E/CellBroadcastUtils(23448): getDefaultCellBroadcastReceiverPackageName: no package found
+04-20 10:10:45.144 E/ackageinstalle( 5546): Not starting debugger since process cannot load the jdwp agent.
+04-20 10:10:45.146 E/PhoneInterfaceManager(23448): [PhoneIntfMgr] getCarrierPackageNamesForIntentAndPhone: No UICC
+04-20 10:10:45.147 E/VvmPkgInstalledRcvr(23448): cannot create TelephonyManager from ComponentInfo{com.android.phone/com.android.services.telephony.TelephonyConnectionService}, ***, UserHandle{0}
+04-20 10:10:45.152 W/Dck     (15236): Dck module not eligible for asynchronous downloading [CONTEXT service_id=289 ]
+04-20 10:10:45.166 E/VerityUtils(22953): Failed to measure fs-verity, errno 1: /data/app/~~2Kf1nsxLmT_OGDSvekAVhw==/com.tbtechs.focusflow-Nsjkk1H6l6UPcMJf_MGWYQ==/base.apk
+04-20 10:10:45.255 W/Looper  (22953): Slow delivery took 201ms android.fg h=android.os.Handler c=<recycled PooledLambda@1203b42> m=0
+04-20 10:10:45.288 E/PhoneInterfaceManager(23448): [PhoneIntfMgr] getCarrierPackageNamesForIntentAndPhone: No UICC
+04-20 10:10:45.311 W/PackageManager(22953): Failed registering loading progress callback. Package is fully loaded.
+04-20 10:10:45.325 E/CellBroadcastUtils(23448): getDefaultCellBroadcastReceiverPackageName: no package found
+04-20 10:10:45.330 E/PhoneInterfaceManager(23448): [PhoneIntfMgr] getCarrierPackageNamesForIntentAndPhone: No UICC
+04-20 10:10:45.428 W/Looper  (22953): Slow dispatch took 108ms main h=android.app.ActivityThread$H c=android.app.LoadedApk$ReceiverDispatcher$Args$$ExternalSyntheticLambda0@e347107 m=0
+04-20 10:10:45.431 W/Looper  (22953): Slow dispatch took 117ms android.fg h=android.os.Handler c=<recycled PooledLambda@25a7da0> m=0
+04-20 10:10:45.464 W/Looper  (22953): Drained
+04-20 10:10:45.465 W/System  (22953): A resource failed to call close.
+04-20 10:10:45.539 W/ActivityTaskManager(22953): Can't find TaskDisplayArea to determine support for multi window. Task id=282 attached=false
+04-20 10:10:45.640 W/OomAdjuster(22953): Fallback pre-set sched group to default: java.lang.RuntimeException: Unknown error
+04-20 10:10:45.658 W/VoiceInteractionManager(22953): stopRecognition() called with a different callback thanstartRecognition()
+04-20 10:10:45.658 W/SoundTriggerHelper(22953): No model exists for given keyphrase Id 101
+04-20 10:10:45.659 W/AlwaysOnHotwordDetector(27190): stopRecognition() failed with error code -2147483648
+04-20 10:10:45.782 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.787 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.827 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.827 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.867 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.868 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:45.926 W/FirebaseApp( 5669): Default FirebaseApp failed to initialize because no default options were found. This usually means that com.google.gms:google-services was not applied to your gradle project.
+04-20 10:10:45.940 W/SoLoader( 5669): Initializing SoLoader: 0
+04-20 10:10:45.941 W/SoLoader( 5669): Recording new base apk path: /data/app/~~2Kf1nsxLmT_OGDSvekAVhw==/com.tbtechs.focusflow-Nsjkk1H6l6UPcMJf_MGWYQ==/base.apk
+04-20 10:10:45.941 W/SoLoader( 5669): Previously recorded 0 base apk paths.
+04-20 10:10:45.960 W/SoLoader( 5669): SoLoader initialized: 8
+04-20 10:10:46.006 W/techs.focusflo( 5669): Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (unsupported, reflection, allowed)
+04-20 10:10:46.048 W/SoLoader( 5669): SoLoader already initialized
+04-20 10:10:46.053 W/SoLoader( 5669): SoLoader already initialized
+04-20 10:10:46.073 W/ServiceManager(22953): Permission failure: android.permission.HIGH_SAMPLING_RATE_SENSORS from uid=10265 pid=5669
+04-20 10:10:46.076 W/ServiceManager(22953): Permission failure: android.permission.HIGH_SAMPLING_RATE_SENSORS from uid=10265 pid=5669
+04-20 10:10:46.076 W/ServiceManager(22953): Permission failure: android.permission.HIGH_SAMPLING_RATE_SENSORS from uid=10265 pid=5669
+04-20 10:10:46.109 E/unknown:ReactNative( 5669): Got non-success http code from packager when requesting status: 404
+04-20 10:10:46.109 W/unknown:ReconnectingWebSocket( 5669): Couldn't connect to "ws://localhost:8081/message?device=Pixel%206%20-%2012%20-%20API%2031&app=com.tbtechs.focusflow&clientid=BridgeDevSupportManager", will silently retry
+04-20 10:10:46.117 W/unknown:ReactNative( 5669): Packager connection already open, nooping.
+04-20 10:10:46.124 W/ServiceManager(  461): Permission failure: android.permission.ACCESS_SURFACE_FLINGER from uid=10265 pid=5669
+04-20 10:10:46.124 W/ServiceManager(  461): Permission failure: android.permission.ROTATE_SURFACE_FLINGER from uid=10265 pid=5669
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): Exception in native call
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): java.lang.RuntimeException: Unable to load script.
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): Make sure you're running Metro or that your bundle 'index.android.bundle' is packaged correctly for release.
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): The device must either be USB connected (with bundler set to "localhost:8081") or be on the same Wi-Fi network as your computer (with bundler set to your computer IP) to connect to Metro.
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): If you're using USB on a physical device, make sure you also run this command:
+04-20 10:10:46.256 E/unknown:ReactNative( 5669):   adb reverse tcp:8081 tcp:8081
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.bridge.CatalystInstanceImpl.jniLoadScriptFromAssets(Native Method)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.bridge.CatalystInstanceImpl.loadScriptFromAssets(CatalystInstanceImpl.java:245)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.bridge.JSBundleLoader$Companion$createAssetLoader$1.loadScript(JSBundleLoader.kt:33)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.bridge.CatalystInstanceImpl.runJSBundle(CatalystInstanceImpl.java:274)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.ReactInstanceManager.createReactContext(ReactInstanceManager.java:1525)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.ReactInstanceManager.lambda$runCreateReactContextOnNewThread$2(ReactInstanceManager.java:1222)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.ReactInstanceManager.$r8$lambda$PrBhihCbbAFk4ZReAALGanVLCyc(Unknown Source:0)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at com.facebook.react.ReactInstanceManager$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+04-20 10:10:46.256 E/unknown:ReactNative( 5669): 	at java.lang.Thread.run(Thread.java:920)
+04-20 10:10:47.101 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.101 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.126 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.127 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.152 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.153 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.293 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.293 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.318 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.318 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.333 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:47.334 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.236 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.236 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.266 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.266 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.291 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.291 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.308 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.308 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.347 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.347 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.386 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.387 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.405 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:48.405 W/UriGrantsManagerService(22953): No permission grants found for com.google.android.apps.photos
+04-20 10:10:49.058 W/send_side_bandwidth_estimation.cc(28482): (line 619): Estimated available bandwidth 512439 bps is below configured min bitrate 3000 kbps.
+04-20 10:10:50.669 W/AssistantConfig( 3629): appIntegrationDataInBase64 is null
+04-20 10:10:50.680 E/AssistantConnector( 3629): Couldn't read whether gRPC is supported from public value
+04-20 10:10:50.680 E/AssistantConnector( 3629): java.lang.IllegalStateException: Failed to query to AGSA.
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at amdj.call(PG:16)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at aypl.call(PG:2)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at bcic.c(PG:1)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at bchf.run(PG:4)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at bcid.run(PG:1)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+04-20 10:10:50.680 E/AssistantConnector( 3629): 	at java.lang.Thread.run(Thread.java:920)
+04-20 10:10:50.689 W/BugleRcsEngine( 3629): [190] alod.d: (Sim): Unexpected action: android.intent.action.ACTION_DEFAULT_VOICE_SUBSCRIPTION_CHANGED
+04-20 10:10:50.689 W/BugleRcsEngine( 3629): [189] alod.d: (Sim): Unexpected action: android.intent.action.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED
+04-20 10:10:50.690 W/BugleRcsEngine( 3629): [164] alod.a: (Sim): process intent: android.intent.action.SIM_STATE_CHANGED
+04-20 10:10:50.691 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:50.695 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.696 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.696 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.697 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.698 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.701 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.702 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.718 W/CarrierServices(23835): [66] cqi.c: No config URL. RCS will be disabled!
+04-20 10:10:50.722 W/CarrierServices(23835): [54] cqi.c: No config URL. RCS will be disabled!
+04-20 10:10:50.755 W/AssistantConfig( 3629): appIntegrationDataInBase64 is null
+04-20 10:10:50.757 W/Bugle   ( 3629): AssistantIntegrationStartupTask: Error getting assistant availability.
+04-20 10:10:50.757 W/Bugle   ( 3629): java.lang.IllegalStateException: Failed to query to AGSA.
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at amdj.call(PG:16)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at aypl.call(PG:2)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at bcic.c(PG:1)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at bchf.run(PG:4)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at bcid.run(PG:1)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+04-20 10:10:50.757 W/Bugle   ( 3629): 	at java.lang.Thread.run(Thread.java:920)
+04-20 10:10:50.801 W/BugleAction( 3629): Null config in BugleSharedPrefs
+04-20 10:10:50.801 W/BugleAction( 3629): Failed to get msisdn from Bugle
+04-20 10:10:50.801 W/BugleAction( 3629): Failed to get msisdn from RcsProfileService
+04-20 10:10:50.801 W/BugleAction( 3629): awmw: Jibe SDK Service not available. Is the Jibe SDK service running? Did you call connect() and wait for the notification before calling an API function?
+04-20 10:10:50.801 W/BugleAction( 3629): 	at awmp.b(PG:2)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at com.google.android.rcs.client.profile.RcsProfileService.g(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at com.google.android.rcs.client.profile.RcsProfileService.getMsisdn(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at utg.F(PG:12)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at tmz.b(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at pzo.d(PG:4)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at pzk.run(PG:5)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at aypj.run(PG:2)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:462)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at bcic.c(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at bchf.run(PG:4)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at bcid.run(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at aosz.run(PG:1)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at aosl.run(PG:2)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at aorz.run(PG:2)
+04-20 10:10:50.801 W/BugleAction( 3629): 	at java.lang.Thread.run(Thread.java:920)
+04-20 10:10:50.801 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:50.801 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:50.803 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:50.803 W/Bugle   ( 3629): SubscriptionUtilsAsOfLMR1: getSelfRawNumber: subInfo is null for subscription{id:-1}
+04-20 10:10:50.804 W/BugleAction( 3629): No default number, returning empty msisdn
+04-20 10:10:50.804 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.805 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:50.807 W/BugleAction( 3629): No default number, returning empty msisdn
+04-20 10:10:50.807 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:50.810 W/BugleNetwork( 3629): RcsMsisdnAccessor: Failed to access Rcs msisdn. subId: -2
+04-20 10:10:50.811 W/BugleEtouffee( 3629): E2eeStartupTask: Skip prekey checking because MSISDN is empty.
+04-20 10:10:50.863 W/WearableService(14935): onGetService: Wear is not available on this device.
+04-20 10:10:50.987 W/BugleRcsEngine( 3629): [157] akyy.h: RcsProvisioningManager: ProvisioningEngineAdapter not found for SIM redacted-pii:sim_id[0-chars]
+04-20 10:10:51.000 W/BugleRcsEngine( 3629): [171] alcv.a: No config URL. RCS will be disabled!
+04-20 10:10:51.013 W/BugleAction( 3629): Null config in BugleSharedPrefs
+04-20 10:10:51.013 W/BugleAction( 3629): Failed to get msisdn from Bugle
+04-20 10:10:51.014 W/BugleAction( 3629): Failed to get msisdn from RcsProfileService
+04-20 10:10:51.014 W/BugleAction( 3629): awmw: Jibe SDK Service not available. Is the Jibe SDK service running? Did you call connect() and wait for the notification before calling an API function?
+04-20 10:10:51.014 W/BugleAction( 3629): 	at awmp.b(PG:2)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at com.google.android.rcs.client.profile.RcsProfileService.g(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at com.google.android.rcs.client.profile.RcsProfileService.getMsisdn(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at utg.F(PG:12)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at tmz.b(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at tmx.call(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at ayqv.a(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at aypm.a(PG:2)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at bcib.c(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at bchf.run(PG:4)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at bcid.run(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at aosz.run(PG:1)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at aosl.run(PG:2)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at aory.run(PG:3)
+04-20 10:10:51.014 W/BugleAction( 3629): 	at java.lang.Thread.run(Thread.java:920)
+04-20 10:10:51.023 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:51.024 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:51.025 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:51.026 W/Bugle   ( 3629): SubscriptionUtilsAsOfLMR1: getSelfRawNumber: subInfo is null for subscription{id:-1}
+04-20 10:10:51.026 W/BugleAction( 3629): No default number, returning empty msisdn
+04-20 10:10:51.026 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:51.026 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -1
+04-20 10:10:51.030 W/BugleAction( 3629): No default number, returning empty msisdn
+04-20 10:10:51.030 W/Bugle   ( 3629): SubscriptionMetadataUtils get: invalid subId = -2
+04-20 10:10:51.031 W/BugleNetwork( 3629): RcsMsisdnAccessor: Failed to access Rcs msisdn. subId: -2
+04-20 10:10:51.038 W/CarrierServices(23835): [66] cqi.c: No config URL. RCS will be disabled!
+04-20 10:10:52.549 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:53.529 W/turn_port.cc(28482): (line 545): Port[edc8dc10:audio:1:0:relay:Net[tun0:10.0.0.x/32:VPN/Wifi:id=3]]: Connection with server failed with error: 0
+04-20 10:10:53.684 W/turn_port.cc(28482): (line 545): Port[edc8f810:audio:1:0:relay:Net[tun0:10.0.0.x/32:VPN/Wifi:id=3]]: Connection with server failed with error: 0
+04-20 10:10:54.014 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:55.019 W/SHANNON_IMS(23397): 6161 [RULE] imsEnabled: false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isImsEnabled:92)
+04-20 10:10:55.019 W/SHANNON_IMS(23397): 6162 [RULE] VOC is NOT ready, isWifiConnectionEnabled() is false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isVocReady:69)
+04-20 10:10:55.253 E/WifiHAL (  737): In GetWakeReasonCountCommand::handleResponse
+04-20 10:10:55.431 W/ProcessStats(22953): Tracking association SourceState{a6efe73 system/1000 BTopFgs #63645} whose proc state 2 is better than process ProcessState{2bb9130 com.browserstack.reversetether/10244 pkg=com.browserstack.reversetether} proc state 3 (211 skipped)
+04-20 10:10:55.547 W/ActivityTaskManager(22953): Launch timeout has expired, giving up wake lock!
+04-20 10:10:55.716 W/System  (22953): A resource failed to call release.
+04-20 10:10:57.534 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:58.532 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:10:59.580 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:11:01.078 W/rtp_rtcp_impl2.cc(28482): (line 801): BUGBUG: Task queue scheduled delayed call too early.
+04-20 10:11:04.903 W/send_side_bandwidth_estimation.cc(28482): (line 619): Estimated available bandwidth 121387 bps is below configured min bitrate 3000 kbps.
+04-20 10:11:05.020 W/SHANNON_IMS(23397): 6167 [RULE] imsEnabled: false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isImsEnabled:92)
+04-20 10:11:05.020 W/SHANNON_IMS(23397): 6168 [RULE] VOC is NOT ready, isWifiConnectionEnabled() is false [WiFiConnectivity  STATE:trueSLID:1 ] (WiFiConnectivity%isVocReady:69)
+04-20 10:11:05.537 W/ProcessStats(22953): Tracking association SourceState{a6efe73 system/1000 BTopFgs #63737} whose proc state 2 is better than process ProcessState{2bb9130 com.browserstack.reversetether/10244 pkg=com.browserstack.reversetether} proc state 3 (150 skipped)
+04-20 10:11:06.514 W/Settings(14935): Setting airplane_mode_on has moved from android.provider.Settings.System to android.provider.Settings.Global, returning read-only value.

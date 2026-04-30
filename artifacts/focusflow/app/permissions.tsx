@@ -338,7 +338,7 @@ export default function PermissionsScreen() {
             <Text style={[styles.lockedBody, { color: theme.textSecondary }]}>
               {isFocusing
                 ? 'Permission settings are disabled while a focus session is running.'
-                : 'Permission settings are disabled while a block schedule is active.'}
+                : 'Permission settings are disabled while a block batch is active.'}
               {'\n\n'}
               Changing permissions during an active block could bypass app blocking — stop the block first to make changes.
             </Text>

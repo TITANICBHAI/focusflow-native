@@ -56,9 +56,10 @@ export async function startFocusMode(
   await dbStartFocusSession(session);
 
   const nextTask = getUpcomingTask([task]);
+  const startMs = new Date(task.startTime).getTime();
   const endMs = new Date(task.endTime).getTime();
 
-  await ForegroundServiceModule.startService(task.id, task.title, endMs, nextTask?.title ?? null);
+  await ForegroundServiceModule.startService(task.id, task.title, startMs, endMs, nextTask?.title ?? null);
   await ForegroundServiceModule.requestBatteryOptimizationExemption();
 
   // Send the user to the home screen so focus mode starts with a clean slate,
@@ -72,9 +73,14 @@ export async function startFocusMode(
   //   • BootReceiver can restart the service after a reboot
   await SharedPrefsModule.setFocusActive(true);
   await SharedPrefsModule.setActiveTask(task.id, task.title, endMs, nextTask?.title ?? null);
+  // Tint the home-screen widget with the task's accent color.
+  await SharedPrefsModule.setActiveTaskColor(task.color ?? '');
   // Write the allowed-list so the AccessibilityService knows which apps to permit.
+  // An empty whitelist means "block all during focus" — we pass a sentinel package
+  // name that will never be installed so the Kotlin service denies all foreground apps.
+  const filteredAllowed = session.allowedPackages.filter((p) => p.includes('.'));
   await SharedPrefsModule.setAllowedPackages(
-    session.allowedPackages.filter((p) => p.includes('.')),
+    filteredAllowed.length > 0 ? filteredAllowed : ['com.focusflow.internal.blockall'],
   );
 
   // App blocking is handled entirely by AppBlockerAccessibilityService (Kotlin).
@@ -99,6 +105,9 @@ export async function stopFocusMode(): Promise<void> {
   await ForegroundServiceModule.stopService();
   await SharedPrefsModule.setFocusActive(false);
   await SharedPrefsModule.setAllowedPackages([]);
+  // Clear the widget's active-task snapshot. The AppContext tick will re-populate
+  // it on the next pass if there's still a time-active task running.
+  await SharedPrefsModule.clearActiveTask();
   stopAndroidUsageMonitor();
 
   appStateSubscription?.remove();

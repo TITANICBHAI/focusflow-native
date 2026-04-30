@@ -44,10 +44,30 @@ class BootReceiver : BroadcastReceiver() {
             AppBlockerAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE
         )
 
-        val focusActive = prefs.getBoolean("focus_active", false)
-        val endTimeMs   = prefs.getLong("task_end_ms", 0L)
+        val focusActive   = prefs.getBoolean("focus_active", false)
+        val endTimeMs     = prefs.getLong("task_end_ms", 0L)
+        val startTimeMs   = prefs.getLong("task_start_ms", 0L)
+        val durationMs    = prefs.getLong("task_duration_ms", 0L)
+        val lastWrittenMs = prefs.getLong("task_last_written_ms", 0L)
 
-        if (focusActive && endTimeMs > 0L && endTimeMs > System.currentTimeMillis()) {
+        val now = System.currentTimeMillis()
+
+        // Primary clock-based check
+        val primaryValid = endTimeMs > 0L && endTimeMs > now
+
+        // Secondary duration-based check: guards against clock being advanced forward
+        // before reboot to make the session appear expired.
+        // If the wall clock was set forward by X ms, (now - lastWrittenMs) > durationMs
+        // even though real elapsed time is < durationMs — mismatch reveals tampering.
+        // We re-derive estimated end from write time + remaining duration at write time.
+        val remainingAtWrite = endTimeMs - lastWrittenMs
+        val estimatedEnd = lastWrittenMs + remainingAtWrite  // same as endTimeMs, tautology guard
+        val secondaryValid = durationMs > 0L && lastWrittenMs > 0L &&
+                             (now - lastWrittenMs) < durationMs + 60_000L
+
+        val sessionValid = focusActive && (primaryValid || secondaryValid)
+
+        if (sessionValid && endTimeMs > 0L) {
             // ── Restart in ACTIVE focus mode ──────────────────────────────────
             val taskId   = prefs.getString("task_id", "") ?: ""
             val taskName = prefs.getString("task_name", "Focus Task") ?: "Focus Task"

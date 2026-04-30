@@ -55,6 +55,7 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
   const { theme } = useTheme();
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [entriesMap, setEntriesMap] = useState<Map<string, DailyAllowanceEntry>>(new Map());
+  const [originalPkgs, setOriginalPkgs] = useState<Set<string>>(new Set());
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,7 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
     const map = new Map<string, DailyAllowanceEntry>();
     for (const e of selectedEntries) map.set(e.packageName, { ...e });
     setEntriesMap(map);
+    setOriginalPkgs(new Set(selectedEntries.map((e) => e.packageName)));
     setExpandedPkg(null);
     setSearch('');
     if (apps.length === 0) {
@@ -84,11 +86,13 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
     );
   }, [apps, search]);
 
+  const isEntryLocked = useCallback((pkg: string) => locked && originalPkgs.has(pkg), [locked, originalPkgs]);
+
   const toggle = useCallback((pkg: string) => {
     setEntriesMap((prev) => {
       const next = new Map(prev);
       if (next.has(pkg)) {
-        if (locked) return next;
+        if (locked && originalPkgs.has(pkg)) return next;
         next.delete(pkg);
         setExpandedPkg((ep) => (ep === pkg ? null : ep));
       } else {
@@ -97,7 +101,7 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
       }
       return next;
     });
-  }, [locked]);
+  }, [locked, originalPkgs]);
 
   const updateEntry = useCallback((pkg: string, patch: Partial<DailyAllowanceEntry>) => {
     setEntriesMap((prev) => {
@@ -122,10 +126,11 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
 
   const renderModeConfig = (entry: DailyAllowanceEntry) => {
     const pkg = entry.packageName;
+    const entryLocked = isEntryLocked(pkg);
     return (
       <View style={[styles.configPanel, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
-        {/* Locked read-only notice */}
-        {locked && (
+        {/* Locked read-only notice — only shown for pre-existing entries */}
+        {entryLocked && (
           <View style={styles.lockNotice}>
             <Ionicons name="lock-closed-outline" size={12} color={COLORS.orange} />
             <Text style={styles.lockNoticeText}>Values locked while block is active</Text>
@@ -138,16 +143,16 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
           {ALL_MODES.map((m) => (
             <TouchableOpacity
               key={m}
-              style={[styles.modeBtn, { borderColor: theme.border }, entry.mode === m && styles.modeBtnActive, locked && styles.modeBtnDisabled]}
-              onPress={() => { if (!locked) updateEntry(pkg, { mode: m }); }}
-              activeOpacity={locked ? 1 : 0.7}
+              style={[styles.modeBtn, { borderColor: theme.border }, entry.mode === m && styles.modeBtnActive, entryLocked && styles.modeBtnDisabled]}
+              onPress={() => { if (!entryLocked) updateEntry(pkg, { mode: m }); }}
+              activeOpacity={entryLocked ? 1 : 0.7}
             >
               <Ionicons
                 name={MODE_ICONS[m]}
                 size={14}
-                color={entry.mode === m ? (locked ? COLORS.muted : COLORS.orange) : COLORS.muted}
+                color={entry.mode === m ? (entryLocked ? COLORS.muted : COLORS.orange) : COLORS.muted}
               />
-              <Text style={[styles.modeBtnText, entry.mode === m && !locked && styles.modeBtnTextActive]}>
+              <Text style={[styles.modeBtnText, entry.mode === m && !entryLocked && styles.modeBtnTextActive]}>
                 {MODE_LABELS[m]}
               </Text>
             </TouchableOpacity>
@@ -160,19 +165,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
             <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Opens per day</Text>
             <View style={styles.stepper}>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                onPress={() => { if (!locked) updateEntry(pkg, { countPerDay: Math.max(1, (entry.countPerDay ?? 1) - 1) }); }}
-                disabled={locked}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                onPress={() => { if (!entryLocked) updateEntry(pkg, { countPerDay: Math.max(1, (entry.countPerDay ?? 1) - 1) }); }}
+                disabled={entryLocked}
               >
-                <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                <Ionicons name="remove" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
-              <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.countPerDay ?? 1}</Text>
+              <Text style={[styles.stepValue, { color: entryLocked ? theme.muted : theme.text }]}>{entry.countPerDay ?? 1}</Text>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                onPress={() => { if (!locked) updateEntry(pkg, { countPerDay: Math.min(20, (entry.countPerDay ?? 1) + 1) }); }}
-                disabled={locked}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                onPress={() => { if (!entryLocked) updateEntry(pkg, { countPerDay: Math.min(20, (entry.countPerDay ?? 1) + 1) }); }}
+                disabled={entryLocked}
               >
-                <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                <Ionicons name="add" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
             </View>
           </View>
@@ -183,19 +188,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
             <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Total minutes per day</Text>
             <View style={styles.stepper}>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                onPress={() => { if (!locked) updateEntry(pkg, { budgetMinutes: Math.max(1, (entry.budgetMinutes ?? 30) - 5) }); }}
-                disabled={locked}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                onPress={() => { if (!entryLocked) updateEntry(pkg, { budgetMinutes: Math.max(1, (entry.budgetMinutes ?? 30) - 5) }); }}
+                disabled={entryLocked}
               >
-                <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                <Ionicons name="remove" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
-              <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.budgetMinutes ?? 30} min</Text>
+              <Text style={[styles.stepValue, { color: entryLocked ? theme.muted : theme.text }]}>{entry.budgetMinutes ?? 30} min</Text>
               <TouchableOpacity
-                style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                onPress={() => { if (!locked) updateEntry(pkg, { budgetMinutes: Math.min(480, (entry.budgetMinutes ?? 30) + 5) }); }}
-                disabled={locked}
+                style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                onPress={() => { if (!entryLocked) updateEntry(pkg, { budgetMinutes: Math.min(480, (entry.budgetMinutes ?? 30) + 5) }); }}
+                disabled={entryLocked}
               >
-                <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                <Ionicons name="add" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
               </TouchableOpacity>
             </View>
           </View>
@@ -207,19 +212,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
               <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Minutes allowed per window</Text>
               <View style={styles.stepper}>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                  onPress={() => { if (!locked) updateEntry(pkg, { intervalMinutes: Math.max(1, (entry.intervalMinutes ?? 5) - 1) }); }}
-                  disabled={locked}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!entryLocked) updateEntry(pkg, { intervalMinutes: Math.max(1, (entry.intervalMinutes ?? 5) - 1) }); }}
+                  disabled={entryLocked}
                 >
-                  <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                  <Ionicons name="remove" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
-                <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.intervalMinutes ?? 5} min</Text>
+                <Text style={[styles.stepValue, { color: entryLocked ? theme.muted : theme.text }]}>{entry.intervalMinutes ?? 5} min</Text>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                  onPress={() => { if (!locked) updateEntry(pkg, { intervalMinutes: Math.min(120, (entry.intervalMinutes ?? 5) + 1) }); }}
-                  disabled={locked}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!entryLocked) updateEntry(pkg, { intervalMinutes: Math.min(120, (entry.intervalMinutes ?? 5) + 1) }); }}
+                  disabled={entryLocked}
                 >
-                  <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                  <Ionicons name="add" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -227,19 +232,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
               <Text style={[styles.configFieldLabel, { color: theme.textSecondary }]}>Window size (hours)</Text>
               <View style={styles.stepper}>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                  onPress={() => { if (!locked) updateEntry(pkg, { intervalHours: Math.max(1, (entry.intervalHours ?? 1) - 1) }); }}
-                  disabled={locked}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!entryLocked) updateEntry(pkg, { intervalHours: Math.max(1, (entry.intervalHours ?? 1) - 1) }); }}
+                  disabled={entryLocked}
                 >
-                  <Ionicons name="remove" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                  <Ionicons name="remove" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
-                <Text style={[styles.stepValue, { color: locked ? theme.muted : theme.text }]}>{entry.intervalHours ?? 1} hr</Text>
+                <Text style={[styles.stepValue, { color: entryLocked ? theme.muted : theme.text }]}>{entry.intervalHours ?? 1} hr</Text>
                 <TouchableOpacity
-                  style={[styles.stepBtn, { backgroundColor: theme.card }, locked && styles.stepBtnDisabled]}
-                  onPress={() => { if (!locked) updateEntry(pkg, { intervalHours: Math.min(24, (entry.intervalHours ?? 1) + 1) }); }}
-                  disabled={locked}
+                  style={[styles.stepBtn, { backgroundColor: theme.card }, entryLocked && styles.stepBtnDisabled]}
+                  onPress={() => { if (!entryLocked) updateEntry(pkg, { intervalHours: Math.min(24, (entry.intervalHours ?? 1) + 1) }); }}
+                  disabled={entryLocked}
                 >
-                  <Ionicons name="add" size={16} color={locked ? COLORS.muted : COLORS.text} />
+                  <Ionicons name="add" size={16} color={entryLocked ? COLORS.muted : COLORS.text} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -353,7 +358,9 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
           <Ionicons name="information-circle-outline" size={14} color={COLORS.orange} />
           <Text style={styles.infoText}>
             Tap an app to enable its allowance. Tap again to expand its mode settings.{' '}
-            {!locked && <Text style={{ fontWeight: '800' }}>Long-press to remove.</Text>}
+            <Text style={{ fontWeight: '800' }}>Long-press to remove</Text>
+            {locked && <Text> (locked apps cannot be removed)</Text>}
+            <Text>.</Text>
           </Text>
         </View>
 
@@ -405,10 +412,19 @@ export function DailyAllowanceModal({ visible, selectedEntries, locked = false, 
             ) : null
           }
           ListFooterComponent={
-            entriesMap.size > 0 && !locked ? (
-              <TouchableOpacity style={styles.clearBtn} onPress={() => { setEntriesMap(new Map()); setExpandedPkg(null); }}>
+            entriesMap.size > 0 && Array.from(entriesMap.keys()).some((pkg) => !isEntryLocked(pkg)) ? (
+              <TouchableOpacity style={styles.clearBtn} onPress={() => {
+                setEntriesMap((prev) => {
+                  const next = new Map(prev);
+                  for (const pkg of Array.from(next.keys())) {
+                    if (!isEntryLocked(pkg)) next.delete(pkg);
+                  }
+                  return next;
+                });
+                setExpandedPkg(null);
+              }}>
                 <Ionicons name="close-circle-outline" size={16} color={COLORS.muted} />
-                <Text style={styles.clearText}>Clear All Daily Allowances</Text>
+                <Text style={styles.clearText}>{locked ? 'Clear New Allowances' : 'Clear All Daily Allowances'}</Text>
               </TouchableOpacity>
             ) : null
           }

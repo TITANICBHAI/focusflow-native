@@ -6,6 +6,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.tbtechs.focusflow.services.AppBlockerAccessibilityService
+import com.tbtechs.focusflow.widget.FocusFlowWidget
 
 /**
  * SharedPrefsModule
@@ -21,6 +22,7 @@ import com.tbtechs.focusflow.services.AppBlockerAccessibilityService
  *   - setAllowedPackages(packages)                    → Promise<null>
  *   - setActiveTask(name, endMs, nextName?)            → Promise<null>
  *   - setStandaloneBlock(active, packages, untilMs)   → Promise<null>
+ *   - setAlwaysBlockActive(active, packages)          → Promise<null>
  */
 class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -35,9 +37,30 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
         AppBlockerAccessibilityService.PREFS_NAME, android.content.Context.MODE_PRIVATE
     )
 
-    /** Tells the AccessibilityService and BootReceiver whether task focus mode is active. */
+    /**
+     * Tells the AccessibilityService and BootReceiver whether task focus mode is active.
+     *
+     * When deactivating (active = false) and a session PIN is set, [pinHash] must be
+     * the correct SHA-256 hex digest of the PIN.  Activation (active = true) never
+     * requires a PIN — only ending a session is gated.
+     *
+     * @param active  true = start tracking focus; false = clear focus
+     * @param pinHash SHA-256 hex of the PIN, or null/empty if no PIN is configured
+     */
     @ReactMethod
-    fun setFocusActive(active: Boolean, promise: Promise) {
+    fun setFocusActive(active: Boolean, pinHash: String?, promise: Promise) {
+        if (!active) {
+            val storedHash = prefs().getString(
+                com.tbtechs.focusflow.modules.SessionPinModule.PREF_PIN_HASH, null
+            )
+            if (!storedHash.isNullOrBlank()) {
+                if (pinHash.isNullOrBlank() ||
+                    !storedHash.equals(pinHash.lowercase(), ignoreCase = true)) {
+                    promise.reject("PIN_REQUIRED", "A session PIN is set — supply the correct PIN hash to end the session")
+                    return
+                }
+            }
+        }
         prefs().edit().putBoolean("focus_active", active).apply()
         promise.resolve(null)
     }
@@ -66,12 +89,111 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun setActiveTask(taskId: String, name: String, endMs: Double, nextName: String?, promise: Promise) {
-        prefs().edit()
+        val endEpoch   = endMs.toLong()
+        val now        = System.currentTimeMillis()
+        val durationMs = (endEpoch - now).coerceAtLeast(0L)
+        // Detect task identity change BEFORE we overwrite task_id — when the
+        // task id changes we must invalidate task_start_ms so the next
+        // setActiveTaskStartMs call writes the new task's real start time
+        // (instead of inheriting the previous task's start, which would make
+        // the widget progress bar jump to ~100% on back-to-back tasks).
+        val prevId = prefs().getString("task_id", "") ?: ""
+        val editor = prefs().edit()
             .putString("task_id", taskId)
             .putString("task_name", name)
-            .putLong("task_end_ms", endMs.toLong())
+            .putLong("task_end_ms", endEpoch)
             .putString("next_task_name", nextName?.takeIf { it.isNotBlank() })
+        if (prevId != taskId) {
+            editor.remove("task_start_ms")
+        }
+        editor
+            // Extra fields used by BootReceiver for clock-tamper detection:
+            // task_duration_ms: total session length from now
+            // task_last_written_ms: wall clock at write time — lets BootReceiver
+            //   check whether "elapsed since write" is credible vs claimed end time.
+            .putLong("task_duration_ms", durationMs)
+            .putLong("task_last_written_ms", now)
             .apply()
+        // Push fresh data to any home-screen widgets so they reflect the new task immediately.
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
+    /**
+     * Writes the active task's accent color (hex string, e.g. "#6366f1") so the
+     * widget can tint its header / sub-line to match the task. Pass an empty
+     * string to clear (widget falls back to the default indigo accent).
+     */
+    @ReactMethod
+    fun setActiveTaskColor(colorHex: String, promise: Promise) {
+        val editor = prefs().edit()
+        if (colorHex.isBlank()) {
+            editor.remove("task_color")
+        } else {
+            editor.putString("task_color", colorHex)
+        }
+        editor.apply()
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
+    /**
+     * Persists the wall-clock start time of the active task so the widget can
+     * compute progress without depending on ForegroundTaskService having been
+     * the one to start the session (i.e. for time-active tasks running outside
+     * focus mode). Pass 0 to clear.
+     *
+     * Idempotent: callers may invoke this on every state change — the value
+     * will only be written when it differs from what's already stored, so
+     * progress remains monotonic.
+     */
+    @ReactMethod
+    fun setActiveTaskStartMs(taskId: String, startMs: Double, promise: Promise) {
+        val current   = prefs().getString("task_id", "") ?: ""
+        val currStart = prefs().getLong("task_start_ms", 0L)
+        val newStart  = startMs.toLong()
+        // Only write when the task identity changed OR no start time exists yet.
+        // This prevents the widget's progress bar from jumping back to 0 when
+        // setActiveTaskStartMs is called repeatedly for the same task.
+        if (taskId != current || currStart <= 0L || newStart <= 0L) {
+            val editor = prefs().edit()
+            if (newStart <= 0L) {
+                editor.remove("task_start_ms")
+            } else {
+                editor.putLong("task_start_ms", newStart)
+            }
+            editor.apply()
+            FocusFlowWidget.pushWidgetUpdate(reactContext)
+        }
+        promise.resolve(null)
+    }
+
+    /**
+     * Clears the active task fields so the widget falls back to the standalone
+     * block / idle render. Does NOT touch focus_active or any block state.
+     */
+    @ReactMethod
+    fun clearActiveTask(promise: Promise) {
+        prefs().edit()
+            .remove("task_id")
+            .remove("task_name")
+            .remove("task_end_ms")
+            .remove("task_start_ms")
+            .remove("task_color")
+            .remove("next_task_name")
+            .apply()
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
+    /**
+     * Forces a widget redraw using whatever is currently in SharedPreferences.
+     * Called by the JS layer after standalone block changes, task add/edit/delete,
+     * task completion, etc.
+     */
+    @ReactMethod
+    fun pushWidgetUpdate(promise: Promise) {
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
         promise.resolve(null)
     }
 
@@ -95,6 +217,34 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
             .putBoolean("standalone_block_active", active)
             .putString("standalone_blocked_packages", json)
             .putLong("standalone_block_until_ms", untilMs.toLong())
+            .apply()
+        // Standalone block changes are independent of focus mode, so the widget
+        // needs an explicit nudge to re-read prefs and switch render mode.
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
+    /**
+     * Enables or disables always-on block enforcement — independent of any timed session.
+     *
+     * When active = true, AppBlockerAccessibilityService will enforce the provided
+     * package list even when no focus task or standalone block timer is running.
+     * Daily allowance rules are also enforced in always-on mode.
+     *
+     * This is separate from setStandaloneBlock — it does not start or stop any timed
+     * session, and the UI "locked" state is not affected (settings remain editable when
+     * no timed session is running, regardless of this flag).
+     *
+     * @param active    Whether always-on enforcement is enabled
+     * @param packages  ReadableArray of package names to always block
+     */
+    @ReactMethod
+    fun setAlwaysBlockActive(active: Boolean, packages: ReadableArray, promise: Promise) {
+        val list = (0 until packages.size()).map { "\"${packages.getString(it)}\"" }
+        val json = "[${list.joinToString(",")}]"
+        prefs().edit()
+            .putBoolean(AppBlockerAccessibilityService.PREF_ALWAYS_BLOCK, active)
+            .putString(AppBlockerAccessibilityService.PREF_ALWAYS_BLOCK_PKGS, json)
             .apply()
         promise.resolve(null)
     }
@@ -136,6 +286,38 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
         val json = "[${list.joinToString(",")}]"
         prefs().edit()
             .putString(AppBlockerAccessibilityService.PREF_BLOCKED_WORDS, json)
+            .apply()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun setSystemGuardEnabled(enabled: Boolean, promise: Promise) {
+        prefs().edit()
+            .putBoolean(AppBlockerAccessibilityService.PREF_SYSTEM_GUARD_ENABLED, enabled)
+            .apply()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun setBlockInstallActionsEnabled(enabled: Boolean, promise: Promise) {
+        prefs().edit()
+            .putBoolean(AppBlockerAccessibilityService.PREF_BLOCK_INSTALL_ACTIONS, enabled)
+            .apply()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun setBlockYoutubeShortsEnabled(enabled: Boolean, promise: Promise) {
+        prefs().edit()
+            .putBoolean(AppBlockerAccessibilityService.PREF_BLOCK_YT_SHORTS, enabled)
+            .apply()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun setBlockInstagramReelsEnabled(enabled: Boolean, promise: Promise) {
+        prefs().edit()
+            .putBoolean(AppBlockerAccessibilityService.PREF_BLOCK_IG_REELS, enabled)
             .apply()
         promise.resolve(null)
     }
@@ -183,6 +365,63 @@ class SharedPrefsModule(private val reactContext: ReactApplicationContext) :
      *
      * @param packageName  Specific package to reset, or null to reset all
      */
+
+    /**
+     * Generic key/value string getter — lets JS read arbitrary config keys from
+     * SharedPreferences. Used by AppContext to cross-check critical flags (e.g.
+     * privacy_accepted) that are backed up here in case the SQLite DB is wiped.
+     *
+     * Returns null (resolves with JS null) when the key is absent.
+     *
+     * @param key  SharedPreferences key
+     */
+    @ReactMethod
+    fun getString(key: String, promise: Promise) {
+        promise.resolve(prefs().getString(key, null))
+    }
+
+    /**
+     * Returns true when the installed APK was built with android:debuggable=true
+     * (debug variant). Unlike JS `__DEV__`, which is only true while running
+     * through the Metro bundler, this reflects the actual native build flavour —
+     * so debug-built APKs that run their prebundled JS still report true and
+     * the Diagnostics screen stays accessible.
+     */
+    @ReactMethod
+    fun isDebuggable(promise: Promise) {
+        val flags = reactContext.applicationInfo.flags
+        val debuggable = (flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        promise.resolve(debuggable)
+    }
+
+    /**
+     * Writes today's progress snapshot for the home-screen widget so it can
+     * show motivational context (e.g. "3/5 tasks · 45m today" with a streak
+     * chip) when no task is active. Triggers a widget redraw.
+     *
+     * @param tasksDone   Number of today's tasks completed
+     * @param tasksTotal  Total number of today's tasks
+     * @param focusMins   Total focus minutes today
+     * @param streakDays  Current consecutive-day streak
+     */
+    @ReactMethod
+    fun setDailyStats(
+        tasksDone: Int,
+        tasksTotal: Int,
+        focusMins: Int,
+        streakDays: Int,
+        promise: Promise,
+    ) {
+        prefs().edit()
+            .putInt("daily_tasks_done", tasksDone.coerceAtLeast(0))
+            .putInt("daily_tasks_total", tasksTotal.coerceAtLeast(0))
+            .putInt("daily_focus_mins", focusMins.coerceAtLeast(0))
+            .putInt("streak_days", streakDays.coerceAtLeast(0))
+            .apply()
+        FocusFlowWidget.pushWidgetUpdate(reactContext)
+        promise.resolve(null)
+    }
+
     @ReactMethod
     fun resetDailyAllowanceUsage(packageName: String?, promise: Promise) {
         val editor = prefs().edit()

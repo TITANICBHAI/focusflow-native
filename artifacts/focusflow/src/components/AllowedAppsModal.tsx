@@ -27,8 +27,9 @@ export function AllowedAppsModal({ visible, allowedPackages, onSave, onClose }: 
   return (
     <AppPickerSheet
       visible={visible}
-      title="Allowed Apps in Focus"
+      title="Allowed During Focus"
       initialSelected={allowedPackages}
+      noneWhenEmpty
       presets={presets}
       onSave={(packages) => { void onSave(packages); }}
       onSavePreset={(preset) => { void handleSavePreset(preset); }}

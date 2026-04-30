@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { withScreenErrorBoundary } from '@/components/withScreenErrorBoundary';
 import {
   View,
   Text,
@@ -14,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useApp } from '@/context/AppContext';
 import TaskCard from '@/components/TaskCard';
-import TimelineView from '@/components/TimelineView';
+
 import QuickAddModal from '@/components/QuickAddModal';
 import ExtendModal from '@/components/ExtendModal';
 import EditTaskModal from '@/components/EditTaskModal';
@@ -22,15 +23,14 @@ import TaskDetailModal from '@/components/TaskDetailModal';
 import { COLORS, FONT, RADIUS, SPACING, SHADOW } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
 import type { Task } from '@/data/types';
-import { formatTime } from '@/services/taskService';
+import { formatTime, isAwaitingDecision } from '@/services/taskService';
 
-type ViewMode = 'list' | 'timeline';
-
-export default function ScheduleScreen() {
+function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { state, todayTasks, activeTask, addTask, updateTask, deleteTask, completeTask, skipTask, extendTaskTime, startFocusMode, refreshTasks } = useApp();
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const { state, todayTasks, activeTask, currentTask, addTask, updateTask, deleteTask, completeTask, skipTask, extendTaskTime, startFocusMode, refreshTasks } = useApp();
+  const bannerTask = activeTask ?? currentTask;
+  const bannerAwaitingDecision = bannerTask ? isAwaitingDecision(bannerTask) : false;
   const [showAddModal, setShowAddModal] = useState(false);
   const [extendTaskId, setExtendTaskId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -87,98 +87,89 @@ export default function ScheduleScreen() {
             {completedCount}/{totalCount} tasks done
           </Text>
         </View>
-        <View style={styles.headerRight}>
-          {/* View toggle */}
-          <View style={[styles.viewToggle, { backgroundColor: theme.surface }]}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}
-              onPress={() => setViewMode('list')}
-            >
-              <Ionicons name="list" size={18} color={viewMode === 'list' ? '#fff' : COLORS.muted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, viewMode === 'timeline' && styles.toggleBtnActive]}
-              onPress={() => setViewMode('timeline')}
-            >
-              <Ionicons name="time-outline" size={18} color={viewMode === 'timeline' ? '#fff' : COLORS.muted} />
-            </TouchableOpacity>
-          </View>
-        </View>
       </View>
 
-      {/* Active Task Banner */}
-      {activeTask && (
+      {/* Active / Time's-up Banner — surfaces ended-but-undecided tasks too. */}
+      {bannerTask && (
         <TouchableOpacity
-          style={styles.activeBanner}
-          onPress={() => setSelectedTask(activeTask)}
+          style={[
+            styles.activeBanner,
+            bannerAwaitingDecision && { backgroundColor: COLORS.orange },
+          ]}
+          onPress={() => setSelectedTask(bannerTask)}
           activeOpacity={0.9}
         >
           <View style={styles.activePulse} />
           <View style={styles.activeBannerContent}>
-            <Text style={styles.activeBannerLabel}>NOW</Text>
+            <Text style={styles.activeBannerLabel}>{bannerAwaitingDecision ? "TIME'S UP" : 'NOW'}</Text>
             <Text style={styles.activeBannerTitle} numberOfLines={1}>
-              {activeTask.title}
+              {bannerTask.title}
             </Text>
             <Text style={styles.activeBannerTime}>
-              until {formatTime(activeTask.endTime)}
+              {bannerAwaitingDecision
+                ? `ended ${formatTime(bannerTask.endTime)} · pick one`
+                : `until ${formatTime(bannerTask.endTime)}`}
             </Text>
           </View>
           <View style={styles.activeBannerActions}>
             <TouchableOpacity
               style={styles.bannerAction}
-              onPress={() => handleCompleteTask(activeTask.id)}
+              onPress={() => handleCompleteTask(bannerTask.id)}
             >
               <Ionicons name="checkmark" size={16} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.bannerAction, { backgroundColor: 'rgba(255,255,255,0.15)' }]}
-              onPress={() => setExtendTaskId(activeTask.id)}
+              onPress={() => setExtendTaskId(bannerTask.id)}
             >
               <Ionicons name="add" size={16} color="#fff" />
             </TouchableOpacity>
-            {activeTask.focusMode && (
+            {bannerAwaitingDecision ? (
+              <TouchableOpacity
+                style={[styles.bannerAction, { backgroundColor: 'rgba(0,0,0,0.2)' }]}
+                onPress={() => handleSkipTask(bannerTask.id)}
+              >
+                <Ionicons name="close" size={16} color="#fff" />
+              </TouchableOpacity>
+            ) : bannerTask.focusMode ? (
               <TouchableOpacity
                 style={[styles.bannerAction, { backgroundColor: 'rgba(245,158,11,0.4)' }]}
-                onPress={() => startFocusMode(activeTask.id)}
+                onPress={() => startFocusMode(bannerTask.id)}
               >
                 <Ionicons name="shield-checkmark-outline" size={16} color="#fff" />
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
         </TouchableOpacity>
       )}
 
-      {/* Task list or timeline */}
-      {viewMode === 'list' ? (
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={[styles.listContent, { paddingBottom: 60 + insets.bottom + 80 }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        >
-          {todayTasks.length === 0 && (
-            <View style={styles.emptyState}>
-              <Ionicons name="calendar-outline" size={48} color={theme.border} />
-              <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks scheduled for today</Text>
-              <Text style={[styles.emptySubtext, { color: theme.border }]}>Tap + to add your first task</Text>
-            </View>
-          )}
+      {/* Task list */}
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 60 + insets.bottom + 80 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {todayTasks.length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={48} color={theme.border} />
+            <Text style={[styles.emptyText, { color: theme.muted }]}>No tasks scheduled for today</Text>
+            <Text style={[styles.emptySubtext, { color: theme.border }]}>Tap + to add your first task</Text>
+          </View>
+        )}
 
-          {todayTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              isActive={task.id === activeTask?.id}
-              onPress={(t) => setSelectedTask(t)}
-              onComplete={handleCompleteTask}
-              onSkip={handleSkipTask}
-              onExtend={(id) => setExtendTaskId(id)}
-              onStartFocus={startFocusMode}
-            />
-          ))}
-        </ScrollView>
-      ) : (
-        <TimelineView tasks={todayTasks} onTaskPress={setSelectedTask} />
-      )}
+        {todayTasks.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            isActive={task.id === activeTask?.id}
+            onPress={(t) => setSelectedTask(t)}
+            onComplete={handleCompleteTask}
+            onSkip={handleSkipTask}
+            onExtend={(id) => setExtendTaskId(id)}
+            onStartFocus={startFocusMode}
+          />
+        ))}
+      </ScrollView>
 
       {/* FAB */}
       <TouchableOpacity style={[styles.fab, { bottom: 60 + insets.bottom + 12 }]} onPress={() => setShowAddModal(true)}>
@@ -243,18 +234,6 @@ const styles = StyleSheet.create({
   },
   dateText: { fontSize: FONT.xl, fontWeight: '700', color: COLORS.text },
   subtitle: { fontSize: FONT.sm, color: COLORS.muted, marginTop: 2 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: 3,
-  },
-  toggleBtn: {
-    padding: SPACING.xs,
-    borderRadius: RADIUS.sm,
-  },
-  toggleBtnActive: { backgroundColor: COLORS.primary },
   activeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -303,4 +282,6 @@ const styles = StyleSheet.create({
     ...SHADOW.lg,
   },
 });
+
+export default withScreenErrorBoundary(ScheduleScreen, 'Schedule');
 

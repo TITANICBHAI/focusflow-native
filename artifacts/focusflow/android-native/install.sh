@@ -55,7 +55,7 @@ echo "   ✓ layout/ resources copied"
 
 # Drawable (widget background)
 mkdir -p "$RES_DIR/drawable"
-cp "$SCRIPT_DIR/app/src/main/res/drawable/widget_background.xml" "$RES_DIR/drawable/"
+cp "$SCRIPT_DIR/app/src/main/res/drawable/"*.xml "$RES_DIR/drawable/"
 echo "   ✓ drawable/ resources copied"
 
 echo "📝  Patching strings.xml..."
@@ -171,6 +171,20 @@ if ! grep -q "NotificationActionReceiver" "$MANIFEST"; then
   echo "   ✓ NotificationActionReceiver registered"
 else
   echo "   ✓ NotificationActionReceiver already registered"
+fi
+
+# ── TaskAlarmActivity ─────────────────────────────────────────────────────────
+# Full-screen alarm activity launched via setFullScreenIntent when a task ends.
+# showWhenLocked + turnScreenOn so it wakes the device and renders over the
+# lockscreen.  excludeFromRecents so the alarm UI never appears in the recents
+# list after dismissal.  noHistory so it is auto-removed once finished.
+# launchMode singleInstance so a re-trigger never stacks duplicate alarm screens.
+
+if ! grep -q "TaskAlarmActivity" "$MANIFEST"; then
+  sed -i 's|</application>|        <activity\n            android:name="com.tbtechs.focusflow.services.TaskAlarmActivity"\n            android:excludeFromRecents="true"\n            android:showWhenLocked="true"\n            android:turnScreenOn="true"\n            android:noHistory="true"\n            android:launchMode="singleInstance"\n            android:taskAffinity=""\n            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"\n            android:exported="false" />\n    </application>|' "$MANIFEST"
+  echo "   ✓ TaskAlarmActivity registered"
+else
+  echo "   ✓ TaskAlarmActivity already registered"
 fi
 
 echo ""

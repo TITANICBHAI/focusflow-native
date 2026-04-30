@@ -14,6 +14,12 @@ export interface InstalledApp {
   packageName: string;
   appName: string;
   iconBase64?: string;
+  /**
+   * true when this package is a registered Input Method Engine (keyboard).
+   * IME apps may include built-in browser/GIF search and should be considered
+   * for blocking even if they don't appear as a normal app-drawer entry.
+   */
+  isIme: boolean;
 }
 
 const InstalledApps = Platform.OS === 'android' ? NativeModules.InstalledApps : null;
