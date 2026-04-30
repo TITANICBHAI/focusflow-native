@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "f6HlWKgEEwcOlqRSGJbns"
+uri = "file://focusflow_restricted_settings_unlock.tar.gz"
+type = "unspecified"
+title = "FocusFlow — Restricted Settings Unlock (patch + files)"
