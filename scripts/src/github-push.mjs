@@ -14,7 +14,7 @@
 import { execSync } from 'child_process';
 import path from 'path';
 
-const REPO_DIR = '/tmp/FocusFlow';
+const REPO_DIR = '/home/runner/workspace/FocusFlow';
 const TARGET_REPO = 'TITANICBHAI/focusflow-native';
 const BRANCH = 'main';
 

@@ -25,3 +25,12 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## FocusFlow Android App
+
+The React Native / Expo source lives at `./FocusFlow/` (not a pnpm workspace package — it has its own package manager setup).
+
+- **Source**: `FocusFlow/artifacts/focusflow/`
+- **Git remotes**: `origin` → `TITANICBHAI/FocusFlow`, `native` → `TITANICBHAI/focusflow-native`
+- **Push script**: `scripts/src/github-push.mjs` — commits + force-pushes `FocusFlow/` HEAD to `focusflow-native` main
+- **Trigger**: run the "Push to GitHub" workflow

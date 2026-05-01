@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NodeSpy</string>
+    <string name="accessibility_service_label">NodeSpy Inspector</string>
+    <string name="accessibility_service_description">NodeSpy reads the UI node tree of foreground apps so you can inspect, select, and export element patterns for analysis.</string>
+</resources>

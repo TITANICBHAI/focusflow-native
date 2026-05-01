@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FocusFlow — Deep Work. Every Day.</title>
+  <meta name="description" content="FocusFlow is an Android productivity app that enforces focus sessions at the OS level, blocking distracting apps so you can do your best work." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #6C63FF;
+      --accent-dark: #4B44CC;
+      --bg: #0D0D14;
+      --surface: #16161F;
+      --surface2: #1E1E2E;
+      --text: #F0F0FF;
+      --muted: #9090B0;
+      --border: rgba(108, 99, 255, 0.2);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── Nav ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(13, 13, 20, 0.85);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+    .nav-links { display: flex; gap: 1.5rem; }
+    .nav-links a { color: var(--muted); text-decoration: none; font-size: 0.95rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text); }
+    @media (max-width: 720px) {
+      nav { flex-direction: column; gap: 1rem; }
+      .nav-links { flex-wrap: wrap; justify-content: center; gap: 0.9rem 1.2rem; }
+    }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 6rem 1.5rem 4rem;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -80px; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(108, 99, 255, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(108, 99, 255, 0.15);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      padding: 0.3rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+    }
+    h1 span { color: var(--accent); }
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-group { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: var(--accent);
+      color: #fff;
+      padding: 0.85rem 2rem;
+      border-radius: 10px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 1rem;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.85rem 2rem;
+      border-radius: 10px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 1rem;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .btn-ghost:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+    /* ── Feature grid ── */
+    section { padding: 5rem 1.5rem; }
+    .section-label {
+      text-align: center;
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+    }
+    h2 {
+      text-align: center;
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .section-sub {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 520px;
+      margin: 0 auto 3.5rem;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.25rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feature-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .feature-icon {
+      width: 44px; height: 44px;
+      background: rgba(108, 99, 255, 0.12);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.35rem;
+      margin-bottom: 1rem;
+    }
+    .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .feature-card p { color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
+
+    /* ── How it works ── */
+    .how-section { background: var(--surface); }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .step { text-align: center; }
+    .step-num {
+      width: 48px; height: 48px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 1.2rem;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1rem;
+    }
+    .step h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .step p { color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Tech stack ── */
+    .tech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      justify-content: center;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .tech-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    /* ── CTA banner ── */
+    .cta-section {
+      text-align: center;
+      background: linear-gradient(135deg, rgba(108,99,255,0.15) 0%, rgba(108,99,255,0.05) 100%);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .cta-section h2 { margin-bottom: 1rem; }
+    .cta-section p { color: var(--muted); margin-bottom: 2rem; }
+
+    /* ── Footer ── */
+    footer {
+      padding: 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <a class="nav-logo" href="#">
+      <div class="logo-icon">🎯</div>
+      FocusFlow
+    </a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="privacy-policy/">Privacy</a>
+      <a href="terms-of-service/">Terms</a>
+      <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="badge">Android App · Open Source</div>
+    <h1>Deep Work.<br /><span>Every Day.</span></h1>
+    <p class="hero-sub">FocusFlow blocks distracting apps at the OS level during your scheduled tasks — so your phone can't pull you out of the zone.</p>
+    <div class="cta-group">
+      <a class="btn-primary" href="https://github.com/TITANICBHAI/focusflow-android/releases">⬇ Download APK</a>
+      <a class="btn-ghost" href="https://github.com/TITANICBHAI/focusflow-android">View on GitHub →</a>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features">
+    <p class="section-label">What it does</p>
+    <h2>Built for real focus</h2>
+    <p class="section-sub">Six custom Kotlin native modules enforce focus at the OS level — not just the app level.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>OS-Level App Blocking</h3>
+        <p>Uses Android Accessibility Services to intercept and redirect any blacklisted app the moment it opens — no wiggle room.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📅</div>
+        <h3>Task Scheduling</h3>
+        <p>Schedule focus sessions with start/end times. FocusFlow automatically engages blocking when your session begins.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📱</div>
+        <h3>Per-Task Allowed Apps</h3>
+        <p>Each task carries its own allowed-app snapshot. Music for one task, nothing for another — fully configurable.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔔</div>
+        <h3>Foreground Notifications</h3>
+        <p>A persistent native notification shows time remaining and lets you complete, extend, or skip directly from the notification shade.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🏠</div>
+        <h3>Home Screen Widget</h3>
+        <p>See your active focus session and time remaining at a glance without unlocking your phone.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Standalone Block Mode</h3>
+        <p>Need to block apps right now without a scheduled task? Standalone mode lets you lock down your phone instantly.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" class="how-section">
+    <p class="section-label">How it works</p>
+    <h2>Simple to use</h2>
+    <p class="section-sub">Grant two permissions and you're set. FocusFlow handles everything else in the background.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Grant Permissions</h3>
+        <p>Enable Accessibility Service and Usage Stats access — both are needed to detect and block apps.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>Create a Task</h3>
+        <p>Add a task with a title, duration, and the apps you want blocked (or allow specific ones).</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Start Focusing</h3>
+        <p>Hit Start. FocusFlow activates OS-level blocking and keeps a countdown notification running.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h3>Complete &amp; Track</h3>
+        <p>Mark done from the notification or the app. Your focus history is saved automatically.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tech -->
+  <section>
+    <p class="section-label">Tech stack</p>
+    <h2>Built with modern tools</h2>
+    <p class="section-sub">React Native + Expo on the JS side, six custom Kotlin modules on the Android side.</p>
+    <div class="tech-grid">
+      <span class="tech-pill">Expo SDK 54</span>
+      <span class="tech-pill">React Native 0.76</span>
+      <span class="tech-pill">Expo Router</span>
+      <span class="tech-pill">TypeScript</span>
+      <span class="tech-pill">SQLite (expo-sqlite)</span>
+      <span class="tech-pill">Kotlin</span>
+      <span class="tech-pill">Android Accessibility Service</span>
+      <span class="tech-pill">Android Foreground Service</span>
+      <span class="tech-pill">AppWidget API</span>
+      <span class="tech-pill">UsageStats API</span>
+      <span class="tech-pill">expo-notifications</span>
+      <span class="tech-pill">Reanimated v4</span>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Ready to focus?</h2>
+    <p>Download the APK or build it yourself from source.</p>
+    <div class="cta-group">
+      <a class="btn-primary" href="https://github.com/TITANICBHAI/focusflow-android/releases">⬇ Download APK</a>
+      <a class="btn-ghost" href="https://github.com/TITANICBHAI/focusflow-android">View Source →</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>FocusFlow is open source under the MIT licence · <a href="privacy-policy/">Privacy Policy</a> · <a href="terms-of-service/">Terms of Service</a> · <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a></p>
+  </footer>
+
+</body>
+</html>
