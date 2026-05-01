@@ -14,9 +14,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import dayjs from 'dayjs';
 import { InstalledAppsModule, InstalledApp } from '@/native-modules/InstalledAppsModule';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
@@ -173,7 +171,7 @@ const APP_CATEGORIES: AppCategory[] = [
 interface Props {
   visible: boolean;
   blockedPackages: string[];
-  blockUntil: string | null;
+  blockUntil?: string | null;
   locked?: boolean;
   dailyAllowanceEntries?: DailyAllowanceEntry[];
   blockPresets?: BlockPreset[];
@@ -254,10 +252,6 @@ export function StandaloneBlockModal({
   const [presetNameInput, setPresetNameInput] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const defaultUntil = blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate();
-  const [untilDate, setUntilDate] = useState<Date>(defaultUntil);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -267,7 +261,6 @@ export function StandaloneBlockModal({
     setSearch('');
     setManualInput('');
     setShowAdvanced(false);
-    setUntilDate(blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate());
 
     // Derive manual packages from existing blocked list before apps load
     const existingManual = blockedPackages.filter(
@@ -462,14 +455,6 @@ export function StandaloneBlockModal({
       );
       return;
     }
-    if (untilDate.getTime() <= Date.now()) {
-      Alert.alert(
-        'Expiry in the Past',
-        'Please set a future date and time for the block to expire.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
     // Check that the required permissions are in place before committing the block.
     if (Platform.OS === 'android') {
       const hasAccessibility = await UsageStatsModule.hasAccessibilityPermission().catch(() => false);
@@ -496,7 +481,7 @@ export function StandaloneBlockModal({
     try {
       // Pass both block packages and daily allowance entries together so the
       // parent can save them atomically in a single state + DB update.
-      await onSave(Array.from(selected), untilDate.getTime(), Array.from(dailyEntriesMap.values()));
+      await onSave(Array.from(selected), null, Array.from(dailyEntriesMap.values()));
       onClose();
     } catch (e) {
       console.error('[StandaloneBlockModal] Failed to save', e);
@@ -525,30 +510,6 @@ export function StandaloneBlockModal({
         },
       ]
     );
-  };
-
-  const onDateChange = (_: DateTimePickerEvent, date?: Date) => {
-    setShowDatePicker(false);
-    if (date) {
-      const merged = dayjs(date)
-        .hour(untilDate.getHours())
-        .minute(untilDate.getMinutes())
-        .second(0)
-        .toDate();
-      setUntilDate(merged);
-    }
-  };
-
-  const onTimeChange = (_: DateTimePickerEvent, date?: Date) => {
-    setShowTimePicker(false);
-    if (date) {
-      const merged = dayjs(untilDate)
-        .hour(date.getHours())
-        .minute(date.getMinutes())
-        .second(0)
-        .toDate();
-      setUntilDate(merged);
-    }
   };
 
   const allowanceSummary = (entry: DailyAllowanceEntry) => {
@@ -706,85 +667,12 @@ export function StandaloneBlockModal({
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={[styles.title, { color: theme.text }]}>{locked ? '🔒 Block Active' : 'Block Schedule'}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Standalone Block</Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn} disabled={saving}>
             <Text style={[styles.saveText, saving && { opacity: 0.5 }]}>Save</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Active block banner */}
-        {locked && (
-          <View style={styles.lockedBanner}>
-            <Ionicons name="lock-closed-outline" size={14} color={COLORS.orange} />
-            <Text style={styles.lockedBannerText}>
-              Block is active — the expiry date is locked and blocked apps cannot be removed. You can still add more apps to the block.
-            </Text>
-          </View>
-        )}
-
-        {/* Expiry date/time pickers */}
-        <View style={[styles.expirySection, { backgroundColor: theme.card, borderColor: theme.border }, locked && styles.expirySectionLocked]}>
-          <Text style={[styles.expirySectionLabel, { color: theme.textSecondary }]}>
-            {locked ? 'BLOCK UNTIL (LOCKED)' : 'BLOCK UNTIL'}
-          </Text>
-          <View style={styles.expiryRow}>
-            <TouchableOpacity
-              style={[styles.expiryBtn, locked && styles.expiryBtnLocked]}
-              onPress={() => { if (!locked) setShowDatePicker(true); }}
-              activeOpacity={locked ? 1 : 0.7}
-            >
-              <Ionicons name={locked ? 'lock-closed-outline' : 'calendar-outline'} size={16} color={locked ? COLORS.muted : COLORS.primary} />
-              <Text style={[styles.expiryBtnText, locked && { color: COLORS.muted }]}>
-                {dayjs(untilDate).format('MMM D, YYYY')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.expiryBtn, locked && styles.expiryBtnLocked]}
-              onPress={() => { if (!locked) setShowTimePicker(true); }}
-              activeOpacity={locked ? 1 : 0.7}
-            >
-              <Ionicons name={locked ? 'lock-closed-outline' : 'time-outline'} size={16} color={locked ? COLORS.muted : COLORS.primary} />
-              <Text style={[styles.expiryBtnText, locked && { color: COLORS.muted }]}>
-                {dayjs(untilDate).format('h:mm A')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          {locked && (
-            <View style={styles.addTimeRow}>
-              <Text style={[styles.addTimeLabel, { color: theme.textSecondary }]}>Add time:</Text>
-              {[30, 60, 120, 240].map((mins) => (
-                <TouchableOpacity
-                  key={mins}
-                  style={[styles.addTimeBtn, { borderColor: COLORS.primary + '55' }]}
-                  onPress={() => setUntilDate((prev) => dayjs(prev).add(mins, 'minute').toDate())}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.addTimeBtnText, { color: COLORS.primary }]}>
-                    +{mins >= 60 ? `${mins / 60}h` : `${mins}m`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-
-        {showDatePicker && (
-          <DateTimePicker
-            value={untilDate}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            minimumDate={new Date()}
-            onChange={onDateChange}
-          />
-        )}
-        {showTimePicker && (
-          <DateTimePicker
-            value={untilDate}
-            mode="time"
-            display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-            onChange={onTimeChange}
-          />
-        )}
 
         <FlatList
           data={filtered}
@@ -1039,83 +927,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary,
     textAlign: 'right',
-  },
-  expirySection: {
-    backgroundColor: COLORS.card,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-    gap: SPACING.xs,
-  },
-  expirySectionLabel: {
-    fontSize: FONT.xs,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    color: COLORS.muted,
-  },
-  expiryRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  expiryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    backgroundColor: COLORS.primaryLight,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.lg,
-  },
-  expiryBtnText: {
-    fontSize: FONT.sm,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  expirySectionLocked: {
-    // no longer dim the whole section — user can still add time
-  },
-  expiryBtnLocked: {
-    backgroundColor: COLORS.border,
-  },
-  addTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    marginTop: SPACING.sm,
-    flexWrap: 'wrap',
-  },
-  addTimeLabel: {
-    fontSize: FONT.xs,
-    fontWeight: '500',
-    marginRight: 2,
-  },
-  addTimeBtn: {
-    borderWidth: 1,
-    borderRadius: RADIUS.sm,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-  },
-  addTimeBtnText: {
-    fontSize: FONT.sm,
-    fontWeight: '700',
-  },
-  lockedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    backgroundColor: COLORS.orange + '18',
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.orange,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-  },
-  lockedBannerText: {
-    flex: 1,
-    fontSize: FONT.xs,
-    color: COLORS.orange,
-    lineHeight: 16,
   },
   list: {
     paddingHorizontal: SPACING.lg,

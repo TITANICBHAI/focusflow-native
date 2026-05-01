@@ -145,6 +145,13 @@ export interface AppSettings {
    */
   alwaysOnEnforcementEnabled?: boolean;
   /**
+   * When true, the standalone block list is automatically merged into the
+   * session block list the moment the user starts a focus session (and on
+   * every live edit to the standalone list while a session is active).
+   * When false (default) the two lists are kept completely separate.
+   */
+  syncStandaloneToSession?: boolean;
+  /**
    * Highest streak milestone (in days) the user has already been congratulated
    * for. Used to detect new milestones (3, 7, 14, 30, 60, 90, 180, 365) and
    * trigger a one-time celebration modal on the next app open.

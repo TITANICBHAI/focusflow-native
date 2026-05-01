@@ -184,6 +184,17 @@ export default function BlockDefenseScreen() {
               value={settings.keepFocusActiveUntilTaskEnd ?? false}
               onValueChange={(v) => update({ keepFocusActiveUntilTaskEnd: v })}
               theme={theme}
+            />
+            <SwitchRow
+              label="Copy standalone list to focus sessions"
+              description={
+                (settings.syncStandaloneToSession ?? false)
+                  ? 'On — your standalone block list is automatically merged into every focus session as it starts'
+                  : 'Off — standalone block list and focus session block list are kept completely separate (default)'
+              }
+              value={settings.syncStandaloneToSession ?? false}
+              onValueChange={(v) => update({ syncStandaloneToSession: v })}
+              theme={theme}
               isLast
             />
           </View>
