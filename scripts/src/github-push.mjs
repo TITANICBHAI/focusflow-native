@@ -8,9 +8,9 @@ const TOKEN =
   process.env.GH_PAT ||
   process.env.PAT;
 const OWNER = 'TITANICBHAI';
-const REPO = 'FocusFlow';
+const REPO = 'focusflow-native';
 const BRANCH = 'main';
-const REPO_DIR = '/tmp/FocusFlow';
+const REPO_DIR = '/tmp/focusflow-native';
 const BASE = REPO_DIR;
 const CONCURRENCY = 4;
 const MAX_RETRIES = 6;
