@@ -1,202 +1,76 @@
-import { readFileSync, readdirSync, existsSync } from 'fs';
-import { join, relative } from 'path';
+#!/usr/bin/env node
+/**
+ * Push /tmp/FocusFlow → TITANICBHAI/focusflow-native via git.
+ *
+ * The script:
+ *  1. Stages all changes in /tmp/FocusFlow
+ *  2. Commits them (if anything is staged)
+ *  3. Ensures the remote "native" points to focusflow-native
+ *  4. Force-pushes main → focusflow-native
+ *
+ * Requires: GITHUB_PERSONAL_ACCESS_TOKEN env var
+ */
+
 import { execSync } from 'child_process';
+import path from 'path';
 
-const TOKEN =
-  process.env.GITHUB_PERSONAL_ACCESS_TOKEN ||
-  process.env.GITHUB_PAT ||
-  process.env.GH_PAT ||
-  process.env.PAT;
-const OWNER = 'TITANICBHAI';
-const REPO = 'focusflow-native';
+const REPO_DIR = '/tmp/FocusFlow';
+const TARGET_REPO = 'TITANICBHAI/focusflow-native';
 const BRANCH = 'main';
-const REPO_DIR = '/tmp/focusflow-native';
-const BASE = REPO_DIR;
-const CONCURRENCY = 4;
-const MAX_RETRIES = 6;
 
-const EXCLUDE_PATTERNS = [
-  /node_modules/,
-  /\/android\//,
-  /\.cache\//,
-  /\.local\//,
-  /\.expo/,
-  /\/dist\//,
-  /\/tmp\//,
-  /\/out-tsc\//,
-  /\.git\//,
-  /\.keystore$/,
-  /\.jks$/,
-  /credentials\.json$/,
-  /\.DS_Store$/,
-  /Thumbs\.db$/,
-  /\.tsbuildinfo$/,
-  /tbtechs-release\.keystore/,
-];
-
-const MUST_INCLUDE_PATTERNS = [
-  /^artifacts\/focusflow\/android-native\//,
-];
-
-function shouldExclude(filePath) {
-  const rel = relative(BASE, filePath);
-  if (MUST_INCLUDE_PATTERNS.some(p => p.test(rel))) return false;
-  // Only test against the relative path — testing the absolute path would
-  // incorrectly exclude every file when BASE itself lives under /tmp.
-  return EXCLUDE_PATTERNS.some(p => p.test(rel));
+const token = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+if (!token) {
+  console.error('ERROR: GITHUB_PERSONAL_ACCESS_TOKEN is not set.');
+  process.exit(1);
 }
 
-function collectFiles(dir, files = []) {
-  let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); }
-  catch { return files; }
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (shouldExclude(fullPath)) continue;
-    if (entry.isDirectory()) collectFiles(fullPath, files);
-    else files.push(fullPath);
-  }
-  return files;
+const remoteUrl = `https://x-access-token:${token}@github.com/${TARGET_REPO}.git`;
+
+function run(cmd, opts = {}) {
+  return execSync(cmd, { cwd: REPO_DIR, stdio: 'pipe', ...opts })
+    .toString()
+    .trim();
 }
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function ghFetch(path, method = 'GET', body = null) {
-  const opts = {
-    method,
-    headers: {
-      Authorization: `token ${TOKEN}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'focusflow-push-bot',
-      Accept: 'application/vnd.github+json',
-    },
-  };
-  if (body) opts.body = JSON.stringify(body);
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const resp = await fetch(`https://api.github.com${path}`, opts);
-    const txt = await resp.text();
-    if (resp.ok) return JSON.parse(txt);
-
-    const isRateLimited =
-      resp.status === 429 ||
-      (resp.status === 403 && /rate limit|abuse|secondary/i.test(txt));
-
-    if (isRateLimited && attempt < MAX_RETRIES) {
-      const retryAfter = parseInt(resp.headers.get('retry-after') || '0', 10);
-      const backoffMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(60_000, 1000 * 2 ** attempt);
-      await sleep(backoffMs);
-      continue;
-    }
-    throw new Error(`GitHub ${method} ${path} → ${resp.status}: ${txt.slice(0, 200)}`);
-  }
-  throw new Error(`GitHub ${method} ${path} → exhausted retries`);
+function runPrint(cmd) {
+  execSync(cmd, { cwd: REPO_DIR, stdio: 'inherit' });
 }
 
-async function createBlob(content, encoding) {
-  const data = await ghFetch(`/repos/${OWNER}/${REPO}/git/blobs`, 'POST', { content, encoding });
-  return data.sha;
+console.log(`\n=== FocusFlow → focusflow-native push ===\n`);
+console.log(`Source : ${REPO_DIR}`);
+console.log(`Target : https://github.com/${TARGET_REPO}`);
+console.log(`Branch : ${BRANCH}\n`);
+
+// Ensure git identity is configured (required for commits)
+run('git config user.email "focusflow-bot@replit.dev"');
+run('git config user.name "FocusFlow Bot"');
+
+// Stage all changes
+runPrint('git add -A');
+
+// Commit only if there is something to commit
+const status = run('git status --porcelain');
+if (status.length > 0) {
+  const date = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  runPrint(`git commit -m "chore: sync changes [${date}]"`);
+  console.log('Committed staged changes.\n');
+} else {
+  console.log('Nothing new to commit — pushing existing HEAD.\n');
 }
 
-async function processInBatches(items, concurrency, fn) {
-  const results = [];
-  for (let i = 0; i < items.length; i += concurrency) {
-    const batch = items.slice(i, i + concurrency);
-    const batchResults = await Promise.all(batch.map(fn));
-    results.push(...batchResults);
-    if (i % 50 === 0) console.log(`  Processed ${Math.min(i + concurrency, items.length)}/${items.length}`);
-  }
-  return results;
+// Ensure the "native" remote exists and points to the right URL
+let remotes = [];
+try {
+  remotes = run('git remote').split('\n').map((r) => r.trim());
+} catch {}
+
+if (remotes.includes('native')) {
+  run(`git remote set-url native ${remoteUrl}`);
+} else {
+  run(`git remote add native ${remoteUrl}`);
 }
 
-async function run() {
-  if (!TOKEN) {
-    throw new Error('Missing GitHub token. Add GITHUB_PERSONAL_ACCESS_TOKEN in Secrets.');
-  }
-
-  // Re-clone if /tmp/FocusFlow was wiped (ephemeral /tmp on Replit restarts)
-  if (!existsSync(REPO_DIR)) {
-    console.log(`${REPO_DIR} not found — cloning...`);
-    execSync(
-      `git clone https://x-access-token:${TOKEN}@github.com/${OWNER}/${REPO}.git ${REPO_DIR}`,
-      { stdio: 'inherit' }
-    );
-    console.log('Clone done.\n');
-  } else {
-    console.log(`Using existing checkout at ${REPO_DIR}\n`);
-  }
-
-  console.log('Collecting files...');
-  const allFiles = collectFiles(BASE);
-  console.log(`Found ${allFiles.length} files`);
-
-  const fileMetas = allFiles.map(fp => {
-    const rel = relative(BASE, fp);
-    let content, encoding;
-    try {
-      const buf = readFileSync(fp);
-      const isText = !buf.slice(0, 512).includes(0);
-      if (isText) { content = buf.toString('utf8'); encoding = 'utf-8'; }
-      else { content = buf.toString('base64'); encoding = 'base64'; }
-    } catch { return null; }
-    return { path: rel, content, encoding };
-  }).filter(Boolean);
-
-  console.log(`\nCreating ${fileMetas.length} blobs (batch size ${CONCURRENCY})...`);
-
-  const treeItems = [];
-  const failures = [];
-  await processInBatches(fileMetas, CONCURRENCY, async (meta) => {
-    try {
-      const sha = await createBlob(meta.content, meta.encoding);
-      treeItems.push({ path: meta.path, mode: '100644', type: 'blob', sha });
-    } catch (e) {
-      console.warn(`  SKIP: ${meta.path} — ${e.message.slice(0, 200)}`);
-      failures.push({ path: meta.path, message: e.message });
-    }
-  });
-
-  if (failures.length > 0) {
-    console.error(`\n${failures.length} file(s) failed — aborting:`);
-    for (const f of failures.slice(0, 20)) console.error(`  - ${f.path}`);
-    if (failures.length > 20) console.error(`  ... and ${failures.length - 20} more`);
-    process.exit(1);
-  }
-
-  console.log(`\nGetting current branch ref...`);
-  const refData = await ghFetch(`/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}`);
-  const latestSha = refData.object.sha;
-  console.log('Base commit:', latestSha);
-
-  const baseCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits/${latestSha}`);
-  let currentTreeSha = baseCommit.tree.sha;
-  const TREE_CHUNK = 100;
-  console.log(`Layering ${treeItems.length} entries in chunks of ${TREE_CHUNK}...`);
-  for (let i = 0; i < treeItems.length; i += TREE_CHUNK) {
-    const chunk = treeItems.slice(i, i + TREE_CHUNK);
-    const layered = await ghFetch(`/repos/${OWNER}/${REPO}/git/trees`, 'POST', {
-      base_tree: currentTreeSha,
-      tree: chunk,
-    });
-    currentTreeSha = layered.sha;
-    console.log(`  Layered ${Math.min(i + TREE_CHUNK, treeItems.length)}/${treeItems.length}`);
-  }
-
-  console.log('Committing...');
-  const newCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits`, 'POST', {
-    message: `chore: sync Replit workspace ${new Date().toISOString()}`,
-    tree: currentTreeSha,
-    parents: [latestSha],
-  });
-
-  console.log('Updating branch ref...');
-  await ghFetch(`/repos/${OWNER}/${REPO}/git/refs/heads/${BRANCH}`, 'PATCH', {
-    sha: newCommit.sha,
-    force: false,
-  });
-
-  console.log('\nDone!');
-  console.log(`https://github.com/${OWNER}/${REPO}/commit/${newCommit.sha}`);
-}
-
-run().catch(err => { console.error('FATAL:', err.message); process.exit(1); });
+// Push
+console.log(`Pushing to ${TARGET_REPO} …`);
+runPrint(`git push native HEAD:${BRANCH} --force`);
+console.log('\nDone. Code is live on focusflow-native.\n');

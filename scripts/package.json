@@ -4,17 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "hello": "tsx ./src/hello.ts",
     "github:push": "node ./src/github-push.mjs",
-    "generate:pdf": "node ./src/generate-competitive-analysis-pdf.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "devDependencies": {
-    "@types/node": "catalog:",
-    "tsx": "catalog:"
+    "generate:pdf": "node ./src/generate-competitive-analysis-pdf.mjs"
   },
   "dependencies": {
-    "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.7"
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2"
   }
 }
