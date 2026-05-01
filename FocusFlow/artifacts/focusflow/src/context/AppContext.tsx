@@ -613,12 +613,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Syncs standalone block state from settings into SharedPreferences.
-   * Clears the block if it has already expired.
+   *
+   * The block is now always-on (no expiry) — standaloneBlockUntil is kept for
+   * backwards-compat with any legacy records that still have a timestamp, but
+   * a null value means "block indefinitely", NOT "no block".
+   *
+   * Enforcement is disabled only when: no packages are selected, or the
+   * master switch (alwaysOnEnforcementEnabled) is explicitly false.
    */
   async function _syncStandaloneBlock(settings: AppSettings): Promise<void> {
     const { standaloneBlockPackages, standaloneBlockUntil } = settings;
     const packages = standaloneBlockPackages ?? [];
-    if (packages.length === 0 || !standaloneBlockUntil) {
+    const enforcementOn = settings.alwaysOnEnforcementEnabled !== false;
+
+    if (packages.length === 0 || !enforcementOn) {
       try {
         await SharedPrefsModule.setStandaloneBlock(false, [], 0);
       } catch (e) {
@@ -626,26 +634,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    const untilMs = new Date(standaloneBlockUntil).getTime();
-    if (untilMs <= Date.now()) {
-      // Timer expired: end the timed session but RETAIN the package list so
-      // always-on enforcement keeps blocking those apps 24/7. The user
-      // explicitly wipes the list via the "Clear list" action on the Focus tab
-      // / Standalone Block modal, never automatically.
-      try {
-        await SharedPrefsModule.setStandaloneBlock(false, packages, 0);
-      } catch (e) {
-        void logger.warn('AppContext', `expired standalone block clear failed: ${String(e)}`);
+
+    // Legacy: if a timed expiry was saved, honour it and clear when expired.
+    if (standaloneBlockUntil) {
+      const untilMs = new Date(standaloneBlockUntil).getTime();
+      if (untilMs <= Date.now()) {
+        // Expired — end the timed session but RETAIN the package list so
+        // always-on enforcement keeps blocking those apps 24/7.
+        try {
+          await SharedPrefsModule.setStandaloneBlock(false, packages, 0);
+        } catch (e) {
+          void logger.warn('AppContext', `expired standalone block clear failed: ${String(e)}`);
+        }
+        const cleared = { ...settings, standaloneBlockUntil: null };
+        await dbSaveSettings(cleared);
+        dispatch({ type: 'SET_SETTINGS', payload: cleared });
+        return;
       }
-      const cleared = { ...settings, standaloneBlockUntil: null };
-      await dbSaveSettings(cleared);
-      dispatch({ type: 'SET_SETTINGS', payload: cleared });
-    } else {
+      // Still within legacy timed window.
       try {
         await SharedPrefsModule.setStandaloneBlock(true, packages, untilMs);
       } catch (e) {
         void logger.warn('AppContext', `standalone block sync failed: ${String(e)}`);
       }
+      return;
+    }
+
+    // Always-on mode: no expiry (untilMs = 0 signals "indefinite" to native).
+    try {
+      await SharedPrefsModule.setStandaloneBlock(true, packages, 0);
+    } catch (e) {
+      void logger.warn('AppContext', `standalone block sync failed: ${String(e)}`);
     }
   }
 
@@ -1385,7 +1404,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     await dbSaveSettings(newSettings);
     dispatch({ type: 'SET_SETTINGS', payload: newSettings });
-    const active = packages.length > 0 && untilMs !== null && untilMs > Date.now();
+    // null untilMs = always-on (no expiry). Active whenever packages are selected.
+    const active = packages.length > 0 && (untilMs === null || untilMs > Date.now());
     await SharedPrefsModule.setStandaloneBlock(active, packages, untilMs ?? 0);
     // Always enforce the block list even without an active timed session.
     const allowanceEntries = newSettings.dailyAllowanceEntries ?? [];
@@ -1422,7 +1442,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     await dbSaveSettings(newSettings);
     dispatch({ type: 'SET_SETTINGS', payload: newSettings });
-    const active = packages.length > 0 && untilMs !== null && untilMs > Date.now();
+    // null untilMs = always-on (no expiry). Active whenever packages are selected.
+    const active = packages.length > 0 && (untilMs === null || untilMs > Date.now());
     await SharedPrefsModule.setStandaloneBlock(active, packages, untilMs ?? 0);
     await SharedPrefsModule.setDailyAllowanceConfig(allowanceEntries);
     // Always enforce both lists even without an active timed session.
