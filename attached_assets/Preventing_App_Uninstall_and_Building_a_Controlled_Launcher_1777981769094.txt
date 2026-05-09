@@ -1,0 +1,52 @@
+Preventing App Uninstall and Building a Controlled Launcher
+Audience: Mobile developers and IT administrators
+Tone: Practical, concise, and technical where needed
+
+Executive Summary
+-----------------
+Preventing an Android app from being uninstalled requires elevated privileges. The only reliable method is to enroll the device as a Device Owner (via Android Enterprise or MDM). This allows full control over app management, including uninstall prevention and system UI restrictions. A custom launcher can be used to control app visibility, but without Device Owner privileges, users can still bypass restrictions.
+
+Comparison of Approaches
+------------------------
+| Approach                  | Prevents Uninstall | Requires Device Owner/MDM | Pros                                               | Cons                                                  |
+|---------------------------|--------------------|----------------------------|----------------------------------------------------|--------------------------------------------------------|
+| Device Owner (MDM)        | High               | Yes                        | Full lockdown, block uninstall, disable reset      | Requires provisioning, admin control                  |
+| Kiosk / Lock-task Mode    | High (while active)| Usually Yes                | Single/multi-app kiosk, hides settings/Play Store  | Needs allowlisting, can be exited with admin access   |
+| Custom Launcher           | Medium             | Optional                   | Hides apps, controls UI                            | Can be bypassed by changing launcher                  |
+| System App / Root         | High               | No (but needs root)        | Undeletable, full control                          | Requires rooting, insecure, voids warranty            |
+| Normal App                | None               | No                         | Easy to publish                                    | User can uninstall anytime                           |
+
+Actionable Steps for a Robust Solution
+--------------------------------------
+1. **Enroll Device as Device Owner**
+   - Use provisioning methods: QR code, NFC bump, zero-touch enrollment, or ADB (only during provisioning).
+   - Set up Android Enterprise or use an MDM solution.
+
+2. **Use DevicePolicyManager APIs**
+   - DevicePolicyManager.setLockTaskPackages() - allowlist apps for lock-task mode.
+   - DevicePolicyManager.setUninstallBlocked() - block uninstall of specific packages.
+   - DevicePolicyManager.addPersistentPreferredActivity() - set your launcher as default home.
+
+3. **Enable Kiosk Mode**
+   - Use startLockTask() and stopLockTask() to enter/exit kiosk mode.
+   - Configure persistent kiosk with Device Owner privileges.
+
+4. **Build a Custom Launcher**
+   - Control visible apps using PackageManager.setApplicationHidden().
+   - Dynamically adjust app visibility based on user settings.
+   - Hide uninstall UI by not exposing app details or settings.
+
+Limitations and Legal Considerations
+------------------------------------
+- Without Device Owner or root, users can uninstall or reset the device.
+- Rooting is insecure and not recommended for production.
+- Physical access or recovery mode can bypass software restrictions.
+- Legal and privacy implications exist for managing user devices; ensure compliance with local laws and policies.
+
+Recommendation
+--------------
+For enterprise or kiosk deployments, use Device Owner provisioning with MDM or Android Enterprise. Combine with kiosk mode and a custom launcher for full control. For consumer apps, accept that uninstall cannot be prevented and focus on user experience and retention strategies.
+
+Offer
+-----
+If you want, I can also generate a provisioning checklist (QR/zero-touch) and sample Device Owner code snippets.

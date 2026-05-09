@@ -1,0 +1,21 @@
+Real Issues Found (Don't Fix — Reporting Only)
+🔴 1 — QUERY_ALL_PACKAGES permission missing from install.sh
+The install.sh patches these permissions into the manifest: PACKAGE_USAGE_STATS, SYSTEM_ALERT_WINDOW, FOREGROUND_SERVICE, FOREGROUND_SERVICE_SPECIAL_USE, RECEIVE_BOOT_COMPLETED, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, BIND_ACCESSIBILITY_SERVICE, KILL_BACKGROUND_PROCESSES, USE_FULL_SCREEN_INTENT, EXPAND_STATUS_BAR.
+
+QUERY_ALL_PACKAGES is not in that list. The launcher's queryIntentActivities(intent, 0) call and InstalledAppsModule.kt (which explicitly comments it's required) both need this permission on Android 11+. Without it, the app drawer and the settings screen's installed-apps list will be empty or show only system/whitelisted apps on Android 11+ devices.
+
+🟠 2 — Analog clock toggle in settings is a dead end
+home-launcher.tsx has a segmented control that saves launcherClockStyle: 'digital' | 'analog' to app state. But:
+
+LauncherActivity.kt never reads this preference — it only does digital (SimpleDateFormat("HH:mm") / SimpleDateFormat("h:mm"))
+SharedPrefsModule.ts has no setClockStyle / getClockStyle method, so the value never reaches native
+There is zero analog clock rendering code anywhere in the Kotlin launcher
+Toggling to "Analog" in settings currently does nothing. Either the analog clock needs to be built in Kotlin and wired through SharedPrefs, or the toggle should be removed from the settings screen.
+
+🟡 3 — android:clearTaskOnLaunch and android:stateNotNeeded absent
+Neither is in the LauncherActivity manifest declaration. These aren't blockers but are recommended for launchers:
+
+clearTaskOnLaunch="true" — ensures task state is reset when the user presses HOME from inside an app (avoids returning to a mid-app state)
+stateNotNeeded="true" — prevents crashes if Android kills the launcher under memory pressure before it can save onSaveInstanceState
+🟡 4 — showOverlay() JS method is labeled a placeholder
+ForegroundLaunchModule.ts line 12 says showOverlay(message) is a "placeholder for future full-screen overlay." The actual block overlay is BlockOverlayActivity launched from Kotlin, so the app works — but the JS-side showOverlay wiring is dead code for now. Fine as-is unless you planned a JS-triggered overlay.

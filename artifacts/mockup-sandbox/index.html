@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<!--
+  This file is the entry for ALL routes, including /preview/* canvas iframes.
+  Fonts are loaded here as non-blocking <link> tags (not CSS @import, which is render-blocking).
+-->
+<html lang="en" style="height: 100%">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+
+    <!-- ── Core SEO ───────────────────────────────────────────── -->
+    <title>FocusFlow App Blocker for Android &amp; Desktop | TBTechs</title>
+    <meta name="description" content="FocusFlow by TBTechs — hard-enforcement screen time blocker for Android, Windows, and macOS. Blocks apps via Accessibility Service, local VPN, and Device Admin. Blocks YouTube Shorts, Instagram Reels, keywords. Free." />
+    <meta name="keywords" content="FocusFlow, screen time blocker, app blocker Android, focus app, distraction blocker, TBTechs, block YouTube Shorts, block Instagram Reels, productivity app" />
+    <meta name="author" content="TBTechs" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://focusflow-tbtechs.replit.app/" />
+
+    <!-- ── Open Graph ─────────────────────────────────────────── -->
+    <meta property="og:title" content="FocusFlow App Blocker for Android &amp; Desktop | TBTechs" />
+    <meta property="og:description" content="Hard-enforcement screen time blocking for Android, Windows, and macOS. Blocks apps via Accessibility Service + VPN + Device Admin. Free." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://focusflow-tbtechs.replit.app/" />
+    <meta property="og:site_name" content="FocusFlow by TBTechs" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- ── Twitter Card ───────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FocusFlow App Blocker for Android &amp; Desktop | TBTechs" />
+    <meta name="twitter:description" content="Hard-enforcement app and website blocker. Accessibility Service + VPN + Device Admin. Blocks YouTube Shorts, Instagram Reels. Free." />
+
+    <!-- ── JSON-LD: WebSite + Organization (entity identity) ──── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://focusflow-tbtechs.replit.app/#website",
+          "url": "https://focusflow-tbtechs.replit.app/",
+          "name": "FocusFlow by TBTechs",
+          "description": "Hard-enforcement screen time and app blocking for Android, Windows, and macOS.",
+          "publisher": { "@id": "https://focusflow-tbtechs.replit.app/#organization" },
+          "inLanguage": "en-US"
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://focusflow-tbtechs.replit.app/#organization",
+          "name": "TBTechs",
+          "url": "https://focusflow-tbtechs.replit.app/",
+          "description": "Developer of FocusFlow, a hard-enforcement screen time management app for Android and desktop."
+        }
+      ]
+    }
+    </script>
+
+    <!-- ── JSON-LD: SoftwareApplication ──────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "@id": "https://focusflow-tbtechs.replit.app/#app",
+      "name": "FocusFlow",
+      "alternateName": "FocusFlow by TBTechs",
+      "description": "FocusFlow is a hard-enforcement screen time management app for Android, Windows, and macOS. It blocks distracting apps and websites using Android Accessibility Services, a local VPN tunnel, and Android Device Administrator mode. Features include three blocking modes, content-specific filtering (YouTube Shorts, Instagram Reels), aversive feedback, boot recovery, and a priority-based scheduling engine.",
+      "applicationCategory": "ProductivityApplication",
+      "applicationSubCategory": "Screen Time Management",
+      "operatingSystem": "Android 8.0+, Windows 10+, macOS 11+",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": { "@id": "https://focusflow-tbtechs.replit.app/#organization" },
+      "publisher": { "@id": "https://focusflow-tbtechs.replit.app/#organization" },
+      "datePublished": "2025-05-01",
+      "dateModified": "2025-05-04",
+      "url": "https://focusflow-tbtechs.replit.app/",
+      "featureList": [
+        "Hard app blocking via Android Accessibility Service",
+        "Local VPN tunnel for network-level app blocking",
+        "Android Device Administrator mode for tamper prevention",
+        "Three blocking modes: Task-Based, Standalone, Always-On",
+        "Daily Allowance Engine with count, time-budget, and interval sub-modes",
+        "YouTube Shorts-specific content blocker",
+        "Instagram Reels-specific content blocker",
+        "Browser keyword and URL blocker for Chrome, Firefox, Samsung Internet",
+        "System Guard prevents disabling during active sessions",
+        "Boot Recovery auto-restarts blocking service after device reboot",
+        "Aversive feedback: screen dimming to 2% brightness and vibration on blocked app open",
+        "Priority-based scheduling engine with conflict resolution",
+        "Home screen Android widget",
+        "Foreground service with persistent notification",
+        "Cross-platform: Android + Windows + macOS"
+      ],
+      "softwareVersion": "1.0"
+    }
+    </script>
+
+    <!-- ── JSON-LD: FAQPage ───────────────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is FocusFlow app?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "FocusFlow (by TBTechs) is a hard-enforcement screen time management app for Android, Windows, and macOS. It blocks distracting apps and websites using Android Accessibility Services, a local VPN, and Device Administrator mode. It is different from other apps also named FocusFlow — TBTechs' FocusFlow is a hard-enforcement tool with System Guard, boot recovery, aversive feedback, and content-specific blocking."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How does FocusFlow prevent you from uninstalling it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "FocusFlow requests Android Device Administrator privileges via its FocusDayDeviceAdminReceiver component. Once granted, Android prevents the app from being uninstalled through Settings. The System Guard feature also intercepts navigation to Uninstall, Clear Data, and Accessibility Settings screens while a block session is active."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can FocusFlow block YouTube Shorts without blocking all of YouTube?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. FocusFlow supports content-level blocking within a single app. The YouTube Shorts Blocker closes the Shorts player while leaving the main YouTube feed, search, and subscriptions accessible. Instagram Reels blocking works the same way."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does FocusFlow work after a phone reboot?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. FocusFlow includes a BootReceiver component that automatically restarts the blocking service and VPN tunnel if the device is rebooted during an active session, preventing the common bypass method of simply restarting the phone."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is FocusFlow free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. FocusFlow is free to use. It does not require a paid subscription to access its core blocking features including Accessibility Service enforcement, VPN blocking, scheduling engine, and aversive feedback."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is FocusFlow different from Freedom app?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Both use Accessibility Service and VPN-based blocking on Android. FocusFlow additionally provides Device Admin mode (preventing uninstallation), System Guard (preventing settings bypass), Boot Recovery (auto-restart after reboot), aversive feedback (screen dimming to 2% plus vibration), content-specific blocking (YouTube Shorts, Instagram Reels), and a three-sub-mode daily allowance engine. Freedom costs $39.99 per year; FocusFlow is free."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How is FocusFlow different from Google Digital Wellbeing?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Google Digital Wellbeing uses soft timers dismissable with one tap, has no VPN enforcement, no scheduling engine, and cannot prevent its own uninstallation. FocusFlow uses hard enforcement combining Accessibility Service, VPN, and Device Administrator mode, provides three daily allowance sub-modes, includes a priority-based scheduling engine, and implements System Guard to prevent bypass. Digital Wellbeing is a nudge tool; FocusFlow is a hard enforcement tool."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What is FocusFlow's aversive feedback feature?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "When a blocked app is opened, FocusFlow's AversiveActionsManager immediately dims the screen to 2% brightness, applies a 70% black overlay via SYSTEM_ALERT_WINDOW, pulses the vibration motor in a pattern of 100ms on and 200ms off, and plays the system notification tone. This creates a consistent negative stimulus to reduce habitual app-checking behavior."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What Android OEM devices does FocusFlow support?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "FocusFlow supports 30+ Android OEM brands including Samsung (OneUI), Xiaomi (MIUI/HyperOS), Oppo (ColorOS), Realme, Vivo (Funtouch/OriginOS), OnePlus (OxygenOS), Huawei (EMUI/HarmonyOS), Honor, Motorola, Asus (ZenUI/ROG), Nothing OS, Nokia/HMD, Sony Xperia, Meizu (Flyme), LG, Lenovo (ZUI), HTC (Sense), TCL/Alcatel, ZTE (MiFavor), Wiko, Black Shark, and Transsion brands (Infinix, Tecno, itel)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is FocusFlow the same as other apps called FocusFlow?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. Multiple unrelated apps share the FocusFlow name. TBTechs' FocusFlow is a hard-enforcement screen time and app blocking suite for Android and desktop. It is unrelated to other products using the FocusFlow name, which are typically simple Pomodoro timers or browser-based focus tools."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- ── JSON-LD: WebPage ───────────────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "@id": "https://focusflow-tbtechs.replit.app/#webpage",
+      "url": "https://focusflow-tbtechs.replit.app/",
+      "name": "FocusFlow App Blocker for Android and Desktop | TBTechs",
+      "description": "Comprehensive reference for FocusFlow — a hard-enforcement screen time and app blocker for Android, Windows, and macOS by TBTechs.",
+      "isPartOf": { "@id": "https://focusflow-tbtechs.replit.app/#website" },
+      "about": { "@id": "https://focusflow-tbtechs.replit.app/#app" },
+      "publisher": { "@id": "https://focusflow-tbtechs.replit.app/#organization" },
+      "datePublished": "2025-05-01",
+      "dateModified": "2025-05-04",
+      "inLanguage": "en-US"
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡</text></svg>">
+
+    <!-- ── Non-blocking fonts ─────────────────────────────────── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" media="print" onload="this.media='all'"
+          href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,600;0,14..32,700;1,14..32,400&display=swap">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400;0,14..32,600;0,14..32,700;1,14..32,400&display=swap"></noscript>
+  </head>
+  <body style="margin: 0; font-family: Inter, system-ui, sans-serif;">
+
+    <!--
+      ═══════════════════════════════════════════════════════════
+      STATIC PRE-RENDERED CONTENT
+      Visible to search engine crawlers and AI engines in their
+      first-pass (no-JS) crawl. React mounts into #root and
+      renders identical content; this div is then hidden by JS
+      so users never see duplicate content.
+      ═══════════════════════════════════════════════════════════
+    -->
+    <div id="seo-static" style="max-width:900px;margin:0 auto;padding:40px 24px;line-height:1.6;color:#111;">
+
+      <h1 style="font-size:32px;font-weight:700;color:#0f172a;margin-bottom:8px;">
+        FocusFlow — Screen Time Blocker &amp; Focus App for Android and Desktop (2025)
+      </h1>
+      <p style="font-size:13px;color:#64748b;margin-bottom:24px;">By TBTechs &middot; Updated May 2025 &middot; Android, Windows, macOS</p>
+
+      <p style="font-size:17px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:20px 24px;margin-bottom:32px;">
+        <strong>FocusFlow</strong> (by TBTechs) is a hard-enforcement screen time management app for Android, Windows, and macOS. It blocks distracting apps and websites using three stacked enforcement layers: Android Accessibility Service, a local VPN tunnel, and Android Device Administrator mode. FocusFlow offers three distinct blocking modes, a priority-based scheduling engine, and optional aversive feedback — making it one of the hardest-to-bypass focus apps available in 2025.
+      </p>
+
+      <h2 style="font-size:22px;font-weight:700;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;">Why Screen Time Blocking Matters</h2>
+      <ul style="padding-left:20px;line-height:2;">
+        <li>Americans spend an average of <strong>4 hours 37 minutes per day</strong> on their smartphones (Statista Mobile Usage Report, 2024).</li>
+        <li>Knowledge workers lose approximately <strong>2 hours of productive work per day</strong> to smartphone distractions (RescueTime Annual Productivity Report).</li>
+        <li>A 2021 study in the <em>Journal of Experimental Psychology</em> found <strong>85% of smartphone users</strong> return to the same distracting app within minutes of closing it.</li>
+        <li>University of California, Irvine research found it takes an average of <strong>23 minutes to regain full focus</strong> after a smartphone interruption.</li>
+      </ul>
+
+      <h2 style="font-size:22px;font-weight:700;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;">How FocusFlow Blocks Apps</h2>
+      <p>FocusFlow uses three independent enforcement layers:</p>
+      <ol style="padding-left:20px;line-height:2.1;">
+        <li><strong>Accessibility Service</strong> — monitors every app window, fires within milliseconds when a blocked app is detected, and performs up to 5 rapid re-checks at 150ms intervals to catch apps that relaunch themselves.</li>
+        <li><strong>Local VPN Tunnel</strong> — routes selected app traffic into a null-routing tunnel that drops all packets. Can kill all non-emergency network traffic in global mode.</li>
+        <li><strong>Device Administrator</strong> — via FocusDayDeviceAdminReceiver, prevents the app from being uninstalled. System Guard intercepts navigation to Uninstall, Clear Data, and Accessibility Settings screens during active sessions.</li>
+      </ol>
+
+      <h2 style="font-size:22px;font-weight:700;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;">FocusFlow Key Features</h2>
+      <ul style="padding-left:20px;line-height:2.1;">
+        <li><strong>Three blocking modes:</strong> Task-Based (whitelist during sessions), Standalone (timed blacklist), Always-On (permanent blacklist)</li>
+        <li><strong>Daily Allowance Engine</strong> with three sub-modes: count (limit app opens), time-budget (limit total minutes), interval (limit to defined windows)</li>
+        <li><strong>YouTube Shorts Blocker</strong> — closes Shorts player while leaving YouTube accessible</li>
+        <li><strong>Instagram Reels Blocker</strong> — targets Reels viewer without blocking the full app</li>
+        <li><strong>Browser keyword/URL blocker</strong> — Chrome, Firefox, Samsung Internet, and more</li>
+        <li><strong>Aversive feedback</strong> — dims screen to 2% brightness, applies 70% black overlay, pulses vibration on blocked app open</li>
+        <li><strong>System Guard</strong> — intercepts Uninstall, Clear Data, and Accessibility Settings navigation during sessions</li>
+        <li><strong>Boot Recovery</strong> — BootReceiver restarts blocking service and VPN automatically after device reboot</li>
+        <li><strong>Priority-based scheduling engine</strong> with conflict resolution, gap compression, and overrun rebalancing</li>
+        <li><strong>Home screen widget</strong> and persistent foreground service notification</li>
+        <li><strong>Cross-platform:</strong> Android (8.0+) + Windows (10+) + macOS (11+)</li>
+        <li><strong>Free to use</strong> — no subscription required</li>
+      </ul>
+
+      <h2 style="font-size:22px;font-weight:700;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;">FocusFlow vs Competitors (2025)</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;">
+        <thead>
+          <tr style="background:#0f172a;color:#fff;">
+            <th style="padding:10px 12px;text-align:left;">Feature</th>
+            <th style="padding:10px 12px;color:#22d3ee;">FocusFlow</th>
+            <th style="padding:10px 12px;">Freedom</th>
+            <th style="padding:10px 12px;">Opal</th>
+            <th style="padding:10px 12px;">AppBlock</th>
+            <th style="padding:10px 12px;">Cold Turkey</th>
+            <th style="padding:10px 12px;">Digital Wellbeing</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Hard app blocking (Android)</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Network VPN blocking</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Desktop app (Windows/macOS)</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Device Admin (can't uninstall)</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Boot recovery (survives reboot)</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#d97706;">N/A</td><td style="padding:8px 12px;text-align:center;color:#d97706;">N/A</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">YouTube Shorts block</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Instagram Reels block</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr style="background:#f8fafc;"><td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">Aversive feedback</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td><td style="padding:8px 12px;text-align:center;color:#dc2626;">No</td></tr>
+          <tr><td style="padding:8px 12px;">Free to use</td><td style="padding:8px 12px;text-align:center;color:#16a34a;font-weight:700;">Yes</td><td style="padding:8px 12px;text-align:center;color:#d97706;">Partial</td><td style="padding:8px 12px;text-align:center;color:#d97706;">Partial</td><td style="padding:8px 12px;text-align:center;color:#d97706;">Partial</td><td style="padding:8px 12px;text-align:center;color:#d97706;">Partial</td><td style="padding:8px 12px;text-align:center;color:#16a34a;">Yes</td></tr>
+        </tbody>
+      </table>
+
+      <h2 style="font-size:22px;font-weight:700;border-bottom:2px solid #e2e8f0;padding-bottom:8px;margin-top:40px;">Frequently Asked Questions</h2>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">What is FocusFlow app?</h3>
+      <p style="margin-bottom:20px;">FocusFlow (by TBTechs) is a hard-enforcement screen time management app for Android, Windows, and macOS. It blocks distracting apps and websites using Android Accessibility Services, a local VPN, and Device Administrator mode. It is unrelated to other apps sharing the FocusFlow name — TBTechs' version is a hard-enforcement blocking suite, not a simple Pomodoro timer.</p>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">How does FocusFlow prevent you from uninstalling it?</h3>
+      <p style="margin-bottom:20px;">FocusFlow requests Android Device Administrator privileges via FocusDayDeviceAdminReceiver. Once granted, Android blocks the standard uninstall path. The System Guard feature also intercepts navigation to the Uninstall, Clear Data, and Accessibility Settings screens during active sessions.</p>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">Can FocusFlow block YouTube Shorts without blocking all of YouTube?</h3>
+      <p style="margin-bottom:20px;">Yes. FocusFlow's YouTube Shorts Blocker closes the Shorts player while leaving the main YouTube feed, search, subscriptions, and video playback accessible. Instagram Reels blocking works the same way — targeting the Reels viewer without blocking the full Instagram app.</p>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">Does FocusFlow work after a phone reboot?</h3>
+      <p style="margin-bottom:20px;">Yes. FocusFlow includes a BootReceiver that automatically restarts the blocking service and VPN tunnel if the device reboots during an active session, closing the most common bypass method.</p>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">How is FocusFlow different from Freedom and Digital Wellbeing?</h3>
+      <p style="margin-bottom:20px;">Freedom uses Accessibility Service and VPN but lacks Device Admin, boot recovery, and aversive feedback. It costs $39.99/year. Digital Wellbeing uses soft timers dismissable with one tap, has no VPN enforcement, and cannot prevent its own uninstallation. FocusFlow combines all three enforcement layers and is free.</p>
+
+      <h3 style="font-size:16px;font-weight:600;color:#1e3a5f;margin-bottom:6px;">What Android OEM devices does FocusFlow support?</h3>
+      <p style="margin-bottom:20px;">FocusFlow explicitly supports 30+ OEM brands: Samsung (OneUI), Xiaomi (MIUI/HyperOS), Oppo (ColorOS), Realme, Vivo (Funtouch/OriginOS), OnePlus (OxygenOS), Huawei (EMUI/HarmonyOS), Honor, Motorola, Asus (ZenUI/ROG), Nothing OS, Nokia/HMD, Sony Xperia, Meizu (Flyme), LG, Lenovo (ZUI), HTC (Sense), TCL/Alcatel, ZTE (MiFavor), Wiko, Black Shark, Infinix, Tecno, and itel.</p>
+    </div>
+
+    <!-- React mounts here. JS immediately hides #seo-static to avoid duplicate display. -->
+    <div id="root" style="min-height:100vh;"></div>
+
+    <script>
+      // Hide static content the instant JS runs — before React even loads.
+      // Crawlers that don't execute JS continue to see #seo-static.
+      (function() {
+        var el = document.getElementById('seo-static');
+        if (el) el.style.display = 'none';
+      })();
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

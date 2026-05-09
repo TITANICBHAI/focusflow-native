@@ -1,0 +1,29 @@
+If you completely rule out ADB (and therefore cannot provision the app as a "Device Owner"), **it is technically impossible to make an app 100% un-uninstallable on a standard, unrooted Android device.** 
+
+Android's security architecture is specifically designed to prevent apps from locking themselves onto a device permanently. While you can build aggressive software barriers, a determined user will always have an escape route if ADB is off the table.
+
+Here is exactly what you can do, and the unavoidable loophole you will face.
+
+### 1. The "Soft" Barriers (Preventing Uninstallation)
+Without ADB, you have to rely on a combination of standard system tools to make uninstallation as frustrating and difficult as possible:
+
+*   **Device Administrator Privilege:** You can require the user to grant your app standard Device Administrator rights (which does not require ADB). If a user attempts to uninstall the app, Android will stop them and force them to deactivate the admin rights first.
+*   **Accessibility Services:** You can write an Accessibility Service that constantly monitors the screen state. If it detects the user navigating to your app's "Deactivate Admin" screen, the Settings app, or the Play Store, your service can instantly inject a "Back" button press or immediately redirect them to the home screen. 
+
+**The Unavoidable Loophole: Safe Mode**
+If a user boots a device like a Galaxy M31 into Safe Mode, Android automatically disables **all** third-party apps, custom launchers, and Accessibility Services. The phone will boot up using the default system UI, all of your background blocking mechanisms will be completely dead, and the user can easily navigate to Settings to deactivate the Device Admin and uninstall the app. Without ADB, you have no system-level authority to disable Safe Mode or block uninstalls while Safe Mode is active.
+
+---
+
+### 2. Building a Custom Launcher
+Yes, building a custom home launcher is a highly effective way to create a focused, locked-down environment, and you have complete control over the interface.
+
+*   **Auto-Adjusting App Visibility:** A custom launcher works by using Android's `PackageManager` to query a list of all installed apps that can be launched. Because you control the Kotlin/Java code that populates the launcher's grid (e.g., a `RecyclerView`), you can build an in-app selection menu where the user picks which apps they are allowed to see. You simply write logic to filter the `PackageManager` list, rendering only the allowed apps on the screen and deliberately hiding the rest. The blocked apps remain installed, but the user has no icon to tap.
+*   **Hiding the Uninstall Option:** In standard system launchers, long-pressing an app icon brings up a context menu that includes an "Uninstall" button (which fires an `ACTION_DELETE` system intent). Because you are programming this custom launcher from scratch, you simply **do not build that menu**. If your UI doesn't have an uninstall button, the user has no way to trigger uninstalls from the home screen.
+
+**The Catch**
+A custom launcher perfectly hides distracting apps and omits the uninstall button, but it is still just a standard application. Because you cannot use ADB to lock it as the permanent system default, the user can still bypass your custom UI by rebooting the phone into Safe Mode, which will instantly revert the phone to the stock Samsung launcher, exposing all hidden apps and allowing uninstallation.
+
+[Managing Android Safe Mode](https://www.youtube.com/watch?v=hidinrUyeCA)
+Understanding how easily users can trigger and navigate Safe Mode is crucial for evaluating the true limits of app-level restrictions.
+http://googleusercontent.com/youtube_content/1
