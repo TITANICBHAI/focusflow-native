@@ -314,10 +314,11 @@ function FocusScreen() {
             blockUntil={settings.standaloneBlockUntil}
             locked={standaloneActive}
             dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
+            vpnPackages={settings.standaloneVpnPackages ?? []}
             blockPresets={blockPresets}
             recurringBlockSchedules={settings.recurringBlockSchedules ?? []}
-            onSave={async (packages, untilMs, allowanceEntries) => {
-              await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
+            onSave={async (packages, untilMs, allowanceEntries, vpnPackages) => {
+              await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries, vpnPackages);
             }}
             onSavePreset={handleSaveBlockPreset}
             onDeletePreset={handleDeleteBlockPreset}
@@ -337,6 +338,10 @@ function FocusScreen() {
     const alwaysOnActive = alwaysOnHasList && enforcementOn;
     const autoCopyOn = settings.autoCopyToAlwaysOn ?? false;
     const withDefensePin = (action: () => void) => {
+      if (!(settings.pinProtectionEnabled ?? false)) {
+        action();
+        return;
+      }
       SharedPrefsModule.getString('defense_pin_hash')
         .then((hash) => {
           if (!hash) {
@@ -454,7 +459,33 @@ function FocusScreen() {
 
             <View style={[styles.enforcementDivider, { backgroundColor: theme.border }]} />
 
-            {/* Row 2 — Daily Allowance */}
+            {/* Row 2 — VPN Block List */}
+            {(() => {
+              const vpnPkgs = settings.alwaysOnVpnPackages ?? [];
+              const vpnCount = vpnPkgs.length;
+              return (
+                <TouchableOpacity
+                  style={[styles.enforcementRow, !enforcementOn && { opacity: 0.45 }]}
+                  onPress={() => router.push('/vpn-block-list')}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="shield-checkmark-outline" size={13} color={vpnCount > 0 ? COLORS.primary : theme.muted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.enforcementRowLabel, { color: theme.text }]}>VPN Block List</Text>
+                    <Text style={[styles.enforcementRowDesc, { color: theme.muted }]}>
+                      {vpnCount > 0
+                        ? `${vpnCount} app${vpnCount !== 1 ? 's' : ''} network-blocked via local VPN`
+                        : 'No apps — tap to cut internet access 24/7'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={12} color={theme.border} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+              );
+            })()}
+
+            <View style={[styles.enforcementDivider, { backgroundColor: theme.border }]} />
+
+            {/* Row 3 — Daily Allowance */}
             <TouchableOpacity
               style={[styles.enforcementRow, !enforcementOn && { opacity: 0.45 }]}
               onPress={() => setDailyAllowanceModalVisible(true)}
@@ -585,10 +616,11 @@ function FocusScreen() {
           blockUntil={settings.standaloneBlockUntil}
           locked={false}
           dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
+          vpnPackages={settings.standaloneVpnPackages ?? []}
           blockPresets={blockPresets}
           recurringBlockSchedules={settings.recurringBlockSchedules ?? []}
-          onSave={async (packages, untilMs, allowanceEntries) => {
-            await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
+          onSave={async (packages, untilMs, allowanceEntries, vpnPackages) => {
+            await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries, vpnPackages);
           }}
           onSavePreset={handleSaveBlockPreset}
           onDeletePreset={handleDeleteBlockPreset}
@@ -601,6 +633,7 @@ function FocusScreen() {
           visible={dailyAllowanceModalVisible}
           selectedEntries={settings.dailyAllowanceEntries ?? []}
           locked={false}
+          requireDefensePin={true}
           onSave={async (entries) => {
             await setStandaloneBlockAndAllowance(
               settings.standaloneBlockPackages ?? [],
@@ -977,10 +1010,11 @@ function FocusScreen() {
         blockUntil={settings.standaloneBlockUntil}
         locked={standaloneActive}
         dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
+        vpnPackages={settings.standaloneVpnPackages ?? []}
         blockPresets={blockPresets}
         recurringBlockSchedules={settings.recurringBlockSchedules ?? []}
-        onSave={async (packages, untilMs, allowanceEntries) => {
-          await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
+        onSave={async (packages, untilMs, allowanceEntries, vpnPackages) => {
+          await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries, vpnPackages);
         }}
         onSavePreset={handleSaveBlockPreset}
         onDeletePreset={handleDeleteBlockPreset}
@@ -1042,10 +1076,7 @@ function FocusScreen() {
         description="Enter your focus session password to end the session and stop all blocking."
         onVerified={() => {
           setFocusStopPinVisible(false);
-          Alert.alert('Stop Focus', 'End focus mode for this task?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Stop', style: 'destructive', onPress: () => stopFocusMode() },
-          ]);
+          stopFocusMode();
         }}
         onCancel={() => setFocusStopPinVisible(false)}
       />

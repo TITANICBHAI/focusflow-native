@@ -97,8 +97,9 @@ export function PinSetupModal({ visible, pinType, onSaved, onCancel }: Props) {
         await SharedPrefsModule.putString('defense_pin_hash', hash);
       }
       onSaved();
-    } catch {
-      setError('Failed to save — please try again.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(`Failed to save — ${msg || 'please try again.'}`);
     } finally {
       setSaving(false);
     }

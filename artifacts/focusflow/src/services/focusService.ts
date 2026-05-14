@@ -1,16 +1,11 @@
 /**
  * Focus Mode Service
  *
- * On Android (with PACKAGE_USAGE_STATS + SYSTEM_ALERT_WINDOW permissions):
- *   - Poll UsageStats every 2s to detect foreground app
- *   - If a blocked app is detected, show a full-screen overlay intent
- *
- * This service handles the JS-side orchestration. The actual native
- * enforcement bridges are in src/native-modules/.
+ * Handles JS-side orchestration of focus sessions. The actual enforcement
+ * (app blocking, overlay) is done entirely by AppBlockerAccessibilityService (Kotlin).
  */
 
 import { AppState, type AppStateStatus } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { dismissPersistentNotification } from './notificationService';
 import { dbStartFocusSession, dbEndFocusSession } from '@/data/database';
 import { ForegroundServiceModule } from '@/native-modules/ForegroundServiceModule';
@@ -24,7 +19,6 @@ import type { Task, FocusSession } from '@/data/types';
 let focusActive = false;
 let currentTask: Task | null = null;
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
-let pollInterval: ReturnType<typeof setInterval> | null = null;
 let onFocusViolation: ((appName: string) => void) | null = null;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -34,6 +28,7 @@ export async function startFocusMode(
   allowedExtras: string[] = [],
   onViolation?: (appName: string) => void,
   options: { skipGoHome?: boolean } = {},
+  allTasks: Task[] = [],
 ): Promise<void> {
   // Always clean up any existing subscription unconditionally before re-entering
   // (fixes NEW-019: subscription leaks when stopFocusMode short-circuits)
@@ -55,7 +50,7 @@ export async function startFocusMode(
 
   await dbStartFocusSession(session);
 
-  const nextTask = getUpcomingTask([task]);
+  const nextTask = getUpcomingTask(allTasks.length > 1 ? allTasks : [task]);
   const startMs = new Date(task.startTime).getTime();
   const endMs = new Date(task.endTime).getTime();
 
@@ -86,32 +81,37 @@ export async function startFocusMode(
   // App blocking is handled entirely by AppBlockerAccessibilityService (Kotlin).
   // It reads focus_active and allowed_packages from SharedPreferences (written
   // above) and intercepts window changes at the OS level — no JS poll needed.
-  // startAndroidUsageMonitor is intentionally not called here.
 
   appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 }
 
-export async function stopFocusMode(): Promise<void> {
-  if (!focusActive || !currentTask) return;
+export async function stopFocusMode(pinHash: string | null = null): Promise<void> {
+  // Always clear native state unconditionally so a cold-start zombie session
+  // (focusActive=false in JS but focus_active=true in SharedPreferences from a
+  // previous run) is always cleaned up regardless of the JS-side flag.
+  const hadActiveSession = focusActive && currentTask !== null;
 
   focusActive = false;
   const task = currentTask;
   currentTask = null;
   onFocusViolation = null;
 
-  await dbEndFocusSession(task.id);
-  await dismissPersistentNotification();
-
-  await ForegroundServiceModule.stopService();
-  await SharedPrefsModule.setFocusActive(false);
-  await SharedPrefsModule.setAllowedPackages([]);
-  // Clear the widget's active-task snapshot. The AppContext tick will re-populate
-  // it on the next pass if there's still a time-active task running.
-  await SharedPrefsModule.clearActiveTask();
-  stopAndroidUsageMonitor();
-
   appStateSubscription?.remove();
   appStateSubscription = null;
+
+  // Always clear Kotlin-side state so the AccessibilityService stops blocking
+  // even if the JS module was freshly initialised (cold-start recovery).
+  await ForegroundServiceModule.stopService(pinHash).catch(() => {});
+  await SharedPrefsModule.setFocusActive(false, pinHash).catch(() => {});
+  await SharedPrefsModule.setAllowedPackages([]).catch(() => {});
+  await SharedPrefsModule.clearActiveTask().catch(() => {});
+
+  // Only hit the DB if we had a real session — avoids a spurious DB write on
+  // cold-start cleanup where there is no matching open session row.
+  if (hadActiveSession && task) {
+    await dbEndFocusSession(task.id);
+    await dismissPersistentNotification();
+  }
 }
 
 export function isFocusActive(): boolean {
@@ -128,53 +128,4 @@ function handleAppStateChange(_state: AppStateStatus): void {
   // App blocking is handled entirely by AppBlockerAccessibilityService (Kotlin).
   // No JS-side nudge notifications are needed — they would be dismissable and
   // create a false sense of enforcement.
-}
-
-// ─── Android: Usage Stats Polling ────────────────────────────────────────────
-//
-// Requires: PACKAGE_USAGE_STATS permission (granted in Settings > Special app access)
-// Uses the native module at src/native-modules/UsageStatsModule.ts
-
-function startAndroidUsageMonitor(task: Task, allowed: string[]): void {
-  stopAndroidUsageMonitor();
-
-  pollInterval = setInterval(async () => {
-    try {
-      const { UsageStatsModule } = await import('@/native-modules/UsageStatsModule');
-      const foreground = await UsageStatsModule.getForegroundApp();
-
-      if (!foreground) return;
-
-      const isAllowed = allowed.some(
-        (a) => foreground.toLowerCase().includes(a.toLowerCase()),
-      );
-
-      if (!isAllowed && foreground !== 'com.tbtechs.focusflow') {
-        onFocusViolation?.(foreground);
-
-        const { ForegroundLaunchModule } = await import('@/native-modules/ForegroundLaunchModule');
-        await ForegroundLaunchModule.bringToFront();
-
-        await Notifications.scheduleNotificationAsync({
-          identifier: 'focus-block',
-          content: {
-            title: `🚫 Focus Mode Active`,
-            body: `${foreground} is blocked. Return to "${task.title}"`,
-            data: { type: 'focus-block' },
-            priority: Notifications.AndroidNotificationPriority.MAX,
-          },
-          trigger: null,
-        });
-      }
-    } catch {
-      // Native module not available (simulator / permissions not granted)
-    }
-  }, 2000);
-}
-
-function stopAndroidUsageMonitor(): void {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    pollInterval = null;
-  }
 }

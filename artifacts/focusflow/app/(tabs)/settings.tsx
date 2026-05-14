@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,8 @@ import { useApp } from '@/context/AppContext';
 import type { DailyAllowanceEntry, GreyoutWindow } from '@/data/types';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
+import Constants from 'expo-constants';
+import { dbDeleteAllTasks } from '@/data/database';
 import { cancelAllReminders, requestPermissions } from '@/services/notificationService';
 import { exportBackup, pickAndImportBackup } from '@/services/backupService';
 import { mergeIntoBlockPreset } from '@/services/blockListImport';
@@ -25,6 +28,7 @@ import { StandaloneBlockModal } from '@/components/StandaloneBlockModal';
 import { DailyAllowanceModal } from '@/components/DailyAllowanceModal';
 import { BlockedWordsModal } from '@/components/BlockedWordsModal';
 import { PinVerifyModal } from '@/components/PinVerifyModal';
+import { PinSetupModal } from '@/components/PinSetupModal';
 import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
 import { OverlayAppearanceModal } from '@/components/OverlayAppearanceModal';
 import DiagnosticsModal from '@/components/DiagnosticsModal';
@@ -48,19 +52,10 @@ function SettingsScreen() {
   const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
   const [importOtherAppVisible, setImportOtherAppVisible] = useState(false);
   const [defPinVisible, setDefPinVisible] = useState(false);
+  const [pinSetupVisible, setPinSetupVisible] = useState(false);
   const pendingDefAction = useRef<(() => void) | null>(null);
-  // Diagnostics is gated on the native debuggable flag (not __DEV__) so that
-  // debug-built APKs running prebundled JS still expose the section. We
-  // optimistically default to __DEV__ so Metro builds show it on first paint,
-  // then refine with the native check on mount.
-  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(__DEV__);
-  useEffect(() => {
-    let cancelled = false;
-    void SharedPrefsModule.isDebuggableBuild().then((isDebug) => {
-      if (!cancelled) setShowDiagnostics(isDebug);
-    });
-    return () => { cancelled = true; };
-  }, []);
+  // Diagnostics section is development-only — hidden entirely in release builds.
+  const showDiagnostics = __DEV__;
 
   if (!state.isDbReady) {
     return (
@@ -94,8 +89,8 @@ function SettingsScreen() {
   const focusActive = state.focusSession?.isActive === true;
   const blockProtectionActive = focusActive || standaloneActive;
 
-  const handleSaveStandaloneBlock = async (packages: string[], untilMs: number | null, allowanceEntries: DailyAllowanceEntry[]) => {
-    await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries);
+  const handleSaveStandaloneBlock = async (packages: string[], untilMs: number | null, allowanceEntries: DailyAllowanceEntry[], vpnPackages?: string[]) => {
+    await setStandaloneBlockAndAllowance(packages, untilMs, allowanceEntries, vpnPackages);
   };
 
   const handleSaveBlockPreset = async (preset: import('@/data/types').BlockPreset) => {
@@ -128,7 +123,8 @@ function SettingsScreen() {
     if (backupBusy) return;
     setBackupBusy(true);
     try {
-      const result = await exportBackup(settings, 'v1.0.0');
+      const appVersion = Constants.expoConfig?.version ?? '0.0.0';
+      const result = await exportBackup(settings, appVersion);
       if (!result.ok) {
         Alert.alert('Export failed', result.error ?? 'Could not create backup file.');
       }
@@ -193,9 +189,7 @@ function SettingsScreen() {
         style: 'destructive',
         onPress: async () => {
           await cancelAllReminders();
-          for (const task of state.tasks) {
-            await deleteTask(task.id);
-          }
+          await dbDeleteAllTasks();
           await refreshTasks();
           Alert.alert('Done', 'All tasks cleared.');
         },
@@ -226,11 +220,50 @@ function SettingsScreen() {
   const withDefensePin = (action: () => void) => {
     SharedPrefsModule.getString('defense_pin_hash')
       .then((hash) => {
-        if (!hash) {
-          action();
-        } else {
+        if (hash) {
+          // PIN is set — always require it regardless of the toggle state.
           pendingDefAction.current = action;
           setDefPinVisible(true);
+        } else if (settings.pinProtectionEnabled) {
+          // Toggle is ON but no PIN is set yet — check if user said "don't ask again".
+          SharedPrefsModule.getString('pin_setup_prompt_dismissed')
+            .then((dismissed) => {
+              if (dismissed === 'true') {
+                // User dismissed the prompt — proceed freely until toggle is cycled.
+                action();
+              } else {
+                Alert.alert(
+                  'No Defense Password Set',
+                  "PIN Protection is on but you haven't set a defense password yet. Set one now so your changes are protected.",
+                  [
+                    {
+                      text: 'Set Password Now',
+                      onPress: () => {
+                        pendingDefAction.current = action;
+                        setPinSetupVisible(true);
+                      },
+                    },
+                    {
+                      text: 'Not Now',
+                      style: 'cancel',
+                      onPress: () => action(),
+                    },
+                    {
+                      text: "Don't Ask Again",
+                      style: 'destructive',
+                      onPress: () => {
+                        void SharedPrefsModule.putString('pin_setup_prompt_dismissed', 'true');
+                        action();
+                      },
+                    },
+                  ],
+                );
+              }
+            })
+            .catch(() => action());
+        } else {
+          // No PIN and toggle is OFF — proceed freely.
+          action();
         }
       })
       .catch(() => action());
@@ -413,6 +446,36 @@ function SettingsScreen() {
           />
         </Section>
 
+        <Section title="PIN Protection">
+          <SettingRow
+            label="Require password to disable protections"
+            description={
+              (settings.pinProtectionEnabled ?? false)
+                ? 'On — turning off any protection toggle requires your Defense Password'
+                : 'Off — protection toggles can be changed freely without a password'
+            }
+          >
+            <Switch
+              value={settings.pinProtectionEnabled ?? false}
+              onValueChange={(v) => {
+                void update({ pinProtectionEnabled: v });
+                if (!v) {
+                  // Reset "don't ask again" so the prompt shows fresh next time the toggle is enabled.
+                  void SharedPrefsModule.putString('pin_setup_prompt_dismissed', '');
+                }
+              }}
+              trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
+              thumbColor={(settings.pinProtectionEnabled ?? false) ? COLORS.primary : COLORS.muted}
+            />
+          </SettingRow>
+          <SettingButton
+            icon="shield-half-outline"
+            label="Manage PIN Passwords"
+            description="Set or change your focus session and defense passwords"
+            onPress={() => router.push('/block-defense')}
+          />
+        </Section>
+
         <Section title="System Protection">
           <SettingRow
             label="Protect system controls"
@@ -423,11 +486,11 @@ function SettingsScreen() {
             }
           >
             <Switch
-              value={settings.systemGuardEnabled ?? true}
+              value={settings.systemGuardEnabled ?? false}
               onValueChange={handleSystemGuardToggle}
-              disabled={blockProtectionActive && (settings.systemGuardEnabled ?? true)}
+              disabled={blockProtectionActive && (settings.systemGuardEnabled ?? false)}
               trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
-              thumbColor={(settings.systemGuardEnabled ?? true) ? COLORS.primary : COLORS.muted}
+              thumbColor={(settings.systemGuardEnabled ?? false) ? COLORS.primary : COLORS.muted}
             />
           </SettingRow>
 
@@ -630,10 +693,20 @@ function SettingsScreen() {
             description="How FocusFlow handles your data and the rules of use"
             onPress={() => router.push('/privacy-policy')}
           />
+          <SettingButton
+            icon="mail-outline"
+            label="Contact Support"
+            description="Email us at tbtechsdev@gmail.com"
+            onPress={() =>
+              Linking.openURL(
+                'mailto:tbtechsdev@gmail.com?subject=FocusFlow%20Support'
+              )
+            }
+          />
         </Section>
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: theme.muted }]}>FocusFlow v1.0.0</Text>
+          <Text style={[styles.footerText, { color: theme.muted }]}>FocusFlow v1.0.3 (build 4)</Text>
           <Text style={[styles.footerText, { color: theme.muted }]}>All data stored locally on device</Text>
         </View>
       </ScrollView>
@@ -651,6 +724,7 @@ function SettingsScreen() {
         blockUntil={settings.standaloneBlockUntil}
         locked={standaloneActive}
         dailyAllowanceEntries={settings.dailyAllowanceEntries ?? []}
+        vpnPackages={settings.standaloneVpnPackages ?? []}
         blockPresets={settings.blockPresets ?? []}
         onSave={handleSaveStandaloneBlock}
         onSavePreset={handleSaveBlockPreset}
@@ -662,6 +736,7 @@ function SettingsScreen() {
         visible={dailyModalVisible}
         selectedEntries={settings.dailyAllowanceEntries ?? []}
         locked={standaloneActive}
+        requireDefensePin={true}
         onSave={async (entries) => { await setDailyAllowanceEntries(entries); }}
         onClose={() => setDailyModalVisible(false)}
       />
@@ -670,7 +745,7 @@ function SettingsScreen() {
         visible={wordsModalVisible}
         words={settings.blockedWords ?? []}
         locked={standaloneActive}
-        requireDefensePin={!standaloneActive}
+        requireDefensePin={true}
         onSave={async (words) => { await setBlockedWords(words); }}
         onClose={() => setWordsModalVisible(false)}
       />
@@ -712,6 +787,20 @@ function SettingsScreen() {
         visible={importOtherAppVisible}
         onClose={() => setImportOtherAppVisible(false)}
         onImport={handleImportFromOtherApp}
+      />
+
+      <PinSetupModal
+        visible={pinSetupVisible}
+        pinType="defense"
+        onSaved={() => {
+          setPinSetupVisible(false);
+          pendingDefAction.current?.();
+          pendingDefAction.current = null;
+        }}
+        onCancel={() => {
+          setPinSetupVisible(false);
+          pendingDefAction.current = null;
+        }}
       />
     </SafeAreaView>
   );

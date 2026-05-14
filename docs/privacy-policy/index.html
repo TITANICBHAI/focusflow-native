@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Privacy Policy — FocusFlow</title>
   <meta name="description" content="Privacy Policy for FocusFlow, a local-first Android focus and app blocking app." />
+  <meta name="google-site-verification" content="sou-98cZYPWFJmbwxJgJptO-ZaIPNJqz2ven_iS4NjI" />
+  <meta name="msvalidate.01" content="FC2887EF2F94BFFE090CAB25A456AE86" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -45,10 +47,28 @@
       display: flex;
       gap: 1.2rem;
       flex-wrap: wrap;
+      align-items: center;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { color: var(--text); }
     .nav-links a { color: var(--muted); font-size: 0.95rem; }
+    #lang-toggle {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.28rem 0.7rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-family: inherit;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #lang-toggle:hover { border-color: var(--accent); color: var(--text); }
+    .zh { display: none; }
+    [data-lang="zh"] .zh { display: block; }
+    [data-lang="zh"] .en { display: none; }
+    [data-lang="zh"] span.zh { display: inline; }
+    [data-lang="zh"] span.en { display: none; }
     main {
       width: min(920px, calc(100% - 2rem));
       margin: 0 auto;
@@ -115,34 +135,53 @@
 </head>
 <body>
   <nav>
-    <a class="brand" href="../">FocusFlow</a>
+    <a class="brand" href="../" style="display:flex;align-items:center;gap:0.5rem;">
+      <img src="../logo-transparent.png" alt="FocusFlow" width="28" height="28" style="border-radius:7px;" />
+      FocusFlow
+    </a>
     <div class="nav-links">
       <a href="../">Home</a>
+      <a href="../features/">Features</a>
       <a href="../terms-of-service/">Terms</a>
-      <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a>
+      <a href="https://github.com/TITANICBHAI/FocusFlow">GitHub</a>
+      <button id="lang-toggle">中文</button>
     </div>
   </nav>
 
   <main>
-    <p class="eyebrow">Privacy Policy</p>
-    <h1>Your focus data is designed to stay on your device.</h1>
-    <p class="intro">FocusFlow is an Android productivity app that helps enforce focus sessions by blocking distracting apps. This policy explains what the app stores, which Android permissions it uses, and how your data is handled.</p>
-    <p class="updated">Last updated: April 2026</p>
-    <p class="intro" style="margin-top:.75rem;font-size:.9rem;color:var(--muted)"><strong>This Privacy Policy may be changed, amended, or replaced at any time without prior notice.</strong> Continued use of the app after any change constitutes your acceptance of the updated policy.</p>
+    <p class="eyebrow en">Privacy Policy</p>
+    <p class="eyebrow zh">隐私政策</p>
+
+    <h1 class="en">Your focus data is designed to stay on your device.</h1>
+    <h1 class="zh">您的专注数据设计为保留在您的设备上。</h1>
+
+    <p class="intro en">FocusFlow is an Android productivity app that helps enforce focus sessions by blocking distracting apps. This policy explains what the app stores, which Android permissions it uses, and how your data is handled.</p>
+    <p class="intro zh">FocusFlow 是一款 Android 生产力应用程序，通过屏蔽干扰性应用来帮助执行专注会话。本政策说明应用存储的内容、使用的 Android 权限以及数据的处理方式。</p>
+
+    <p class="updated en">Last updated: April 2026</p>
+    <p class="updated zh">最后更新：2026年4月</p>
+
+    <p class="intro en" style="margin-top:.75rem;font-size:.9rem;color:var(--muted)"><strong>This Privacy Policy may be changed, amended, or replaced at any time without prior notice.</strong> Continued use of the app after any change constitutes your acceptance of the updated policy.</p>
+    <p class="intro zh" style="margin-top:.75rem;font-size:.9rem;color:var(--muted)"><strong>本隐私政策可能随时更改、修正或替换，恕不另行通知。</strong>在任何更改后继续使用应用程序即表示您接受更新后的政策。</p>
 
     <section>
-      <h2>Local-first storage</h2>
-      <p>FocusFlow stores tasks, schedules, app block lists, daily allowances, reminders, settings, focus history, blocked words, overlay appearance choices, and related app preferences locally on your Android device using on-device storage such as SQLite and Android preferences. No data is transmitted to or stored on any FocusFlow-operated server.</p>
+      <h2 class="en">Local-first storage</h2>
+      <h2 class="zh">本地优先存储</h2>
+      <p class="en">FocusFlow stores tasks, schedules, app block lists, daily allowances, reminders, settings, focus history, blocked words, overlay appearance choices, and related app preferences locally on your Android device using on-device storage such as SQLite and Android preferences. No data is transmitted to or stored on any FocusFlow-operated server.</p>
+      <p class="zh">FocusFlow 使用 SQLite 和 Android 偏好设置等设备存储，将任务、日程、应用屏蔽列表、每日配额、提醒、设置、专注历史、屏蔽词、覆盖层外观选择及相关应用偏好本地存储在您的 Android 设备上。任何数据均不会传输到或存储在 FocusFlow 运营的任何服务器上。</p>
     </section>
 
     <section>
-      <h2>No account system or backend database</h2>
-      <p>FocusFlow does not require a user account and does not run a FocusFlow backend service for syncing your personal focus data. The app is built to work entirely locally on your device.</p>
+      <h2 class="en">No account system or backend database</h2>
+      <h2 class="zh">无账户系统或后端数据库</h2>
+      <p class="en">FocusFlow does not require a user account and does not run a FocusFlow backend service for syncing your personal focus data. The app is built to work entirely locally on your device.</p>
+      <p class="zh">FocusFlow 不需要用户账户，也不运行 FocusFlow 后端服务来同步您的个人专注数据。该应用设计为完全在您的设备上本地运行。</p>
     </section>
 
     <section>
-      <h2>Android permissions used</h2>
-      <ul>
+      <h2 class="en">Android permissions used</h2>
+      <h2 class="zh">使用的 Android 权限</h2>
+      <ul class="en">
         <li><strong>Accessibility Service:</strong> Used to detect app/window changes and help block apps during focus or standalone block sessions. It is not used to collect passwords, private messages, form entries, or screen recordings.</li>
         <li><strong>Usage Stats Access:</strong> Used to identify foreground app usage so FocusFlow can enforce app blocking.</li>
         <li><strong>Appear on Top / Display over other apps:</strong> Used to show the blocking overlay above distracting apps.</li>
@@ -150,47 +189,96 @@
         <li><strong>Boot handling:</strong> Used to restore active enforcement after a device restart when applicable.</li>
         <li><strong>Vibration and audio alerts:</strong> Used only if you enable aversion deterrents for blocked app attempts.</li>
       </ul>
+      <ul class="zh">
+        <li><strong>无障碍服务：</strong>用于检测应用/窗口变化，并在专注或独立屏蔽会话期间帮助屏蔽应用。不用于收集密码、私信、表单内容或屏幕录制。</li>
+        <li><strong>使用情况访问权限：</strong>用于识别前台应用使用情况，以便 FocusFlow 执行应用屏蔽。</li>
+        <li><strong>显示在其他应用上层：</strong>用于在干扰性应用上方显示屏蔽覆盖层。</li>
+        <li><strong>通知和前台服务：</strong>用于提醒、倒计时状态、会话控制以及在专注会话期间保持执行活跃。</li>
+        <li><strong>开机启动：</strong>在适用时用于设备重启后恢复活跃执行。</li>
+        <li><strong>振动和音频提醒：</strong>仅在您启用被屏蔽应用尝试的厌恶震慑时使用。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>Custom wallpaper and media choices</h2>
-      <p>If you select a custom block-screen wallpaper, FocusFlow stores the selected image reference or local app-private copy so the native Android blocking overlay can display it. FocusFlow does not use this feature to upload your photos to any server.</p>
+      <h2 class="en">Custom wallpaper and media choices</h2>
+      <h2 class="zh">自定义壁纸和媒体选择</h2>
+      <p class="en">If you select a custom block-screen wallpaper, FocusFlow stores the selected image reference or local app-private copy so the native Android blocking overlay can display it. FocusFlow does not use this feature to upload your photos to any server.</p>
+      <p class="zh">如果您选择自定义屏蔽屏幕壁纸，FocusFlow 会存储所选图像引用或本地应用私有副本，以便原生 Android 屏蔽覆盖层可以显示它。FocusFlow 不使用此功能将您的照片上传到任何服务器。</p>
     </section>
 
     <section>
-      <h2>What FocusFlow does not collect</h2>
-      <ul>
+      <h2 class="en">What FocusFlow does not collect</h2>
+      <h2 class="zh">FocusFlow 不收集的内容</h2>
+      <ul class="en">
         <li>No location data.</li>
         <li>No camera or microphone recordings.</li>
         <li>No passwords or private message contents.</li>
         <li>No payment data.</li>
         <li>No personal analytics transmitted to any server operated by FocusFlow or TBTechs.</li>
       </ul>
+      <ul class="zh">
+        <li>不收集位置数据。</li>
+        <li>不收集摄像头或麦克风录音。</li>
+        <li>不收集密码或私信内容。</li>
+        <li>不收集支付数据。</li>
+        <li>不向 FocusFlow 或 TBTechs 运营的任何服务器传输个人分析数据。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>Your control</h2>
-      <p>You can disable Android permissions in system settings at any time. Some FocusFlow features may stop working if required permissions are removed. You can clear app data or uninstall FocusFlow to remove all locally stored app data from your device.</p>
+      <h2 class="en">Your control</h2>
+      <h2 class="zh">您的控制权</h2>
+      <p class="en">You can disable Android permissions in system settings at any time. Some FocusFlow features may stop working if required permissions are removed. You can clear app data or uninstall FocusFlow to remove all locally stored app data from your device.</p>
+      <p class="zh">您可以随时在系统设置中禁用 Android 权限。如果必要权限被移除，某些 FocusFlow 功能可能会停止工作。您可以清除应用数据或卸载 FocusFlow 以从设备中删除所有本地存储的应用数据。</p>
     </section>
 
     <section>
-      <h2>Policy changes</h2>
-      <p>This Privacy Policy may be updated at any time without prior notice. We recommend reviewing this page periodically. Continued use of FocusFlow after any update constitutes your acceptance of the revised policy. TBTechs is not responsible for any consequence arising from your failure to review updated policy terms.</p>
+      <h2 class="en">Policy changes</h2>
+      <h2 class="zh">政策变更</h2>
+      <p class="en">This Privacy Policy may be updated at any time without prior notice. We recommend reviewing this page periodically. Continued use of FocusFlow after any update constitutes your acceptance of the revised policy. TBTechs is not responsible for any consequence arising from your failure to review updated policy terms.</p>
+      <p class="zh">本隐私政策可能随时更新，恕不另行通知。我们建议定期查看此页面。在任何更新后继续使用 FocusFlow 即表示您接受修订后的政策。TBTechs 对您未能查看更新政策条款而产生的任何后果不承担责任。</p>
     </section>
 
     <section>
-      <h2>Open source repository</h2>
-      <p>The source repository is available at <a href="https://github.com/TITANICBHAI/focusflow-android">github.com/TITANICBHAI/focusflow-android</a>. If the app behavior changes, this policy will be updated to reflect the current app.</p>
+      <h2 class="en">Open source repository</h2>
+      <h2 class="zh">开源代码仓库</h2>
+      <p class="en">The source repository is available at <a href="https://github.com/TITANICBHAI/FocusFlow">github.com/TITANICBHAI/FocusFlow</a>. If the app behavior changes, this policy will be updated to reflect the current app.</p>
+      <p class="zh">源代码仓库位于 <a href="https://github.com/TITANICBHAI/FocusFlow">github.com/TITANICBHAI/FocusFlow</a>。如果应用行为发生变化，本政策将更新以反映当前应用状态。</p>
     </section>
 
     <section>
-      <h2>Contact</h2>
-      <p>For privacy questions, issues, or corrections, open an issue on the FocusFlow GitHub repository.</p>
+      <h2 class="en">Contact</h2>
+      <h2 class="zh">联系方式</h2>
+      <p class="en">For privacy questions, issues, or corrections, email us at <a href="mailto:tbtechsdev@gmail.com">tbtechsdev@gmail.com</a>.</p>
+      <p class="zh">如有隐私问题、疑问或需要更正，请发送电子邮件至 <a href="mailto:tbtechsdev@gmail.com">tbtechsdev@gmail.com</a>。</p>
     </section>
   </main>
 
   <footer>
-    <p><a href="../">Home</a> · <a href="../terms-of-service/">Terms of Service</a> · <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a></p>
+    <p><a href="../">Home</a> · <a href="../terms-of-service/">Terms of Service</a> · <a href="../data-subject-rights/">Data Rights</a> · <a href="https://github.com/TITANICBHAI/FocusFlow">GitHub</a></p>
   </footer>
+
+  <script>
+  (function(){
+    var stored = localStorage.getItem('ff-lang');
+    var auto = (navigator.language || navigator.userLanguage || '').startsWith('zh');
+    var isZh = stored ? stored === 'zh' : auto;
+    function apply(zh){
+      document.documentElement.setAttribute('data-lang', zh ? 'zh' : 'en');
+      localStorage.setItem('ff-lang', zh ? 'zh' : 'en');
+      var btn = document.getElementById('lang-toggle');
+      if(btn) btn.textContent = zh ? 'EN' : '中文';
+    }
+    apply(isZh);
+    document.addEventListener('DOMContentLoaded', function(){
+      apply(isZh);
+      var btn = document.getElementById('lang-toggle');
+      if(btn) btn.addEventListener('click', function(){
+        var cur = document.documentElement.getAttribute('data-lang');
+        apply(cur !== 'zh');
+      });
+    });
+  })();
+  </script>
 </body>
 </html>

@@ -14,6 +14,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -29,6 +30,7 @@ import android.widget.TextView
 import com.tbtechs.focusflow.modules.BlockOverlayModule
 import com.tbtechs.focusflow.modules.FocusDayBridgeModule
 import com.tbtechs.focusflow.services.BlockOverlayActivity
+import com.tbtechs.focusflow.services.NetworkBlockerVpnService
 import org.json.JSONArray
 
 /**
@@ -441,6 +443,19 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     // Handler for retry re-checks AND timed-allowance expiry — runs on main thread
     private val handler = Handler(Looper.getMainLooper())
 
+    // ── VPN self-heal health check ────────────────────────────────────────────
+    // Runs every 10 seconds while the service is connected. If VPN blocking is
+    // enabled, self-heal is on, and the tunnel is down during an active session,
+    // it re-fires the VPN start intent so the user cannot simply pull the quick-
+    // settings tile and leave the session unprotected.
+    private val vpnHealthHandler = Handler(Looper.getMainLooper())
+    private val vpnHealthRunnable: Runnable = object : Runnable {
+        override fun run() {
+            checkAndHealVpn()
+            vpnHealthHandler.postDelayed(this, 10_000L)
+        }
+    }
+
     // ── Keyword blocker: debounce + throttle state ────────────────────────────
     // Text-changed events fire on every keystroke — we debounce the keyword check
     // so it only runs 400 ms after the user stops typing.
@@ -458,6 +473,27 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+        // Restore any timed session that was active when the service was interrupted
+        // (killed by Android, device rebooted, user toggled accessibility off/on).
+        // Charging elapsed gap here prevents users from bypassing a time-budget limit
+        // by force-stopping or toggling the accessibility service.
+        val savedPkg    = prefs.getString("timed_session_pkg", null)
+        val savedOpenAt = prefs.getLong("timed_session_open_at_ms", 0L)
+        if (savedPkg != null && savedOpenAt > 0L) {
+            val entry = findAllowanceEntry(savedPkg)
+            if (entry != null && (entry.mode == "time_budget" || entry.mode == "interval")) {
+                accumulateTimedUsage(savedPkg, entry, savedOpenAt)
+            }
+            prefs.edit()
+                .remove("timed_session_pkg")
+                .remove("timed_session_open_at_ms")
+                .apply()
+        }
+
+        // Start the VPN self-heal health check loop. The first check fires after
+        // 10 s so we don't run anything during the cold-start window.
+        vpnHealthHandler.postDelayed(vpnHealthRunnable, 10_000L)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -505,7 +541,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // Does NOT affect the UI lock — settings can be changed when no timed
         // session is running (focusActive == false && saActive == false).
         val alwaysBlockActive = prefs.getBoolean(PREF_ALWAYS_BLOCK, false)
-        val systemGuardEnabled = prefs.getBoolean(PREF_SYSTEM_GUARD_ENABLED, true)
+        val systemGuardEnabled = prefs.getBoolean(PREF_SYSTEM_GUARD_ENABLED, false)
         val blockInstallActions = prefs.getBoolean(PREF_BLOCK_INSTALL_ACTIONS, false)
         val blockYoutubeShorts  = prefs.getBoolean(PREF_BLOCK_YT_SHORTS, false)
         val blockInstagramReels = prefs.getBoolean(PREF_BLOCK_IG_REELS, false)
@@ -960,18 +996,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
             }
         }
 
-        // ALWAYS_BLOCKED is now empty — kept for safety.
-        if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) {
-            val samePackage = pkg == lastBlockedPkg
-            val cooldownExpired = (now - lastBlockedAtMs) > 2_000L
-            if (!samePackage || cooldownExpired) {
-                lastBlockedPkg = pkg
-                lastBlockedAtMs = now
-                handleBlockedApp(pkg)
-            }
-            return
-        }
-
         // ── Greyout Schedule check (time-window blocking, session-independent) ─
         // Works even when no focus session or standalone block is active — the user
         // pre-committed to blocking certain apps during specific hours and days.
@@ -1072,8 +1096,91 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        // Persist any in-progress timed session so onServiceConnected can charge
+        // the gap elapsed while the service was down. This prevents the time-budget
+        // bypass that previously allowed users to gain free time by toggling the
+        // accessibility service off and back on.
+        if (::prefs.isInitialized) {
+            if (currentTimedPkg != null && currentTimedOpenAtMs > 0L) {
+                prefs.edit()
+                    .putString("timed_session_pkg", currentTimedPkg)
+                    .putLong("timed_session_open_at_ms", currentTimedOpenAtMs)
+                    .apply()
+            } else {
+                prefs.edit()
+                    .remove("timed_session_pkg")
+                    .remove("timed_session_open_at_ms")
+                    .apply()
+            }
+        }
+        timedExpireRunnable?.let { handler.removeCallbacks(it) }
+        timedExpireRunnable = null
+        currentTimedPkg = null
+        currentTimedOpenAtMs = 0L
+        currentTimedSessionEndMs = 0L
         lastBlockedPkg = null
         dismissWindowOverlay()
+        vpnHealthHandler.removeCallbacks(vpnHealthRunnable)
+    }
+
+    // ─── VPN self-heal ────────────────────────────────────────────────────────
+
+    /**
+     * Checks whether the VPN tunnel should be running and restarts it if not.
+     *
+     * Conditions that must ALL be true before a restart is attempted:
+     *   • "net_block_self_heal" pref is true  (user opted in)
+     *   • "net_block_vpn" pref is true        (VPN mechanism is selected)
+     *   • NetworkBlockerVpnService is not already running
+     *   • A blocking session (focus or standalone) is currently active
+     *   • VPN permission is still held (VpnService.prepare() == null)
+     *
+     * Called by [vpnHealthRunnable] every 10 s while the service is connected.
+     * Also called indirectly via [NetworkBlockerVpnService.onRevoke] which
+     * schedules its own 3-second restart before this loop fires.
+     */
+    private fun checkAndHealVpn() {
+        if (!::prefs.isInitialized) return
+        if (!prefs.getBoolean("net_block_self_heal", false)) return
+        if (!prefs.getBoolean("net_block_vpn", false)) return
+        if (NetworkBlockerVpnService.isRunning) return
+
+        val now = System.currentTimeMillis()
+        val focusActive = prefs.getBoolean(PREF_FOCUS_ON, false).let { on ->
+            if (!on) false
+            else {
+                val endMs = prefs.getLong("task_end_ms", 0L)
+                endMs <= 0L || now < endMs
+            }
+        }
+        val saActive = prefs.getBoolean(PREF_SA_ACTIVE, false).let { on ->
+            if (!on) false
+            else {
+                val untilMs = prefs.getLong(PREF_SA_UNTIL, 0L)
+                untilMs <= 0L || now < untilMs
+            }
+        }
+        if (!focusActive && !saActive) return
+
+        // Bail out if VPN permission was revoked — cannot restart silently.
+        // Write the permission-lost flag so the JS layer can show a re-grant prompt.
+        if (VpnService.prepare(this) != null) {
+            prefs.edit().putBoolean("vpn_permission_lost", true).apply()
+            return
+        }
+
+        val pkgs   = prefs.getString("net_block_packages", "[]") ?: "[]"
+        val global = prefs.getBoolean("net_block_global", false)
+        val mode   = if (global) NetworkBlockerVpnService.MODE_GLOBAL
+                     else        NetworkBlockerVpnService.MODE_PER_APP
+        try {
+            val intent = Intent(this, NetworkBlockerVpnService::class.java).apply {
+                action = NetworkBlockerVpnService.ACTION_START
+                putExtra(NetworkBlockerVpnService.EXTRA_PACKAGES, pkgs)
+                putExtra(NetworkBlockerVpnService.EXTRA_MODE,     mode)
+            }
+            startService(intent)
+        } catch (_: Exception) { /* best-effort — do not crash the service */ }
     }
 
     // ─── Retry mechanism ──────────────────────────────────────────────────────
@@ -1516,8 +1623,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      */
     private fun isDeviceAdminSettingsPage(event: AccessibilityEvent): Boolean {
         val className = event.className?.toString()?.lowercase() ?: ""
-
-        // ── 1. Class name detection ───────────────────────────────────────────
         val classKeywords = listOf(
             // AOSP / Pixel
             "deviceadminsettings",
@@ -1535,35 +1640,17 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         )
         if (classKeywords.any { it in className }) return true
 
-        // ── 2. Event-text detection ───────────────────────────────────────────
         val eventText = buildString {
             event.text.forEach { append(it); append(' ') }
         }.lowercase()
-        val pageKeywords = listOf(
+        val keywords = listOf(
             "device admin",
             "device administrator",
             "deactivate device admin",
             "remove device admin",
             "active device admin"
         )
-        if (pageKeywords.any { it in eventText }) return true
-
-        // ── 3. Node-tree content scan ─────────────────────────────────────────
-        // Many OEMs (Samsung SubSettings, MIUI, etc.) report a generic class name
-        // for the per-app device admin detail page. We identify it by content:
-        // the page always shows our app name alongside a "Deactivate" button.
-        // Uninstall on this same page is already covered by isUninstallDialog /
-        // blockInstallActions, so we only need to gate on the deactivation path.
-        val root = event.source ?: return false
-        return try {
-            val nodeText = collectNodeText(root).lowercase()
-            val hasFocusFlow = "focusflow" in nodeText || "com.tbtechs.focusflow" in nodeText
-            val hasDeactivate = "deactivate" in nodeText || "remove device admin" in nodeText ||
-                                "deactivate device admin" in nodeText
-            hasFocusFlow && hasDeactivate
-        } finally {
-            root.recycle()
-        }
+        return keywords.any { it in eventText }
     }
 
     /**
@@ -1795,7 +1882,7 @@ class AppBlockerAccessibilityService : AccessibilityService() {
      * to the legacy PREF_DAILY_ALLOWANCE_PKGS (count:1 for migrated entries).
      */
     private fun findAllowanceEntry(pkg: String): AllowanceEntry? {
-        // Try new rich config first
+        // Try new rich config first.
         val configJson = prefs.getString(PREF_DAILY_ALLOWANCE_CONFIG, null)
         if (!configJson.isNullOrBlank() && configJson != "null") {
             try {
@@ -1805,19 +1892,27 @@ class AppBlockerAccessibilityService : AccessibilityService() {
                     val entryPkg = obj.optString("packageName", "")
                     if (entryPkg.equals(pkg, ignoreCase = true)) {
                         return AllowanceEntry(
-                            pkg          = entryPkg,
-                            mode         = obj.optString("mode", "count"),
-                            countPerDay  = obj.optInt("countPerDay", 1).coerceAtLeast(1),
-                            budgetMs     = obj.optLong("budgetMinutes", 30L) * 60_000L,
-                            intervalMs   = obj.optLong("intervalMinutes", 5L) * 60_000L,
-                            windowMs     = obj.optLong("intervalHours", 1L) * 3_600_000L,
+                            pkg         = entryPkg,
+                            mode        = obj.optString("mode", "count"),
+                            countPerDay = obj.optInt("countPerDay", 1).coerceAtLeast(1),
+                            // Use optInt (not optLong) — JS serialises these as plain integers.
+                            // Multiplied to ms after parsing so the data class stays in ms.
+                            budgetMs    = obj.optInt("budgetMinutes", 30).toLong() * 60_000L,
+                            intervalMs  = obj.optInt("intervalMinutes", 5).toLong() * 60_000L,
+                            windowMs    = obj.optInt("intervalHours", 1).toLong() * 3_600_000L,
                         )
                     }
                 }
-            } catch (_: Exception) {}
-            return null // Config exists but this pkg is not in it
+                // Package not found in the config — do NOT fall through to legacy.
+                // The config is authoritative when it exists; falling through would
+                // incorrectly give a count:1 allowance to any pkg in the legacy list
+                // even if the user deliberately removed it from the new config.
+                return null
+            } catch (_: Exception) {
+                // JSON is corrupt — fall through to legacy as a best-effort recovery.
+            }
         }
-        // Legacy fallback: simple string array → count:1
+        // Legacy fallback: plain string array written by old setDailyAllowancePackages → count:1
         val legacyJson = prefs.getString(PREF_DAILY_ALLOWANCE_PKGS, "[]") ?: "[]"
         return try {
             val arr = org.json.JSONArray(legacyJson)
@@ -1912,6 +2007,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
     /**
      * Accumulates elapsed usage time for a timed-mode app session.
      * Called when the user switches away to a different app (or when the session timer fires).
+     *
+     * Fixes applied vs the original:
+     *   • time_budget: correctly handles midnight crossings — only today's portion is charged
+     *     to today's budget; elapsed time before midnight is dropped (yesterday's budget is gone).
+     *   • interval: caps accumulation at the window boundary so time used after a window
+     *     expires mid-session is not charged to the new (not-yet-started) window.
      */
     private fun accumulateTimedUsage(pkg: String, entry: AllowanceEntry, openedAtMs: Long) {
         val now = System.currentTimeMillis()
@@ -1923,15 +2024,39 @@ class AppBlockerAccessibilityService : AccessibilityService() {
 
         when (entry.mode) {
             "time_budget" -> {
-                val today = todayDateString()
-                val usedDate = pkgUsed.optString("date", "")
-                val prevUsedMs = if (usedDate == today) pkgUsed.optLong("usedMs", 0L) else 0L
-                pkgUsed.put("date", today)
-                pkgUsed.put("usedMs", (prevUsedMs + elapsed).coerceAtMost(entry.budgetMs))
+                val today      = todayDateString()
+                val midnightMs = getMidnightMs()
+
+                if (openedAtMs < midnightMs) {
+                    // The session started before today's midnight (service was killed and
+                    // restarted after midnight, or the timer was delayed by Doze).
+                    // Only charge the portion of elapsed time that falls within today —
+                    // yesterday's budget period is already closed.
+                    val elapsedToday = (now - midnightMs).coerceAtLeast(0L)
+                    pkgUsed.put("date",   today)
+                    pkgUsed.put("usedMs", elapsedToday.coerceAtMost(entry.budgetMs))
+                } else {
+                    val usedDate   = pkgUsed.optString("date", "")
+                    val prevUsedMs = if (usedDate == today) pkgUsed.optLong("usedMs", 0L) else 0L
+                    pkgUsed.put("date",   today)
+                    pkgUsed.put("usedMs", (prevUsedMs + elapsed).coerceAtMost(entry.budgetMs))
+                }
             }
             "interval" -> {
-                val prevUsedMs = pkgUsed.optLong("usedMs", 0L)
-                pkgUsed.put("usedMs", (prevUsedMs + elapsed).coerceAtMost(entry.intervalMs))
+                val windowStartMs = pkgUsed.optLong("windowStartMs", 0L)
+                val windowEndMs   = windowStartMs + entry.windowMs
+
+                if (windowStartMs > 0L && now > windowEndMs) {
+                    // The rolling window expired while the session was open.
+                    // Only charge the portion of elapsed time up to the window boundary —
+                    // time after the window expired is free (the next open gets a fresh window).
+                    val elapsedInWindow = (windowEndMs - openedAtMs).coerceAtLeast(0L)
+                    val prevUsedMs      = pkgUsed.optLong("usedMs", 0L)
+                    pkgUsed.put("usedMs", (prevUsedMs + elapsedInWindow).coerceAtMost(entry.intervalMs))
+                } else {
+                    val prevUsedMs = pkgUsed.optLong("usedMs", 0L)
+                    pkgUsed.put("usedMs", (prevUsedMs + elapsed).coerceAtMost(entry.intervalMs))
+                }
             }
         }
 
@@ -1978,9 +2103,21 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         return try { org.json.JSONObject(json) } catch (_: Exception) { org.json.JSONObject() }
     }
 
-    private fun todayDateString(): String {
+    /** ISO-8601 date string for today in the device's local timezone (e.g. "2025-01-09"). */
+    private fun todayDateString(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    /**
+     * Returns epoch ms for the start of today (midnight) in the device's local timezone.
+     * Used to correctly split elapsed time across a midnight boundary.
+     */
+    private fun getMidnightMs(): Long {
         val cal = java.util.Calendar.getInstance()
-        return "${cal.get(java.util.Calendar.YEAR)}-${cal.get(java.util.Calendar.MONTH) + 1}-${cal.get(java.util.Calendar.DAY_OF_MONTH)}"
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     // ─── Block determination ──────────────────────────────────────────────────
@@ -1991,8 +2128,6 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         saActive: Boolean,
         alwaysBlockActive: Boolean = false,
     ): Boolean {
-        if (ALWAYS_BLOCKED.any { pkg.equals(it, ignoreCase = true) }) return true
-
         if (focusActive || saActive || alwaysBlockActive) {
             if (INSTALLER_PACKAGES.any { pkg.equals(it, ignoreCase = true) }) return true
         }
@@ -2050,7 +2185,12 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         }
         sendBroadcast(broadcast)
 
-        // 1. Set the awaiting package BEFORE launching/dismissing so the very next
+        // 1. Kill the network first — before the overlay even appears, the blocked
+        //    app's pending requests are already cut. On a slow phone the user may
+        //    briefly see the app, but it will be loading a blank screen.
+        triggerNetworkBlock(blockedPackage)
+
+        // 2. Set the awaiting package BEFORE launching/dismissing so the very next
         //    window event (launcher coming to front) is guaranteed to trigger the
         //    X-button reveal without a race condition.
         prefs.edit().putString("overlay_awaiting_pkg", blockedPackage).apply()
@@ -2072,6 +2212,61 @@ class AppBlockerAccessibilityService : AccessibilityService() {
         // 6. Temptation log — record every intercept for the weekly shame report.
         val displayName = resolveAppDisplayName(blockedPackage)
         TemptationLogManager.log(this, blockedPackage, displayName)
+    }
+
+    /**
+     * Activates network blocking for [blockedPackage] if the user has enabled it.
+     *
+     * Only fires if:
+     *   • net_block_enabled = true
+     *   • net_block_vpn = true
+     *   • VPN permission has already been granted by the user (prepare() == null)
+     *   • VPN is not already running
+     *
+     * WiFi and mobile data direct-disable are intentionally NOT triggered here
+     * because they require Context methods not available in an AccessibilityService.
+     * Those supplementary actions are handled by NetworkBlockModule from the JS layer
+     * when the user manually starts a session. The VPN tunnel covers both channels.
+     */
+    private fun triggerNetworkBlock(blockedPackage: String) {
+        if (!prefs.getBoolean("net_block_enabled", false)) return
+        if (!prefs.getBoolean("net_block_vpn", false)) return
+        if (NetworkBlockerVpnService.isRunning) return   // already active
+
+        // Per-app VPN: if a non-empty package selection list is configured,
+        // only apply network blocking to packages that appear in that list.
+        val vpnSelectedJson = prefs.getString("vpn_selected_packages", "[]") ?: "[]"
+        if (vpnSelectedJson != "[]" && vpnSelectedJson != "null") {
+            val inList = try {
+                val arr = org.json.JSONArray(vpnSelectedJson)
+                var found = false
+                for (i in 0 until arr.length()) {
+                    if (arr.optString(i) == blockedPackage) { found = true; break }
+                }
+                found
+            } catch (_: Exception) { true /* malformed JSON — apply to all */ }
+            if (!inList) return
+        }
+
+        // VPN permission check — prepare() returns null if permission is already held
+        try {
+            val permissionIntent = VpnService.prepare(applicationContext)
+            if (permissionIntent != null) return  // not yet granted — skip, don't crash
+        } catch (_: Exception) { return }
+
+        val global = prefs.getBoolean("net_block_global", false)
+        val mode   = if (global) NetworkBlockerVpnService.MODE_GLOBAL
+                     else        NetworkBlockerVpnService.MODE_PER_APP
+        val pkgs   = JSONArray().apply { put(blockedPackage) }.toString()
+
+        try {
+            val intent = Intent(this, NetworkBlockerVpnService::class.java).apply {
+                action = NetworkBlockerVpnService.ACTION_START
+                putExtra(NetworkBlockerVpnService.EXTRA_PACKAGES, pkgs)
+                putExtra(NetworkBlockerVpnService.EXTRA_MODE, mode)
+            }
+            startService(intent)
+        } catch (_: Exception) { /* service start failed — overlay + HOME are the fallback */ }
     }
 
     // ─── WindowManager overlay (TYPE_APPLICATION_OVERLAY) ────────────────────

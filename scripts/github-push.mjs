@@ -115,10 +115,27 @@ async function processInBatches(items, concurrency, fn) {
   return results;
 }
 
+function getAppVersion() {
+  try {
+    const appJson = JSON.parse(readFileSync('/home/runner/workspace/artifacts/focusflow/app.json', 'utf-8'));
+    const version = appJson?.expo?.version ?? 'unknown';
+    const versionCode = appJson?.expo?.android?.versionCode ?? '?';
+    return { version, versionCode };
+  } catch {
+    return { version: 'unknown', versionCode: '?' };
+  }
+}
+
 async function run() {
   if (!TOKEN) {
     throw new Error('Missing GitHub token secret. Add GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_PAT, GH_PAT, or PAT in Secrets.');
   }
+
+  const { version, versionCode } = getAppVersion();
+  console.log(`Pushing FocusFlow → https://github.com/${OWNER}/${REPO}`);
+  console.log(`Branch:      ${BRANCH}`);
+  console.log(`Version:     v${version}`);
+  console.log(`versionCode: ${versionCode}\n`);
 
   console.log('Collecting files...');
   const allFiles = collectFiles(BASE);
@@ -183,7 +200,7 @@ async function run() {
 
   console.log('Committing...');
   const newCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits`, 'POST', {
-    message: `chore: sync Replit workspace ${new Date().toISOString()}`,
+    message: `chore: sync Replit workspace — v${version} (versionCode ${versionCode}) — ${new Date().toISOString()}`,
     tree: newTree.sha,
     parents: [latestSha],
   });

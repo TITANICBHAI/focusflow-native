@@ -10,6 +10,7 @@
  */
 
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { withScreenErrorBoundary } from '@/components/withScreenErrorBoundary';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
@@ -89,36 +90,42 @@ function StatsScreen() {
   //    changes (so a just-completed task is reflected without re-mounting).
   const [historicalTasks, setHistoricalTasks] = useState<Task[]>([]);
   const [historicalError, setHistoricalError] = useState(false);
-  useEffect(() => {
-    void (async () => {
-      try {
-        setHistoricalError(false);
-        const end = new Date();
-        const start = new Date();
-        start.setDate(start.getDate() - 30);
-        const rows = await dbGetTasksInDateRange(start.toISOString(), end.toISOString());
-        setHistoricalTasks(rows);
-      } catch {
-        setHistoricalError(true);
-      }
-    })();
-  }, [state.tasks]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        try {
+          setHistoricalError(false);
+          const end = new Date();
+          const start = new Date();
+          start.setDate(start.getDate() - 30);
+          const rows = await dbGetTasksInDateRange(start.toISOString(), end.toISOString());
+          setHistoricalTasks(rows);
+        } catch {
+          setHistoricalError(true);
+        }
+      })();
+    }, [])
+  );
+
   // Use the historical set as the canonical source for the breakdown screens.
   // Falls back to state.tasks while the historical fetch is still in-flight.
   const tasks = historicalTasks.length > 0 ? historicalTasks : state.tasks;
 
-  useEffect(() => {
-    void (async () => {
-      const [fm, oc, s] = await Promise.all([
-        dbGetTodayFocusMinutes(),
-        dbGetTodayOverrideCount(),
-        dbGetStreak(),
-      ]);
-      setFocusMinutes(fm);
-      setOverrideCount(oc);
-      setStreak(s);
-    })();
-  }, [state.tasks]);
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        const [fm, oc, s] = await Promise.all([
+          dbGetTodayFocusMinutes(),
+          dbGetTodayOverrideCount(),
+          dbGetStreak(),
+        ]);
+        setFocusMinutes(fm);
+        setOverrideCount(oc);
+        setStreak(s);
+      })();
+    }, [])
+  );
 
   // ── YESTERDAY breakdown ───────────────────────────────────────────────────
   const yesterdayBreakdown = useMemo<YesterdayBreakdown>(() => {

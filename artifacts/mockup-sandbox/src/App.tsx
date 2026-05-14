@@ -2,6 +2,8 @@ import { useEffect, useState, type ComponentType } from "react";
 
 import { modules as discoveredModules } from "./.generated/mockup-components";
 import FocusFlowLanding from "./components/FocusFlowLanding";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+import TermsOfService from "./components/TermsOfService";
 
 type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 
@@ -166,6 +168,14 @@ function App() {
 
   if (local === "/gallery") {
     return <Gallery />;
+  }
+
+  if (local === "/privacy") {
+    return <PrivacyPolicy />;
+  }
+
+  if (local === "/terms") {
+    return <TermsOfService />;
   }
 
   return <FocusFlowLanding />;

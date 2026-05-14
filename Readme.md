@@ -131,3 +131,12 @@ The main FocusFlow Android app. All persistence is local SQLite via expo-sqlite.
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`.
+
+## 📜 License
+This project is licensed under the CC BY-NC-SA 4.0.
+
+Non-Commercial: You may not use this material for commercial purposes.
+
+ShareAlike: If you remix, transform, or build upon the material, you must distribute your contributions under the same license as the original.
+
+Attribution: You must give appropriate credit to TITANICBHAI (TBTechs).

@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { Appearance, Platform } from 'react-native';
 import type { Task, AppSettings, FocusSession, DailyAllowanceEntry } from './types';
 import { logger } from '@/services/startupLogger';
 
@@ -6,8 +7,30 @@ let db: SQLite.SQLiteDatabase | null = null;
 const PRIMARY_DB_NAME = 'focusday.db';
 const RECOVERY_DB_NAME = 'focusday_recovery.db';
 
+/**
+ * Single-flight guard: if a getDb() call is already in progress, all
+ * concurrent callers await the same promise instead of each racing to
+ * open their own copy of the database. Without this, multiple app
+ * components initialising simultaneously all see db===null and launch
+ * parallel open attempts that all fail and cascade into DB_UNRECOVERABLE.
+ */
+let _openingPromise: Promise<SQLite.SQLiteDatabase | null> | null = null;
+
+/**
+ * Latched after all three open attempts (primary × 2 + recovery) have failed.
+ * Once true, getDb() returns null immediately instead of re-entering the
+ * 3-attempt cycle — preventing the cascade of repeated DB_UNRECOVERABLE
+ * log events caused by background tasks and React components each starting
+ * their own retry cycle after the first unrecoverable failure.
+ *
+ * resetDb() clears this flag so that the dead-handle recovery path in
+ * runWithDb() can still attempt a fresh open after a previously-working
+ * handle is invalidated by the OS.
+ */
+let _dbUnrecoverable = false;
+
 const DEFAULT_SETTINGS: AppSettings = {
-  darkMode: false,
+  darkMode: Appearance.getColorScheme() === 'dark',
   defaultDuration: 60,
   defaultReminderOffsets: [-10, -5, 0],
   focusModeEnabled: true,
@@ -21,6 +44,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   privacyAccepted: false,
   standaloneBlockPackages: [],
   standaloneBlockUntil: null,
+  alwaysOnPackages: [],
+  autoCopyToAlwaysOn: false,
   dailyAllowanceEntries: [],
   onboardingComplete: false,
   blockedWords: [],
@@ -37,16 +62,29 @@ const DEFAULT_SETTINGS: AppSettings = {
   recurringBlockSchedules: [],
   beginnerMode: true,
   tipsCardDismissed: false,
-  alwaysOnEnforcementEnabled: true,
+  alwaysOnEnforcementEnabled: false,
   lastShownStreakMilestone: 0,
+  vpnBlockEnabled: false,
+  standaloneVpnPackages: [],
   launcherEnabled: false,
   launcherHiddenPackages: [],
   launcherPinnedPackages: [],
+  launcherDockPackages: [],
   launcherWallpaperUri: null,
   launcherClockStyle: 'digital',
-  launcherBlockUninstall: true,
+  launcherBlockUninstall: false,
   launcherLockDuringStandalone: true,
+  overlayWallpaper: '',
+  overlayQuotes: [],
 };
+
+/**
+ * Counts getDb() IIFEs currently in flight (i.e. actively trying to open the
+ * database). Logged alongside every open failure so we can distinguish a
+ * solo-caller NPE from a thundering-herd scenario where multiple background
+ * tasks all race getDb() at the same time.
+ */
+let _openInFlight = 0;
 
 /**
  * Reset the DB singleton — call after a recoverable open error so the next
@@ -55,6 +93,7 @@ const DEFAULT_SETTINGS: AppSettings = {
  */
 export function resetDb(): void {
   db = null;
+  _dbUnrecoverable = false;
 }
 
 async function openAndInit(name: string = PRIMARY_DB_NAME): Promise<SQLite.SQLiteDatabase> {
@@ -90,6 +129,27 @@ function isDeadHandleError(e: unknown): boolean {
     m.includes('prepareAsync') ||
     m.includes('database is not open') ||
     m.includes('database has been closed')
+  );
+}
+
+/**
+ * Detects a JSI-layer constructor NPE: the expo-sqlite native module caches a
+ * C++ NativeDatabase object per filename. When Android (especially Samsung One
+ * UI) trims that native object, calling openDatabaseAsync() with the SAME
+ * filename tries to re-use the dead cached pointer and fails instantly at the
+ * JSI constructor level — "at construct (native) at apply (native)".
+ *
+ * Retrying with the same filename hits the same dead cached state and always
+ * fails (confirmed by both attempts failing in ~35ms with identical stacks).
+ * Retrying with a DIFFERENT filename works because it creates a fresh C++
+ * object. We use this to skip the futile same-name retry and go straight to
+ * the recovery DB, saving ~365ms of wasted recovery time.
+ */
+function isJsiConstructorNpe(e: unknown): boolean {
+  const m = fullErr(e);
+  return (
+    m.includes('construct (native)') ||
+    (m.includes('NullPointerException') && m.includes('apply (native)'))
   );
 }
 
@@ -147,40 +207,182 @@ async function runWithDbOr<T>(opName: string, fallback: T, op: DbOp<T>): Promise
  *      Logs [DB_CORRUPTION_RECOVERY] to the startup logger.
  *      If even this fails, return null.
  */
+/** Extracts the most useful error string including cause chain and stack snippet. */
+function fullErr(e: unknown): string {
+  const err = e as { message?: string; cause?: unknown; stack?: string } | null | undefined;
+  const msg = String(err?.message ?? e).slice(0, 200);
+  const cause = err?.cause ? ` | cause: ${String((err.cause as { message?: string })?.message ?? err.cause).slice(0, 120)}` : '';
+  const stack = err?.stack ? ` | stack: ${err.stack.split('\n').slice(1, 4).join(' ').trim()}` : '';
+  return msg + cause + stack;
+}
+
 export async function getDb(): Promise<SQLite.SQLiteDatabase | null> {
+  // Fast-fail after all three open attempts have been exhausted. Prevents
+  // background tasks and React components from each kicking off a fresh
+  // 3-attempt cycle and flooding the logs with repeated DB_UNRECOVERABLE
+  // events. resetDb() clears this flag so dead-handle recovery still works.
+  if (_dbUnrecoverable) return null;
   if (db) return db;
 
-  try {
-    db = await openAndInit(PRIMARY_DB_NAME);
-    return db;
-  } catch (firstErr) {
-    console.error('[database] open/init failed (attempt 1):', firstErr);
-    void logger.warn('database', `open/init attempt 1 failed: ${String(firstErr)}`);
-    resetDb();
-    await new Promise((r) => setTimeout(r, 300));
+  // Single-flight: if an open is already in progress, join it instead of
+  // racing a parallel open that would also fail and log DB_UNRECOVERABLE.
+  if (_openingPromise) return _openingPromise;
+
+  _openingPromise = (async () => {
+    _openInFlight++;
+    const t0 = Date.now();
+    void logger.debug('database', `getDb: opening (in-flight: ${_openInFlight}, API: ${Platform.Version})`);
     try {
       db = await openAndInit(PRIMARY_DB_NAME);
+      void logger.debug('database', `getDb: primary opened OK in ${Date.now() - t0}ms`);
       return db;
-    } catch (secondErr) {
-      console.error('[database] open/init failed (attempt 2 — trying recovery DB):', secondErr);
-      void logger.error('database', `open/init attempt 2 failed: ${String(secondErr)} — switching to recovery DB`);
-      try {
-        db = await openAndInit(RECOVERY_DB_NAME);
-        void logger.error('database', '[DB_CORRUPTION_RECOVERY] opened recovery DB — primary may be corrupted');
-        return db;
-      } catch (recoveryErr) {
-        console.error('[database] recovery DB also failed — giving up:', recoveryErr);
-        void logger.error('database', `[DB_UNRECOVERABLE] recovery DB failed: ${String(recoveryErr)}`);
-        return null;
+    } catch (firstErr) {
+      const ms1 = Date.now() - t0;
+      console.error('[database] open/init failed (attempt 1):', firstErr);
+      void logger.warn('database', `open/init attempt 1 failed (${ms1}ms, in-flight: ${_openInFlight}, API: ${Platform.Version}): ${fullErr(firstErr)}`);
+      resetDb();
+
+      // ── JSI constructor NPE fast-path ────────────────────────────────────────
+      // When Android (Samsung One UI in particular) trims the C++ NativeDatabase
+      // object that expo-sqlite caches per filename, any attempt to reopen the
+      // SAME filename hits the dead cached pointer again and fails in ~35ms with
+      // an identical NPE ("at construct (native)"). The 300ms wait + retry is
+      // therefore completely futile for this error class.
+      //
+      // A DIFFERENT filename always works because it creates a fresh C++ object.
+      // So we skip straight to the recovery DB, saving ~365ms of downtime.
+      if (isJsiConstructorNpe(firstErr)) {
+        void logger.warn('database', `open/init: JSI constructor NPE detected — skipping same-name retry, opening recovery DB immediately (saves ~${300 + ms1}ms)`);
+        try {
+          db = await openAndInit(RECOVERY_DB_NAME);
+          void logger.error('database', `[DB_CORRUPTION_RECOVERY] opened recovery DB in ${Date.now() - t0}ms total (JSI fast-path)`);
+          return db;
+        } catch (recoveryErr) {
+          const ms3 = Date.now() - t0;
+          console.error('[database] recovery DB also failed (JSI fast-path) — giving up:', recoveryErr);
+          void logger.error('database', `[DB_UNRECOVERABLE] recovery DB failed (${ms3}ms total, JSI fast-path, in-flight: ${_openInFlight}, API: ${Platform.Version}): ${fullErr(recoveryErr)}`);
+          _dbUnrecoverable = true;
+          return null;
+        }
       }
+
+      // ── Standard retry (non-JSI errors: schema migration, file locks, etc.) ──
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        db = await openAndInit(PRIMARY_DB_NAME);
+        void logger.debug('database', `getDb: primary opened OK on attempt 2 in ${Date.now() - t0}ms total`);
+        return db;
+      } catch (secondErr) {
+        const ms2 = Date.now() - t0;
+        console.error('[database] open/init failed (attempt 2 — trying recovery DB):', secondErr);
+        void logger.error('database', `open/init attempt 2 failed (${ms2}ms, in-flight: ${_openInFlight}, API: ${Platform.Version}): ${fullErr(secondErr)} — switching to recovery DB`);
+        try {
+          db = await openAndInit(RECOVERY_DB_NAME);
+          void logger.error('database', `[DB_CORRUPTION_RECOVERY] opened recovery DB in ${Date.now() - t0}ms total — primary may be corrupted`);
+          return db;
+        } catch (recoveryErr) {
+          const ms3 = Date.now() - t0;
+          console.error('[database] recovery DB also failed — giving up:', recoveryErr);
+          void logger.error('database', `[DB_UNRECOVERABLE] recovery DB failed (${ms3}ms total, in-flight: ${_openInFlight}, API: ${Platform.Version}): ${fullErr(recoveryErr)}`);
+          // Latch the flag so every subsequent getDb() call fast-fails with null
+          // instead of restarting the 3-attempt cycle. This stops the cascade of
+          // repeated DB_UNRECOVERABLE events caused by background tasks and React
+          // components each triggering their own retry cycle after this point.
+          _dbUnrecoverable = true;
+          return null;
+        }
+      }
+    } finally {
+      _openInFlight--;
+      _openingPromise = null;
     }
+  })();
+
+  return _openingPromise;
+}
+
+// ─── DB health probe ─────────────────────────────────────────────────────────
+
+/**
+ * Runs a lightweight `SELECT 1` against the current DB handle to verify it is
+ * still alive. Returns `true` if healthy, `false` if dead or not yet open.
+ *
+ * Use this in FOREGROUND_RESUME before deciding whether to call `resetDb()`.
+ * On most resumes the handle is fine — skipping an unnecessary reset avoids
+ * the open/close cycle that gives Samsung One UI another opportunity to trim
+ * the native C++ NativeDatabase object (the root cause of the JSI NPE).
+ */
+export async function probeDbHealth(): Promise<boolean> {
+  if (!db) return false;
+  try {
+    await db.getFirstAsync('SELECT 1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Session device fingerprint ───────────────────────────────────────────────
+
+/**
+ * One-shot [DB_DIAG] log entry written at the very start of each session.
+ * Captures the Android API level, OS version string, device manufacturer/model,
+ * and the SQLite version string reported by the open database so every log
+ * share has a permanent device fingerprint at the top — making it trivial to
+ * correlate failures across different devices.
+ *
+ * Safe to call multiple times — only fires on the first call per process.
+ */
+let _diagLogged = false;
+
+export async function logDbDiagnostics(): Promise<void> {
+  if (_diagLogged) return;
+  _diagLogged = true;
+  try {
+    const constants = Platform.constants as Record<string, unknown>;
+    const api        = Platform.Version;
+    const release    = String(constants.Release    ?? constants.release    ?? '?');
+    const mfr        = String(constants.Manufacturer ?? constants.manufacturer ?? '?');
+    const model      = String(constants.Model      ?? constants.model      ?? '?');
+
+    let sqliteVer = '?';
+    try {
+      const handle = await getDb();
+      if (handle) {
+        const row = await handle.getFirstAsync<{ v: string }>('SELECT sqlite_version() AS v');
+        if (row?.v) sqliteVer = row.v;
+      }
+    } catch {
+      // Non-fatal — leave sqliteVer as '?'
+    }
+
+    void logger.info(
+      'database',
+      `[DB_DIAG] API=${api} Android=${release} ${mfr} ${model} SQLite=${sqliteVer}`,
+    );
+  } catch (e) {
+    // Diagnostics must never crash the caller.
+    void logger.warn('database', `[DB_DIAG] collection failed: ${String(e)}`);
   }
 }
 
 async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
+  // ── WAL mode ────────────────────────────────────────────────────────────────
+  // Best-effort: some Android filesystems (certain OEM /data partitions) reject
+  // WAL mode and throw NullPointerException inside execAsync. If it fails we
+  // fall back to the default DELETE journal mode — the DB is still fully usable.
+  try {
+    await db.runAsync('PRAGMA journal_mode = WAL');
+  } catch {
+    // WAL not supported on this filesystem — continue with DELETE mode.
+  }
 
+  // ── Core tables ─────────────────────────────────────────────────────────────
+  // One runAsync per statement: expo-sqlite v14 throws NullPointerException
+  // when multiple SQL statements are batched into a single execAsync call on
+  // Android. Splitting into individual calls avoids the NPE entirely.
+
+  await db.runAsync(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -196,13 +398,17 @@ async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       focus_mode INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
+    )
+  `);
 
+  await db.runAsync(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    );
+    )
+  `);
 
+  await db.runAsync(`
     CREATE TABLE IF NOT EXISTS focus_sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id TEXT NOT NULL,
@@ -210,30 +416,40 @@ async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
       ended_at TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       allowed_packages TEXT NOT NULL DEFAULT '[]'
-    );
+    )
+  `);
 
+  await db.runAsync(`
     CREATE TABLE IF NOT EXISTS focus_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id TEXT NOT NULL,
       app_name TEXT NOT NULL,
       overridden_at TEXT NOT NULL,
       reason TEXT
-    );
+    )
+  `);
 
+  await db.runAsync(`
     CREATE TABLE IF NOT EXISTS daily_completions (
       date TEXT PRIMARY KEY,
       completed INTEGER NOT NULL DEFAULT 0,
       total INTEGER NOT NULL DEFAULT 0
-    );
+    )
   `);
 
-  // Migration: add focus_allowed_packages column to tasks.
+  // ── Migration: add focus_allowed_packages column ─────────────────────────
   // ALTER TABLE ADD COLUMN is idempotent via try/catch — safe to run every time.
   try {
-    await db.execAsync(`ALTER TABLE tasks ADD COLUMN focus_allowed_packages TEXT;`);
+    await db.runAsync('ALTER TABLE tasks ADD COLUMN focus_allowed_packages TEXT');
   } catch {
     // Column already exists — ignore.
   }
+
+  // ── Indexes ──────────────────────────────────────────────────────────────
+  // CREATE INDEX IF NOT EXISTS is a no-op when the index already exists.
+  await db.runAsync('CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time)');
+  await db.runAsync('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+  await db.runAsync('CREATE INDEX IF NOT EXISTS idx_tasks_status_end ON tasks(status, end_time)');
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -353,6 +569,40 @@ export async function dbUpdateTask(task: Task): Promise<void> {
       task.id,
     ],
   ).then(() => undefined));
+}
+
+/**
+ * Atomically update multiple tasks inside a single SQLite transaction.
+ * If any row update fails the entire batch is rolled back, so the schedule
+ * is never left in a half-shifted state (e.g. mid-way through extendTaskTime).
+ */
+export async function dbUpdateTasksBatch(tasks: Task[]): Promise<void> {
+  if (tasks.length === 0) return;
+  return runWithDb('dbUpdateTasksBatch', async (database) => {
+    await database.withTransactionAsync(async () => {
+      for (const task of tasks) {
+        await database.runAsync(
+          `UPDATE tasks SET title=?, description=?, start_time=?, end_time=?, duration_minutes=?, status=?, priority=?, tags=?, reminders=?, color=?, focus_mode=?, focus_allowed_packages=?, updated_at=? WHERE id=?`,
+          [
+            task.title,
+            task.description ?? null,
+            task.startTime,
+            task.endTime,
+            task.durationMinutes,
+            task.status,
+            task.priority,
+            JSON.stringify(task.tags),
+            JSON.stringify(task.reminders),
+            task.color,
+            task.focusMode ? 1 : 0,
+            task.focusAllowedPackages !== undefined ? JSON.stringify(task.focusAllowedPackages) : null,
+            task.updatedAt,
+            task.id,
+          ],
+        );
+      }
+    });
+  });
 }
 
 export async function dbDeleteTask(taskId: string): Promise<void> {
@@ -487,7 +737,7 @@ export async function dbLogFocusOverride(taskId: string, appName: string, reason
       [taskId, appName, new Date().toISOString(), reason ?? null],
     ).then(() => undefined));
   } catch (e) {
-    console.error('[database] dbLogFocusOverride failed:', e);
+    void logger.error('database', `dbLogFocusOverride failed: ${String(e)}`);
   }
 }
 
@@ -515,7 +765,7 @@ export async function dbRecordDayCompletion(completed: number, total: number): P
       ).then(() => undefined);
     });
   } catch (e) {
-    console.error('[database] dbRecordDayCompletion failed:', e);
+    void logger.error('database', `dbRecordDayCompletion failed: ${String(e)}`);
   }
 }
 
@@ -545,15 +795,17 @@ export async function dbBackfillDayCompletions(daysBack: number = 30): Promise<v
         if (r.status === 'completed') b.completed += 1;
         buckets.set(d, b);
       }
-      for (const [date, b] of buckets) {
-        await database.runAsync(
-          `INSERT OR REPLACE INTO daily_completions (date, completed, total) VALUES (?, ?, ?)`,
-          [date, b.completed, b.total],
-        );
-      }
+      await database.withTransactionAsync(async () => {
+        for (const [date, b] of buckets) {
+          await database.runAsync(
+            `INSERT OR REPLACE INTO daily_completions (date, completed, total) VALUES (?, ?, ?)`,
+            [date, b.completed, b.total],
+          );
+        }
+      });
     });
   } catch (e) {
-    console.error('[database] dbBackfillDayCompletions failed:', e);
+    void logger.error('database', `dbBackfillDayCompletions failed: ${String(e)}`);
   }
 }
 
@@ -566,6 +818,16 @@ function localDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Parses a YYYY-MM-DD string as a **local** midnight Date, not UTC midnight.
+ * Using `new Date('YYYY-MM-DD')` parses as UTC and shifts the day by the
+ * user's UTC offset, breaking streak math in any UTC-negative timezone.
+ */
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export async function dbGetStreak(): Promise<number> {
   return runWithDbOr('dbGetStreak', 0, async (database) => {
     const rows = await database.getAllAsync<{ date: string; completed: number; total: number }>(
@@ -576,7 +838,7 @@ export async function dbGetStreak(): Promise<number> {
     checkDate.setHours(0, 0, 0, 0);
 
     for (const row of rows) {
-      const rowDate = new Date(row.date);
+      const rowDate = parseLocalDate(row.date); // local midnight, not UTC
       const diffDays = Math.round((checkDate.getTime() - rowDate.getTime()) / 86400000);
       if (diffDays > 1) break; // gap in streak
       // Count day as "active" if at least 50% completion
@@ -589,6 +851,30 @@ export async function dbGetStreak(): Promise<number> {
     }
     return streak;
   });
+}
+
+// ─── WAL checkpoint ───────────────────────────────────────────────────────────
+//
+// SQLite WAL mode keeps recent writes in a separate -wal sidecar file.
+// When Android's Auto Backup agent copies the database it grabs the .db file
+// as-is. If the -wal file has uncommitted pages that haven't been folded back
+// into the main .db yet, the backup will be missing those writes.
+//
+// `dbCheckpointWal` runs a FULL checkpoint that:
+//  1. Ensures all WAL frames are written back to the main .db file.
+//  2. Makes the -wal file safe to truncate (Android does this on its own).
+//
+// Call this whenever the app goes to background and periodically during idle
+// so the on-disk database is always in sync with what the user expects.
+
+export async function dbCheckpointWal(): Promise<void> {
+  try {
+    await runWithDb('dbCheckpointWal', async (database) => {
+      await database.execAsync('PRAGMA wal_checkpoint(FULL);');
+    });
+  } catch (e) {
+    void logger.warn('database', `WAL checkpoint failed (non-fatal): ${String(e)}`);
+  }
 }
 
 // ─── All-time / heatmap stats ─────────────────────────────────────────────────
@@ -635,6 +921,45 @@ export async function dbGetAllTimeFocusSessions(): Promise<number> {
   });
 }
 
+/**
+ * Deletes old records to keep the database lean.
+ * Removes completed focus sessions and daily completion records older than
+ * `daysToKeep` days. Called once per app session after the DB is ready.
+ * Non-fatal — errors are silently swallowed by the caller.
+ */
+export async function dbPruneOldData(daysToKeep = 90): Promise<void> {
+  return runWithDbOr('dbPruneOldData', undefined, async (database) => {
+    // Focus sessions and daily completion rows are compact — keep 90 days.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - daysToKeep);
+    const cutoffIso  = cutoff.toISOString();
+    const cutoffDate = cutoffIso.slice(0, 10);
+    await database.runAsync(
+      `DELETE FROM focus_sessions WHERE is_active = 0 AND ended_at IS NOT NULL AND ended_at < ?`,
+      [cutoffIso],
+    );
+    await database.runAsync(
+      `DELETE FROM daily_completions WHERE date < ?`,
+      [cutoffDate],
+    );
+    // Tasks are kept for a full year so the "All Time" task log stays meaningful.
+    // Each row is small (~500 bytes), so 365 days of tasks is well under 10 MB.
+    const taskCutoff = new Date();
+    taskCutoff.setDate(taskCutoff.getDate() - 365);
+    await database.runAsync(
+      `DELETE FROM tasks WHERE status IN ('completed', 'skipped') AND end_time < ?`,
+      [taskCutoff.toISOString()],
+    );
+  });
+}
+
+/** Deletes every task row in one shot. Used by "Clear All Tasks" in Settings. */
+export async function dbDeleteAllTasks(): Promise<void> {
+  return runWithDb('dbDeleteAllTasks', (database) =>
+    database.runAsync('DELETE FROM tasks').then(() => undefined),
+  );
+}
+
 /** Best consecutive-day streak ever recorded (50% completion threshold). */
 export async function dbGetBestStreak(): Promise<number> {
   return runWithDbOr('dbGetBestStreak', 0, async (database) => {
@@ -645,7 +970,7 @@ export async function dbGetBestStreak(): Promise<number> {
     let current = 0;
     let prevDate: Date | null = null;
     for (const r of rows) {
-      const d = new Date(r.date);
+      const d = parseLocalDate(r.date); // local midnight, not UTC
       const isGood = r.total > 0 && r.completed / r.total >= 0.5;
       if (!isGood) { best = Math.max(best, current); current = 0; prevDate = null; continue; }
       if (!prevDate) { current = 1; }

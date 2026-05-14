@@ -11,12 +11,14 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { PinSetupModal } from '@/components/PinSetupModal';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Switch,
   ActivityIndicator,
   AppState,
   Linking,
@@ -27,6 +29,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { NativeImagePickerModule } from '@/native-modules/NativeImagePickerModule';
+import { NetworkBlockModule } from '@/native-modules/NetworkBlockModule';
+import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 import { Alert } from 'react-native';
 import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -141,6 +145,21 @@ const PERMISSIONS: PermItem[] = [
     grantAction: 'manual',
   },
   {
+    id: 'vpn',
+    icon: 'shield-half-outline',
+    title: 'VPN Permission',
+    description: 'Required to cut the network connection of blocked apps when Network Blocking is enabled.',
+    whyNeeded:
+      'Android requires a one-time consent dialog before any app may create a VPN. Without it the "Network Blocking" toggle in Block Enforcement will have no effect.',
+    brokenWithout: [
+      'Network Blocking (Block Enforcement → System Protection) will not start',
+      'Blocked apps will still have full internet access during a focus session',
+    ],
+    deepLinkLabel: 'Allow VPN',
+    grantAction: 'auto',
+    optional: true,
+  },
+  {
     id: 'device_admin',
     icon: 'shield-outline',
     title: 'Device Admin',
@@ -184,6 +203,10 @@ async function checkStatus(id: string): Promise<PermStatus> {
         const ok = await ForegroundLaunchModule.hasOverlayPermission();
         return ok ? 'granted' : 'denied';
       }
+      case 'vpn': {
+        const ok = await NetworkBlockModule.isVpnPermissionGranted();
+        return ok ? 'granted' : 'denied';
+      }
       case 'device_admin': {
         const ok = await UsageStatsModule.isDeviceAdminActive();
         return ok ? 'granted' : 'denied';
@@ -202,7 +225,17 @@ export default function OnboardingScreen() {
   const [statuses, setStatuses] = useState<Record<string, PermStatus>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [pinProtectionChoice, setPinProtectionChoice] = useState(false);
+  const [defensePinSet, setDefensePinSet] = useState(false);
+  const [pinSetupVisible, setPinSetupVisible] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+
+  // Check whether a defense PIN is already stored (e.g. user came back to onboarding)
+  useEffect(() => {
+    SharedPrefsModule.getString('defense_pin_hash')
+      .then((hash) => setDefensePinSet(!!hash))
+      .catch(() => {});
+  }, []);
 
   const checkAll = useCallback(async () => {
     const result: Record<string, PermStatus> = {};
@@ -252,6 +285,12 @@ export default function OnboardingScreen() {
         await UsageStatsModule.openAccessibilitySettings();
       } else if (perm.id === 'overlay') {
         await ForegroundLaunchModule.requestOverlayPermission();
+      } else if (perm.id === 'vpn') {
+        await NetworkBlockModule.requestVpnPermission();
+        setTimeout(async () => {
+          const s = await checkStatus('vpn');
+          setStatuses((prev) => ({ ...prev, vpn: s }));
+        }, 800);
       } else if (perm.id === 'device_admin') {
         await UsageStatsModule.openDeviceAdminSettings();
         setTimeout(async () => {
@@ -276,6 +315,16 @@ export default function OnboardingScreen() {
   const handleFinish = async () => {
     // Don't mark onboardingComplete here — user-profile.tsx does that
     // so we know the user has seen (or skipped) the profile setup step.
+    try {
+      await updateSettings({ ...state.settings, pinProtectionEnabled: pinProtectionChoice });
+    } catch { /* non-blocking — preference is saved on best-effort */ }
+    // Write background service consent flag so BootReceiver knows the user
+    // has completed onboarding and explicitly authorised background operation.
+    // Huawei AppGallery rule 2.19: foreground services must not start without
+    // user authorisation. This flag gates the idle auto-start on reboot.
+    try {
+      await SharedPrefsModule.putString('user_consented_background_service', 'true');
+    } catch { /* non-fatal */ }
     router.replace('/user-profile');
   };
 
@@ -520,6 +569,68 @@ export default function OnboardingScreen() {
           </View>
         )}
 
+        {/* ── PIN Protection preference ─────────────────────────────────── */}
+        <Text style={[styles.sectionLabel, { color: theme.muted, marginTop: SPACING.sm }]}>
+          SECURITY PREFERENCE
+        </Text>
+        <View style={[styles.pinCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.pinCardMain}>
+            <View style={[styles.pinCardIcon, { backgroundColor: COLORS.primary + '1A' }]}>
+              <Ionicons name="lock-closed-outline" size={22} color={COLORS.primary} />
+            </View>
+            <View style={styles.pinCardBody}>
+              <Text style={[styles.pinCardTitle, { color: theme.text }]}>
+                PIN Protection
+              </Text>
+              <Text style={[styles.pinCardDesc, { color: theme.muted }]}>
+                Require a password to disable block enforcement toggles. Prevents impulsive self-sabotage mid-session.
+              </Text>
+            </View>
+            <Switch
+              value={pinProtectionChoice}
+              onValueChange={setPinProtectionChoice}
+              trackColor={{ false: COLORS.border, true: COLORS.primary + '88' }}
+              thumbColor={pinProtectionChoice ? COLORS.primary : COLORS.muted}
+            />
+          </View>
+          {pinProtectionChoice && defensePinSet && (
+            <View style={[styles.pinCardHint, { backgroundColor: COLORS.green + '12', borderTopColor: theme.border }]}>
+              <Ionicons name="checkmark-circle-outline" size={14} color={COLORS.green} />
+              <Text style={[styles.pinCardHintText, { color: COLORS.green }]}>
+                Defense Password set — your protections are locked.
+              </Text>
+            </View>
+          )}
+          {pinProtectionChoice && !defensePinSet && (
+            <View style={[styles.pinCardHint, { backgroundColor: COLORS.primary + '0D', borderTopColor: theme.border }]}>
+              <View style={{ flex: 1, gap: SPACING.xs }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.xs }}>
+                  <Ionicons name="information-circle-outline" size={14} color={COLORS.primary} style={{ marginTop: 1 }} />
+                  <Text style={[styles.pinCardHintText, { color: theme.muted, flex: 1 }]}>
+                    Set your Defense Password now — or add it later in Block Enforcement.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.setPinBtn}
+                  onPress={() => setPinSetupVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="key-outline" size={14} color="#fff" />
+                  <Text style={styles.setPinBtnText}>Set Password Now</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {!pinProtectionChoice && (
+            <View style={[styles.pinCardHint, { backgroundColor: theme.border + '33', borderTopColor: theme.border }]}>
+              <Ionicons name="information-circle-outline" size={14} color={theme.muted} />
+              <Text style={[styles.pinCardHintText, { color: theme.muted }]}>
+                You can enable this anytime in Settings → PIN Protection or Block Enforcement.
+              </Text>
+            </View>
+          )}
+        </View>
+
         {/* Enter button — always enabled */}
         <TouchableOpacity
           style={[styles.enterBtn, allGranted && styles.enterBtnReady]}
@@ -534,6 +645,15 @@ export default function OnboardingScreen() {
         </Text>
       </ScrollView>
 
+      <PinSetupModal
+        visible={pinSetupVisible}
+        pinType="defense"
+        onSaved={() => {
+          setPinSetupVisible(false);
+          setDefensePinSet(true);
+        }}
+        onCancel={() => setPinSetupVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -766,6 +886,51 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '700',
   },
+
+  // PIN Protection card
+  pinCard: {
+    borderRadius: RADIUS.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  pinCardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    gap: SPACING.md,
+  },
+  pinCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  pinCardBody: { flex: 1, gap: 3 },
+  pinCardTitle: { fontSize: FONT.md, fontWeight: '700' },
+  pinCardDesc: { fontSize: FONT.xs, lineHeight: 17 },
+  pinCardHint: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.xs,
+    padding: SPACING.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  pinCardHintText: { flex: 1, fontSize: FONT.xs, lineHeight: 16 },
+  setPinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  setPinBtnText: { fontSize: FONT.xs, fontWeight: '700', color: '#fff' },
 
   // Enter button
   enterBtn: {

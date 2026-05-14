@@ -19,8 +19,10 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { InstalledAppsModule, InstalledApp } from '@/native-modules/InstalledAppsModule';
 import { UsageStatsModule } from '@/native-modules/UsageStatsModule';
+import { SessionPinModule } from '@/native-modules/SessionPinModule';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { useTheme } from '@/hooks/useTheme';
+import { PinVerifyModal } from '@/components/PinVerifyModal';
 import type { DailyAllowanceEntry, AllowanceMode, BlockPreset, RecurringBlockSchedule } from '@/data/types';
 
 // ─── App Categories ───────────────────────────────────────────────────────────
@@ -176,9 +178,10 @@ interface Props {
   blockUntil: string | null;
   locked?: boolean;
   dailyAllowanceEntries?: DailyAllowanceEntry[];
+  vpnPackages?: string[];
   blockPresets?: BlockPreset[];
   recurringBlockSchedules?: RecurringBlockSchedule[];
-  onSave: (packages: string[], untilMs: number | null, allowanceEntries: DailyAllowanceEntry[]) => void | Promise<void>;
+  onSave: (packages: string[], untilMs: number | null, allowanceEntries: DailyAllowanceEntry[], vpnPackages?: string[], pinHash?: string | null) => void | Promise<void>;
   onSavePreset?: (preset: BlockPreset) => void | Promise<void>;
   onDeletePreset?: (id: string) => void | Promise<void>;
   onSaveRecurringSchedules?: (schedules: RecurringBlockSchedule[]) => void | Promise<void>;
@@ -226,6 +229,7 @@ export function StandaloneBlockModal({
   blockUntil,
   locked = false,
   dailyAllowanceEntries = [],
+  vpnPackages = [],
   blockPresets = [],
   recurringBlockSchedules = [],
   onSave,
@@ -245,6 +249,7 @@ export function StandaloneBlockModal({
     new Set(dailyAllowanceEntries.map((e) => e.packageName))
   );
   const dailyAllowed = useMemo(() => new Set(dailyEntriesMap.keys()), [dailyEntriesMap]);
+  const [vpnPkgsSet, setVpnPkgsSet] = useState<Set<string>>(new Set(vpnPackages));
   const [search, setSearch] = useState('');
   const [loadingApps, setLoadingApps] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -253,6 +258,7 @@ export function StandaloneBlockModal({
   const [showSavePreset, setShowSavePreset] = useState(false);
   const [presetNameInput, setPresetNameInput] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [pinVerifyVisible, setPinVerifyVisible] = useState(false);
 
   const defaultUntil = blockUntil ? new Date(blockUntil) : dayjs().add(1, 'day').toDate();
   const [untilDate, setUntilDate] = useState<Date>(defaultUntil);
@@ -264,6 +270,7 @@ export function StandaloneBlockModal({
     setSelected(new Set(blockedPackages));
     setDailyEntriesMap(new Map(dailyAllowanceEntries.map((e) => [e.packageName, e])));
     setOriginalDailyPkgs(new Set(dailyAllowanceEntries.map((e) => e.packageName)));
+    setVpnPkgsSet(new Set(vpnPackages));
     setSearch('');
     setManualInput('');
     setShowAdvanced(false);
@@ -496,10 +503,11 @@ export function StandaloneBlockModal({
     try {
       // Pass both block packages and daily allowance entries together so the
       // parent can save them atomically in a single state + DB update.
-      await onSave(Array.from(selected), untilDate.getTime(), Array.from(dailyEntriesMap.values()));
+      await onSave(Array.from(selected), untilDate.getTime(), Array.from(dailyEntriesMap.values()), Array.from(vpnPkgsSet));
       onClose();
     } catch (e) {
       console.error('[StandaloneBlockModal] Failed to save', e);
+      Alert.alert('Error', 'Failed to apply the block. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -515,16 +523,35 @@ export function StandaloneBlockModal({
           text: 'Clear',
           style: 'destructive',
           onPress: async () => {
+            if (locked) {
+              const pinIsSet = await SessionPinModule.isPinSet().catch(() => false);
+              if (pinIsSet) {
+                setPinVerifyVisible(true);
+                return;
+              }
+            }
             try {
-              await onSave([], null, Array.from(dailyEntriesMap.values()));
+              await onSave([], null, Array.from(dailyEntriesMap.values()), [], null);
               onClose();
             } catch (e) {
               console.error('[StandaloneBlockModal] Failed to clear', e);
+              Alert.alert('Error', 'Failed to clear the block. Please try again.');
             }
           },
         },
       ]
     );
+  };
+
+  const handlePinVerified = async (pinHash: string) => {
+    setPinVerifyVisible(false);
+    try {
+      await onSave([], null, Array.from(dailyEntriesMap.values()), [], pinHash);
+      onClose();
+    } catch (e) {
+      console.error('[StandaloneBlockModal] Failed to clear after PIN verify', e);
+      Alert.alert('Error', 'Failed to clear the block. Please try again.');
+    }
   };
 
   const onDateChange = (_: DateTimePickerEvent, date?: Date) => {
@@ -555,6 +582,45 @@ export function StandaloneBlockModal({
     if (entry.mode === 'time_budget') return `${entry.budgetMinutes ?? 30} min/day`;
     if (entry.mode === 'interval') return `${entry.intervalMinutes ?? 5} min every ${entry.intervalHours ?? 1}hr`;
     return `${entry.countPerDay ?? 1}×/day`;
+  };
+
+  const toggleVpn = (packageName: string) => {
+    if (locked) return;
+    setVpnPkgsSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(packageName)) next.delete(packageName);
+      else next.add(packageName);
+      return next;
+    });
+  };
+
+  const renderVpnControl = (packageName: string) => {
+    const isVpn = vpnPkgsSet.has(packageName);
+    // Show VPN toggle for any app — network blocking is independent of overlay blocking.
+    // An app can be VPN-blocked without being in the block overlay list.
+    if (!isVpn && !selected.has(packageName)) {
+      // For unblocked apps, only show the VPN row if VPN is already enabled
+      // (so unselected apps don't clutter with an extra row by default).
+      return null;
+    }
+    return (
+      <View style={[styles.vpnRow, { backgroundColor: theme.surface, borderTopColor: theme.border }, isVpn && styles.vpnRowActive]}>
+        <TouchableOpacity
+          style={styles.dailyToggle}
+          onPress={() => toggleVpn(packageName)}
+          activeOpacity={locked ? 1 : 0.7}
+        >
+          <Ionicons
+            name={isVpn ? (locked ? 'lock-closed-outline' : 'shield-checkmark-outline') : 'shield-outline'}
+            size={13}
+            color={isVpn ? (locked ? COLORS.muted : COLORS.primary) : COLORS.muted}
+          />
+          <Text style={[styles.dailyText, isVpn && !locked && styles.vpnTextActive]}>
+            {isVpn ? (locked ? 'Network block (locked)' : 'Network block: on') : 'Add network block (VPN)'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderDailyControls = (packageName: string) => {
@@ -673,6 +739,7 @@ export function StandaloneBlockModal({
           </View>
         </TouchableOpacity>
         {renderDailyControls(item.packageName)}
+        {renderVpnControl(item.packageName)}
       </View>
     );
   };
@@ -694,6 +761,7 @@ export function StandaloneBlockModal({
           </View>
         </TouchableOpacity>
         {renderDailyControls(pkg)}
+        {renderVpnControl(pkg)}
       </View>
     );
   };
@@ -970,6 +1038,14 @@ export function StandaloneBlockModal({
           }
         />
       </SafeAreaView>
+      <PinVerifyModal
+        visible={pinVerifyVisible}
+        pinType="focus"
+        title="Session Password Required"
+        description="Enter your session password to end the standalone block early."
+        onVerified={handlePinVerified}
+        onCancel={() => setPinVerifyVisible(false)}
+      />
     </Modal>
   );
 }
@@ -1290,6 +1366,26 @@ const styles = StyleSheet.create({
   dailyRowActive: {
     backgroundColor: COLORS.orange + '15',
     borderTopColor: COLORS.orange + '33',
+  },
+  vpnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    marginTop: -2,
+    backgroundColor: COLORS.surface,
+    borderBottomLeftRadius: RADIUS.md,
+    borderBottomRightRadius: RADIUS.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORS.border,
+  },
+  vpnRowActive: {
+    backgroundColor: COLORS.primary + '12',
+    borderTopColor: COLORS.primary + '33',
+  },
+  vpnTextActive: {
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   dailyToggle: {
     flexDirection: 'row',

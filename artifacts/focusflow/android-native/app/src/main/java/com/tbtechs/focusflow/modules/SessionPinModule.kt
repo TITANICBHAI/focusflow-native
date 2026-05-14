@@ -18,7 +18,7 @@ import java.security.MessageDigest
  * When a PIN is set (pin_hash is present in prefs), the following native methods
  * require a matching PIN hash before executing:
  *   - ForegroundServiceModule.stopService()
- *   - session stop methods that require pin verification
+ *   - NetworkBlockModule.stopNetworkBlock()
  *   - SharedPrefsModule.setFocusActive(false, ...)
  *
  * Methods:

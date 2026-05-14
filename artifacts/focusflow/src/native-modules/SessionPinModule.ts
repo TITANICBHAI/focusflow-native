@@ -7,7 +7,8 @@
  * When a PIN is set, these native methods require a matching hash:
  *   - SharedPrefsModule.setFocusActive(false, pinHash)
  *   - ForegroundServiceModule.stopService(pinHash)
- *   - session stop methods that require pin verification
+ *   - NetworkBlockModule.stopNetworkBlock(pinHash)
+ *   - SharedPrefsModule.setStandaloneBlock(false, ..., pinHash) — only when cancelling an active (not-yet-expired) session early
  *
  * Usage pattern (JS layer):
  *   import { sha256 } from 'your-crypto-lib';
@@ -34,18 +35,25 @@ export const SessionPinModule = {
   /**
    * Stores a new session PIN as its SHA-256 hex digest.
    * Pass the hex of the user's PIN, not the raw PIN string.
+   * Throws if the native module is unavailable so the caller knows the PIN
+   * was NOT saved — prevents a silent success / phantom-PIN state.
    */
   async setPinHash(sha256hex: string): Promise<void> {
-    if (!SessionPin) return;
+    if (!SessionPin) {
+      throw new Error('Session PIN native module is unavailable. Use an EAS build — Expo Go does not include custom native modules.');
+    }
     return SessionPin.setPinHash(sha256hex);
   },
 
   /**
    * Removes the stored PIN. Requires the current PIN hash to succeed —
    * prevents a JS bridge compromise from clearing the PIN without knowing it.
+   * Throws if the native module is unavailable.
    */
   async clearPin(currentSha256hex: string): Promise<void> {
-    if (!SessionPin) return;
+    if (!SessionPin) {
+      throw new Error('Session PIN native module is unavailable.');
+    }
     return SessionPin.clearPin(currentSha256hex);
   },
 

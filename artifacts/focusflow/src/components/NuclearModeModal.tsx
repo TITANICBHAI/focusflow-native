@@ -31,7 +31,7 @@ import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 
 interface InstalledApp {
   packageName: string;
-  label: string;
+  appName: string;
 }
 
 interface Props {
@@ -156,12 +156,12 @@ export function NuclearModeModal({ visible, onClose }: Props) {
                     <Ionicons name="ban-outline" size={20} color={COLORS.red} />
                   </View>
                   <View style={styles.appInfo}>
-                    <Text style={[styles.appLabel, { color: theme.text }]} numberOfLines={1}>{app.label}</Text>
+                    <Text style={[styles.appLabel, { color: theme.text }]} numberOfLines={1}>{app.appName}</Text>
                     <Text style={[styles.appPkg, { color: theme.muted }]} numberOfLines={1}>{app.packageName}</Text>
                   </View>
                   <TouchableOpacity
                     style={[styles.uninstallBtn, uninstalling === app.packageName && { opacity: 0.5 }]}
-                    onPress={() => handleUninstall(app.packageName, app.label)}
+                    onPress={() => handleUninstall(app.packageName, app.appName)}
                     disabled={uninstalling !== null}
                     activeOpacity={0.75}
                   >

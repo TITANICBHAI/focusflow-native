@@ -11,11 +11,25 @@
 
 import { NativeModules, Platform } from 'react-native';
 import type { DailyAllowanceEntry } from '@/data/types';
+import { logger } from '@/services/startupLogger';
 
 const SharedPrefs = Platform.OS === 'android' ? NativeModules.SharedPrefs : null;
 
 if (Platform.OS === 'android' && !SharedPrefs) {
-  console.error('[SharedPrefsModule] NativeModules.SharedPrefs not found. Ensure an EAS build is used — Expo Go does not include custom native modules.');
+  void logger.error('SharedPrefsModule', 'NativeModules.SharedPrefs not found. Ensure an EAS build is used — Expo Go does not include custom native modules.');
+}
+
+/**
+ * Wraps a native SharedPrefs call and logs any thrown error via the startup
+ * logger so the ErrorAlertBanner auto-surfaces it to the developer.
+ */
+async function callNative<T>(methodName: string, fn: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await fn();
+  } catch (e) {
+    void logger.error('SharedPrefsModule', `${methodName} threw: ${String(e)}`);
+    return undefined;
+  }
 }
 
 export const isSharedPrefsAvailable = Platform.OS === 'android' && SharedPrefs != null;
@@ -32,17 +46,17 @@ export const SharedPrefsModule = {
    */
   async setFocusActive(active: boolean, pinHash: string | null = null): Promise<void> {
     if (!hasSharedPrefsMethod('setFocusActive')) return;
-    return SharedPrefs.setFocusActive(active, pinHash);
+    await callNative('setFocusActive', () => SharedPrefs.setFocusActive(active, pinHash));
   },
 
   async setAllowedPackages(packages: string[]): Promise<void> {
     if (!hasSharedPrefsMethod('setAllowedPackages')) return;
-    return SharedPrefs.setAllowedPackages(packages);
+    await callNative('setAllowedPackages', () => SharedPrefs.setAllowedPackages(packages));
   },
 
   async setActiveTask(taskId: string, name: string, endMs: number, nextName: string | null): Promise<void> {
     if (!hasSharedPrefsMethod('setActiveTask')) return;
-    return SharedPrefs.setActiveTask(taskId, name, endMs, nextName ?? null);
+    await callNative('setActiveTask', () => SharedPrefs.setActiveTask(taskId, name, endMs, nextName ?? null));
   },
 
   /**
@@ -52,7 +66,7 @@ export const SharedPrefsModule = {
    */
   async setActiveTaskColor(colorHex: string): Promise<void> {
     if (!hasSharedPrefsMethod('setActiveTaskColor')) return;
-    return SharedPrefs.setActiveTaskColor(colorHex ?? '');
+    await callNative('setActiveTaskColor', () => SharedPrefs.setActiveTaskColor(colorHex ?? ''));
   },
 
   /**
@@ -63,7 +77,7 @@ export const SharedPrefsModule = {
    */
   async setActiveTaskStartMs(taskId: string, startMs: number): Promise<void> {
     if (!hasSharedPrefsMethod('setActiveTaskStartMs')) return;
-    return SharedPrefs.setActiveTaskStartMs(taskId, startMs);
+    await callNative('setActiveTaskStartMs', () => SharedPrefs.setActiveTaskStartMs(taskId, startMs));
   },
 
   /**
@@ -72,7 +86,7 @@ export const SharedPrefsModule = {
    */
   async clearActiveTask(): Promise<void> {
     if (!hasSharedPrefsMethod('clearActiveTask')) return;
-    return SharedPrefs.clearActiveTask();
+    await callNative('clearActiveTask', () => SharedPrefs.clearActiveTask());
   },
 
   /**
@@ -83,12 +97,20 @@ export const SharedPrefsModule = {
    */
   async pushWidgetUpdate(): Promise<void> {
     if (!hasSharedPrefsMethod('pushWidgetUpdate')) return;
-    return SharedPrefs.pushWidgetUpdate();
+    await callNative('pushWidgetUpdate', () => SharedPrefs.pushWidgetUpdate());
   },
 
-  async setStandaloneBlock(active: boolean, packages: string[], untilMs: number): Promise<void> {
+  /**
+   * Controls standalone app blocking.
+   *
+   * When cancelling an active (not-yet-expired) session (active=false while the
+   * stored until timestamp is still in the future), [pinHash] must be the
+   * SHA-256 hex of the session PIN — otherwise the native call is rejected.
+   * Natural expiry and starting a new block never require a PIN.
+   */
+  async setStandaloneBlock(active: boolean, packages: string[], untilMs: number, pinHash: string | null = null): Promise<void> {
     if (!hasSharedPrefsMethod('setStandaloneBlock')) return;
-    return SharedPrefs.setStandaloneBlock(active, packages, untilMs);
+    await callNative('setStandaloneBlock', () => SharedPrefs.setStandaloneBlock(active, packages, untilMs, pinHash));
   },
 
   /**
@@ -104,7 +126,7 @@ export const SharedPrefsModule = {
    */
   async setAlwaysBlockActive(active: boolean, packages: string[]): Promise<void> {
     if (!hasSharedPrefsMethod('setAlwaysBlockActive')) return;
-    return SharedPrefs.setAlwaysBlockActive(active, packages);
+    await callNative('setAlwaysBlockActive', () => SharedPrefs.setAlwaysBlockActive(active, packages));
   },
 
   /**
@@ -115,37 +137,57 @@ export const SharedPrefsModule = {
    */
   async setDailyAllowanceConfig(entries: DailyAllowanceEntry[]): Promise<void> {
     if (!hasSharedPrefsMethod('setDailyAllowanceConfig')) return;
-    return SharedPrefs.setDailyAllowanceConfig(JSON.stringify(entries));
+    await callNative('setDailyAllowanceConfig', () => SharedPrefs.setDailyAllowanceConfig(JSON.stringify(entries)));
   },
 
   async resetDailyAllowanceUsage(packageName: string | null): Promise<void> {
     if (!hasSharedPrefsMethod('resetDailyAllowanceUsage')) return;
-    return SharedPrefs.resetDailyAllowanceUsage(packageName ?? null);
+    await callNative('resetDailyAllowanceUsage', () => SharedPrefs.resetDailyAllowanceUsage(packageName ?? null));
   },
 
   async setBlockedWords(words: string[]): Promise<void> {
     if (!hasSharedPrefsMethod('setBlockedWords')) return;
-    return SharedPrefs.setBlockedWords(words);
+    await callNative('setBlockedWords', () => SharedPrefs.setBlockedWords(words));
   },
 
   async setSystemGuardEnabled(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setSystemGuardEnabled')) return;
-    return SharedPrefs.setSystemGuardEnabled(enabled);
+    await callNative('setSystemGuardEnabled', () => SharedPrefs.setSystemGuardEnabled(enabled));
   },
 
   async setBlockInstallActionsEnabled(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setBlockInstallActionsEnabled')) return;
-    return SharedPrefs.setBlockInstallActionsEnabled(enabled);
+    await callNative('setBlockInstallActionsEnabled', () => SharedPrefs.setBlockInstallActionsEnabled(enabled));
   },
 
   async setBlockYoutubeShortsEnabled(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setBlockYoutubeShortsEnabled')) return;
-    return SharedPrefs.setBlockYoutubeShortsEnabled(enabled);
+    await callNative('setBlockYoutubeShortsEnabled', () => SharedPrefs.setBlockYoutubeShortsEnabled(enabled));
   },
 
   async setBlockInstagramReelsEnabled(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setBlockInstagramReelsEnabled')) return;
-    return SharedPrefs.setBlockInstagramReelsEnabled(enabled);
+    await callNative('setBlockInstagramReelsEnabled', () => SharedPrefs.setBlockInstagramReelsEnabled(enabled));
+  },
+
+  /**
+   * Enables or disables the VPN network-blocking layer.
+   * Writes the "net_block_enabled" boolean read by AppBlockerAccessibilityService
+   * before it attempts to start NetworkBlockerVpnService for a blocked package.
+   */
+  async setNetworkBlockEnabled(enabled: boolean): Promise<void> {
+    if (!hasSharedPrefsMethod('setNetworkBlockEnabled')) return;
+    await callNative('setNetworkBlockEnabled', () => SharedPrefs.setNetworkBlockEnabled(enabled));
+  },
+
+  /**
+   * Writes the per-app VPN package list (JSON array string) to SharedPreferences.
+   * When non-empty, only listed packages trigger network blocking.
+   * When empty, all blocked packages trigger network blocking (if vpnBlockEnabled).
+   */
+  async setVpnSelectedPackages(packages: string[]): Promise<void> {
+    if (!hasSharedPrefsMethod('setVpnSelectedPackages')) return;
+    await callNative('setVpnSelectedPackages', () => SharedPrefs.setVpnSelectedPackages(JSON.stringify(packages)));
   },
 
   /**
@@ -154,7 +196,7 @@ export const SharedPrefsModule = {
    */
   async setLauncherHiddenPackages(packages: string[]): Promise<void> {
     if (!hasSharedPrefsMethod('setLauncherHiddenPackages')) return;
-    return SharedPrefs.setLauncherHiddenPackages(JSON.stringify(packages));
+    await callNative('setLauncherHiddenPackages', () => SharedPrefs.setLauncherHiddenPackages(JSON.stringify(packages)));
   },
 
   /**
@@ -163,7 +205,7 @@ export const SharedPrefsModule = {
    */
   async setLauncherDockPackages(packages: string[]): Promise<void> {
     if (!hasSharedPrefsMethod('setLauncherDockPackages')) return;
-    return SharedPrefs.setLauncherDockPackages(JSON.stringify(packages));
+    await callNative('setLauncherDockPackages', () => SharedPrefs.setLauncherDockPackages(JSON.stringify(packages)));
   },
 
   /**
@@ -174,7 +216,7 @@ export const SharedPrefsModule = {
    */
   async setLauncherLockDuringStandalone(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setLauncherLockDuringStandalone')) return;
-    return SharedPrefs.setLauncherLockDuringStandalone(enabled);
+    await callNative('setLauncherLockDuringStandalone', () => SharedPrefs.setLauncherLockDuringStandalone(enabled));
   },
 
   /**
@@ -184,7 +226,7 @@ export const SharedPrefsModule = {
    */
   async setLauncherBlockUninstall(enabled: boolean): Promise<void> {
     if (!hasSharedPrefsMethod('setLauncherBlockUninstall')) return;
-    return SharedPrefs.setLauncherBlockUninstall(enabled);
+    await callNative('setLauncherBlockUninstall', () => SharedPrefs.setLauncherBlockUninstall(enabled));
   },
 
   /**
@@ -193,16 +235,13 @@ export const SharedPrefsModule = {
    */
   async isDefaultLauncher(): Promise<boolean> {
     if (!hasSharedPrefsMethod('isDefaultLauncher')) return false;
-    try {
-      return Boolean(await SharedPrefs.isDefaultLauncher());
-    } catch {
-      return false;
-    }
+    const result = await callNative('isDefaultLauncher', () => SharedPrefs.isDefaultLauncher() as Promise<boolean>);
+    return Boolean(result ?? false);
   },
 
   async putString(key: string, value: string): Promise<void> {
     if (!hasSharedPrefsMethod('putString')) return;
-    return SharedPrefs.putString(key, value);
+    await callNative('putString', () => SharedPrefs.putString(key, value));
   },
 
   /**
@@ -213,7 +252,8 @@ export const SharedPrefsModule = {
    */
   async getString(key: string): Promise<string | null> {
     if (!hasSharedPrefsMethod('getString')) return null;
-    return SharedPrefs.getString(key);
+    const result = await callNative('getString', () => SharedPrefs.getString(key) as Promise<string | null>);
+    return result ?? null;
   },
 
   /**
@@ -225,11 +265,8 @@ export const SharedPrefsModule = {
    */
   async isDebuggableBuild(): Promise<boolean> {
     if (!hasSharedPrefsMethod('isDebuggable')) return __DEV__;
-    try {
-      return Boolean(await SharedPrefs.isDebuggable());
-    } catch {
-      return __DEV__;
-    }
+    const result = await callNative('isDebuggable', () => SharedPrefs.isDebuggable() as Promise<boolean>);
+    return Boolean(result ?? __DEV__);
   },
 
   /**
@@ -241,7 +278,7 @@ export const SharedPrefsModule = {
    */
   async setLauncherClockStyle(style: 'digital' | 'analog'): Promise<void> {
     if (!hasSharedPrefsMethod('setLauncherClockStyle')) return;
-    return SharedPrefs.setLauncherClockStyle(style);
+    await callNative('setLauncherClockStyle', () => SharedPrefs.setLauncherClockStyle(style));
   },
 
   /**
@@ -257,11 +294,11 @@ export const SharedPrefsModule = {
     streakDays: number,
   ): Promise<void> {
     if (!hasSharedPrefsMethod('setDailyStats')) return;
-    return SharedPrefs.setDailyStats(
+    await callNative('setDailyStats', () => SharedPrefs.setDailyStats(
       Math.max(0, Math.floor(tasksDone)),
       Math.max(0, Math.floor(tasksTotal)),
       Math.max(0, Math.floor(focusMins)),
       Math.max(0, Math.floor(streakDays)),
-    );
+    ));
   },
 };

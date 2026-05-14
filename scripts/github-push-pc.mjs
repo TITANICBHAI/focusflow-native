@@ -7,7 +7,7 @@ const TOKEN =
   process.env.GH_PAT ||
   process.env.PAT;
 const OWNER = 'TITANICBHAI';
-const REPO = 'FocusFlow-pc';
+const REPO = 'focusflow-native';
 const BRANCH = 'main';
 // Push only the focusflow-pc Electron app source directory
 const BASE = '/home/runner/workspace/FocusFlow-pc/focusflow-pc';
@@ -107,13 +107,24 @@ async function processInBatches(items, concurrency, fn) {
   return results;
 }
 
+function getPcVersion() {
+  try {
+    const pkgJson = JSON.parse(readFileSync(`${BASE}/package.json`, 'utf-8'));
+    return pkgJson?.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
 async function run() {
   if (!TOKEN) {
     throw new Error('Missing GitHub token secret. Add GITHUB_PERSONAL_ACCESS_TOKEN, GITHUB_PAT, GH_PAT, or PAT in Secrets.');
   }
 
+  const pcVersion = getPcVersion();
   console.log(`Pushing FocusFlow-pc → https://github.com/${OWNER}/${REPO}`);
-  console.log(`Source: ${BASE}\n`);
+  console.log(`Source:  ${BASE}`);
+  console.log(`Version: v${pcVersion}\n`);
 
   console.log('Collecting files...');
   const allFiles = collectFiles(BASE);
@@ -174,7 +185,7 @@ async function run() {
 
   console.log('Committing...');
   const newCommit = await ghFetch(`/repos/${OWNER}/${REPO}/git/commits`, 'POST', {
-    message: `feat: sync FocusFlow-pc workspace ${new Date().toISOString()}`,
+    message: `chore: sync FocusFlow-pc workspace — v${pcVersion} — ${new Date().toISOString()}`,
     tree: newTree.sha,
     parents: [latestSha],
   });

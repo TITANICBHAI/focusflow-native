@@ -27,6 +27,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import { NetworkBlockModule } from '@/native-modules/NetworkBlockModule';
 import { SessionPinModule } from '@/native-modules/SessionPinModule';
 import { SharedPrefsModule } from '@/native-modules/SharedPrefsModule';
 
@@ -34,9 +35,11 @@ import { useApp } from '@/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
 import { GreyoutScheduleModal } from '@/components/GreyoutScheduleModal';
+import { NuclearModeModal } from '@/components/NuclearModeModal';
 import { PinVerifyModal } from '@/components/PinVerifyModal';
 import { PinSetupModal } from '@/components/PinSetupModal';
 import { PinRotationModal } from '@/components/PinRotationModal';
+import { VpnConsentModal } from '@/components/VpnConsentModal';
 import type { GreyoutWindow } from '@/data/types';
 
 type PinModalState =
@@ -58,10 +61,14 @@ export default function BlockDefenseScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
 
   const [greyoutModalVisible, setGreyoutModalVisible] = useState(false);
+  const [nuclearModeVisible, setNuclearModeVisible] = useState(false);
   const [pinModal, setPinModal] = useState<PinModalState>({ type: 'none' });
   const [focusPinSet, setFocusPinSet] = useState(false);
   const [defensePinSet, setDefensePinSet] = useState(false);
   const [alwaysOnPinRotationVisible, setAlwaysOnPinRotationVisible] = useState(false);
+  const [vpnConsentVisible, setVpnConsentVisible] = useState(false);
+  // Holds the resolve callback for the VPN consent modal promise
+  const vpnConsentResolveRef = React.useRef<((confirmed: boolean) => void) | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
   const sectionRefs = {
@@ -122,20 +129,31 @@ export default function BlockDefenseScreen() {
   }, [params.tab]);
 
   const update = async (partial: Partial<typeof settings>) => {
-    await updateSettings({ ...settings, ...partial });
+    try {
+      await updateSettings({ ...settings, ...partial });
+    } catch {
+      Alert.alert('Error', 'Failed to save this setting. Please try again.');
+    }
   };
+
+  const pendingActionAfterDefenseSetup = useRef<(() => void) | null>(null);
 
   /**
    * Requires the defense PIN before running `action`.
-   * If no defense PIN is set, runs action immediately.
+   *
+   * Behaviour matrix:
+   *   PIN hash stored                       → always show PinVerifyModal (regardless of pinProtectionEnabled toggle)
+   *   pinProtectionEnabled=true, no PIN set → prompt to set a PIN first (or proceed anyway)
+   *   pinProtectionEnabled=false, no PIN set → run action immediately
    */
   const requireDefensePin = useCallback(
     (title: string, description: string, action: () => void) => {
       SharedPrefsModule.getString('defense_pin_hash')
         .then((hash) => {
-          if (!hash) {
-            action();
-          } else {
+          if (hash) {
+            // A defense PIN is configured — always require it, regardless of
+            // whether the pinProtectionEnabled toggle is on. If you set a PIN
+            // it should always be enforced.
             setPinModal({
               type: 'verify',
               pinType: 'defense',
@@ -143,11 +161,31 @@ export default function BlockDefenseScreen() {
               description,
               onVerified: () => action(),
             });
+          } else if (settings.pinProtectionEnabled ?? false) {
+            // PIN protection is on but no PIN has been set yet — offer to set one.
+            Alert.alert(
+              'No Defense Password set',
+              'PIN protection is enabled but no Defense Password has been set yet. Set one now to protect this toggle, or proceed without a password.',
+              [
+                {
+                  text: 'Set Password',
+                  onPress: () => {
+                    pendingActionAfterDefenseSetup.current = action;
+                    setPinModal({ type: 'setup', pinType: 'defense' });
+                  },
+                },
+                { text: 'Proceed anyway', onPress: () => action() },
+                { text: 'Cancel', style: 'cancel' },
+              ],
+            );
+          } else {
+            // No PIN set and protection toggle is off — run freely.
+            action();
           }
         })
         .catch(() => action());
     },
-    [],
+    [settings.pinProtectionEnabled],
   );
 
   const handleSystemGuardToggle = (enabled: boolean) => {
@@ -198,6 +236,65 @@ export default function BlockDefenseScreen() {
     void update({ blockInstagramReelsEnabled: true });
   };
 
+  /** Returns a Promise that resolves true/false from the VPN consent modal. */
+  const showVpnConsent = (): Promise<boolean> =>
+    new Promise((resolve) => {
+      vpnConsentResolveRef.current = resolve;
+      setVpnConsentVisible(true);
+    });
+
+  const handleVpnToggle = async (enabled: boolean) => {
+    if (!enabled && blockProtectionActive) {
+      Alert.alert('Protection is active', 'Cannot disable while a block is active.');
+      return;
+    }
+    if (!enabled) {
+      requireDefensePin(
+        'Disable Network Blocking (VPN)',
+        'Enter your defense password to turn off VPN blocking.',
+        () => void update({ vpnBlockEnabled: false }),
+      );
+      return;
+    }
+
+    // ── Step 1: plain-language pre-prompt ────────────────────────────────────
+    // Show our friendly explanation BEFORE Android's scary "monitor all traffic" dialog.
+    const consented = await showVpnConsent();
+    if (!consented) return;
+
+    if (Platform.OS === 'android') {
+      // ── Step 2: conflict detection ──────────────────────────────────────────
+      // Android only allows one active VPN. Warn the user if another VPN is
+      // already running so the handover is intentional rather than silent.
+      try {
+        const conflicting = await NetworkBlockModule.isAnotherVpnActive();
+        if (conflicting) {
+          const takeOver = await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Another VPN is active',
+              'Android only allows one VPN at a time. FocusFlow will temporarily take over ' +
+                'while your session runs. You will need to reconnect your other VPN afterwards.',
+              [
+                { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Take over', onPress: () => resolve(true) },
+              ],
+            );
+          });
+          if (!takeOver) return;
+        }
+      } catch { /* safe default — proceed */ }
+
+      // ── Step 3: VPN permission ──────────────────────────────────────────────
+      // Now launch the system dialog — the user is already informed about what it means.
+      try {
+        const granted = await NetworkBlockModule.isVpnPermissionGranted();
+        if (!granted) await NetworkBlockModule.requestVpnPermission();
+      } catch {}
+    }
+
+    void update({ vpnBlockEnabled: true });
+  };
+
   const handleAlwaysOnEnforcementToggle = (enabled: boolean) => {
     if (!enabled) {
       requireDefensePin(
@@ -211,11 +308,42 @@ export default function BlockDefenseScreen() {
       return;
     }
     void update({ alwaysOnEnforcementEnabled: true });
+
+    // After enabling, offer to set a Defense Password if none is set yet.
+    // Respects a "Don't ask again" preference stored in SharedPrefs.
+    void Promise.all([
+      SharedPrefsModule.getString('defense_pin_hash'),
+      SharedPrefsModule.getString('always_on_pin_prompt_dismissed'),
+    ]).then(([hash, dismissed]) => {
+      if (hash || dismissed) return; // already set or user opted out
+      Alert.alert(
+        'Add a Defense Password?',
+        'A Defense Password stops you from disabling protections on impulse. You can set one now or add it anytime in the PIN Protection section below.',
+        [
+          {
+            text: 'Set Password Now',
+            onPress: () => setPinModal({ type: 'setup', pinType: 'defense' }),
+          },
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: "Don't ask again",
+            onPress: () => {
+              void SharedPrefsModule.putString('always_on_pin_prompt_dismissed', '1').catch(() => {});
+            },
+          },
+        ],
+      );
+    }).catch(() => {});
   };
 
   const handlePinSaved = () => {
     setPinModal({ type: 'none' });
     void loadPinStatus();
+    const pending = pendingActionAfterDefenseSetup.current;
+    if (pending) {
+      pendingActionAfterDefenseSetup.current = null;
+      pending();
+    }
   };
 
   return (
@@ -234,6 +362,14 @@ export default function BlockDefenseScreen() {
             The layers that make your blocks impossible to bypass
           </Text>
         </View>
+        <TouchableOpacity
+          onPress={() => setNuclearModeVisible(true)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={[styles.nuclearBtn, { backgroundColor: COLORS.red + '18' }]}
+        >
+          <Ionicons name="nuclear-outline" size={16} color={COLORS.red} />
+          <Text style={[styles.nuclearBtnText, { color: COLORS.red }]}>Nuclear</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -394,13 +530,13 @@ export default function BlockDefenseScreen() {
             <SwitchRow
               label="Protect system controls"
               description={
-                blockProtectionActive && (settings.systemGuardEnabled ?? true)
+                blockProtectionActive && (settings.systemGuardEnabled ?? false)
                   ? 'Locked on — active block in progress'
                   : 'Power menu, Emergency mode & sensitive Settings pages — guarded all the time when on'
               }
-              value={settings.systemGuardEnabled ?? true}
+              value={settings.systemGuardEnabled ?? false}
               onValueChange={handleSystemGuardToggle}
-              disabled={blockProtectionActive && (settings.systemGuardEnabled ?? true)}
+              disabled={blockProtectionActive && (settings.systemGuardEnabled ?? false)}
               theme={theme}
             />
             <SwitchRow
@@ -425,6 +561,33 @@ export default function BlockDefenseScreen() {
               value={settings.blockInstagramReelsEnabled ?? false}
               onValueChange={handleReelsToggle}
               disabled={blockProtectionActive && (settings.blockInstagramReelsEnabled ?? false)}
+              theme={theme}
+            />
+            <SwitchRow
+              label="Network blocking (VPN)"
+              description={
+                blockProtectionActive && (settings.vpnBlockEnabled ?? false)
+                  ? 'Locked on — active block in progress'
+                  : 'Tunnels blocked apps through a local VPN to cut their internet access — nothing leaves your device'
+              }
+              value={settings.vpnBlockEnabled ?? false}
+              onValueChange={(v) => void handleVpnToggle(v)}
+              disabled={blockProtectionActive && (settings.vpnBlockEnabled ?? false)}
+              theme={theme}
+            />
+            <SwitchRow
+              label="VPN self-healing"
+              description={
+                blockProtectionActive && (settings.vpnSelfHealEnabled ?? false)
+                  ? 'Locked on — active block in progress'
+                  : 'Automatically restarts the VPN if you disconnect it from quick settings mid-session'
+              }
+              value={settings.vpnSelfHealEnabled ?? false}
+              onValueChange={(v) => void update({ vpnSelfHealEnabled: v })}
+              disabled={
+                !(settings.vpnBlockEnabled ?? false) ||
+                (blockProtectionActive && (settings.vpnSelfHealEnabled ?? false))
+              }
               theme={theme}
               isLast
             />
@@ -477,11 +640,11 @@ export default function BlockDefenseScreen() {
             <SwitchRow
               label="Enable always-on enforcement"
               description={
-                (settings.alwaysOnEnforcementEnabled ?? true)
+                (settings.alwaysOnEnforcementEnabled ?? false)
                   ? `On — ${(settings.alwaysOnPackages ?? []).length} app${(settings.alwaysOnPackages ?? []).length !== 1 ? 's' : ''} blocked 24/7`
                   : 'Off — always-on list is paused (list is preserved, not deleted)'
               }
-              value={settings.alwaysOnEnforcementEnabled ?? true}
+              value={settings.alwaysOnEnforcementEnabled ?? false}
               onValueChange={handleAlwaysOnEnforcementToggle}
               theme={theme}
             />
@@ -638,6 +801,23 @@ export default function BlockDefenseScreen() {
         }}
         onCancel={() => setAlwaysOnPinRotationVisible(false)}
       />
+      <VpnConsentModal
+        visible={vpnConsentVisible}
+        onConfirm={() => {
+          setVpnConsentVisible(false);
+          vpnConsentResolveRef.current?.(true);
+          vpnConsentResolveRef.current = null;
+        }}
+        onCancel={() => {
+          setVpnConsentVisible(false);
+          vpnConsentResolveRef.current?.(false);
+          vpnConsentResolveRef.current = null;
+        }}
+      />
+      <NuclearModeModal
+        visible={nuclearModeVisible}
+        onClose={() => setNuclearModeVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -790,6 +970,16 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: FONT.lg, fontWeight: '800' },
   subtitle: { fontSize: FONT.xs, marginTop: 2 },
+  nuclearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderRadius: RADIUS.sm,
+    marginLeft: SPACING.sm,
+  },
+  nuclearBtnText: { fontSize: FONT.xs, fontWeight: '700' },
   scroll: { flex: 1 },
   content: { padding: SPACING.lg, gap: SPACING.md },
   introBanner: {

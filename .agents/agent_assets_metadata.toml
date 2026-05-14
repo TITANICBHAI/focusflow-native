@@ -132,6 +132,24 @@ uri = "file://store-assets/icon-final-v3.png"
 type = "image"
 title = "horseshoe arc icon clean"
 
+[[generated]]
+id = "UNF1LaZImEa3S8dKl57gD"
+uri = "file://artifacts/focusflow-accessibility-demo/public/images/tech-bg.png"
+type = "image"
+title = "dark technological data flow background"
+
+[[generated]]
+id = "75rRJzlr8sxBbk6BdqSXa"
+uri = "file://artifacts/focusflow-feature-videos/public/images/bg-tech.png"
+type = "image"
+title = "dark abstract tech texture"
+
+[[generated]]
+id = "nQT38yXhuxQOLAGD0cZhx"
+uri = "file://artifacts/focusflow-feature-videos/public/images/bg-focus.png"
+type = "image"
+title = "abstract calm focus nature"
+
 [[outputs]]
 id = "tgalAfT1-750LJk0Yh4R6"
 uri = "file://artifacts/focusflow/store-assets/STORE_LISTING.md"
@@ -275,3 +293,15 @@ id = "iGCH82-DKkXWh7-QzHV0I"
 uri = "file://focusflow-vs-appblock-negatives.pdf"
 type = "pdf"
 title = "FocusFlow vs AppBlock — Comprehensive Negatives Report (v2)"
+
+[[outputs]]
+id = "X2_ZMBZj5S-aHsXz6lNi9"
+uri = "file://CLOUDFLARE_DEPLOY.md"
+type = "text"
+title = "Cloudflare Pages Deployment Guide"
+
+[[outputs]]
+id = "nZlt6VToM3l9rWcuhoFVj"
+uri = "file://button-audit.md"
+type = "text"
+title = "FocusFlow — Full Button Audit"

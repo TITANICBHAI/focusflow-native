@@ -85,7 +85,11 @@ export default function HomeLauncherScreen() {
 
   const update = useCallback(
     async (partial: Partial<typeof settings>) => {
-      await updateSettings({ ...settings, ...partial });
+      try {
+        await updateSettings({ ...settings, ...partial });
+      } catch {
+        Alert.alert('Error', 'Failed to save this setting. Please try again.');
+      }
     },
     [settings, updateSettings],
   );

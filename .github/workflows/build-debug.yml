@@ -64,6 +64,21 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      # ── 4b. Read app version ────────────────────────────────────────────────
+      - name: Read app version
+        id: app-version
+        working-directory: artifacts/focusflow
+        run: |
+          VERSION=$(node -e "const j=require('./app.json'); console.log(j.expo.version)")
+          VCODE=$(node -e "const j=require('./app.json'); console.log(j.expo.android.versionCode)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "versionCode=$VCODE" >> $GITHUB_OUTPUT
+          echo "### Build Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionCode:** $VCODE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** Debug APK" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+
       # ── 5. Expo Prebuild ───────────────────────────────────────────────────
       - name: Expo Prebuild
         working-directory: artifacts/focusflow
@@ -93,7 +108,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: focusflow-debug-${{ github.run_number }}
+          name: focusflow-debug-v${{ steps.app-version.outputs.version }}-vc${{ steps.app-version.outputs.versionCode }}-run${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

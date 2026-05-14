@@ -34,6 +34,7 @@ import {
   scheduleMorningDigest,
 } from '@/services/notificationService';
 import { navigateToTask } from '@/navigation/navigationRef';
+import { logger } from '@/services/startupLogger';
 
 // ─── Task name constants (must match wherever they are registered) ────────────
 
@@ -49,10 +50,11 @@ export const TASK_NOTIFICATION_BG  = 'FOCUSDAY_NOTIFICATION_BG';
 
 TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
   if (error) {
-    console.warn('[BgTask] OVERRUN_CHECK error:', error);
+    void logger.warn('bgTask', `OVERRUN_CHECK received error from OS: ${String(error)}`);
     return;
   }
 
+  void logger.debug('bgTask', 'OVERRUN_CHECK: handler started');
   try {
     const notifData = data?.notification?.request?.content?.data as {
       type?: string;
@@ -62,16 +64,24 @@ TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
     // Handle persistent-dismiss: dismiss the persistent notification in background
     if (notifData?.type === 'persistent-dismiss') {
       await dismissPersistentNotification();
+      void logger.debug('bgTask', 'OVERRUN_CHECK: handled persistent-dismiss');
       return;
     }
 
-    if (notifData?.type !== 'OVERRUN_CHECK' || !notifData.taskId) return;
+    if (notifData?.type !== 'OVERRUN_CHECK' || !notifData.taskId) {
+      void logger.debug('bgTask', `OVERRUN_CHECK: skipped (type=${notifData?.type ?? 'none'}, taskId=${notifData?.taskId ?? 'none'})`);
+      return;
+    }
 
+    void logger.debug('bgTask', `OVERRUN_CHECK: processing taskId=${notifData.taskId}`);
     const today = new Date().toISOString().slice(0, 10);
     const tasks = await dbGetTasksForDate(today);
     const task  = tasks.find((t) => t.id === notifData.taskId);
 
-    if (!task || task.status === 'completed' || task.status === 'skipped') return;
+    if (!task || task.status === 'completed' || task.status === 'skipped') {
+      void logger.debug('bgTask', `OVERRUN_CHECK: task already done or missing (status=${task?.status ?? 'not found'})`);
+      return;
+    }
 
     // Task ran over — extend by 10 min as a safe default and rebalance
     const DEFAULT_EXTENSION_MINUTES = 10;
@@ -83,8 +93,10 @@ TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
       if (t.status !== 'skipped') await scheduleTaskReminders(t);
     }
 
+    void logger.debug('bgTask', `OVERRUN_CHECK: rebalanced ${updatedSchedule.length} tasks`);
     console.log('[BgTask] OVERRUN_CHECK: rebalanced', updatedSchedule.length, 'tasks');
   } catch (e) {
+    void logger.warn('bgTask', `OVERRUN_CHECK: handler threw: ${String(e)}`);
     console.warn('[BgTask] OVERRUN_CHECK handler failed:', e);
   }
 });
@@ -96,6 +108,7 @@ TaskManager.defineTask(TASK_OVERRUN_CHECK, async ({ data, error }: any) => {
 // Use case: re-arm any notification alarms that were lost (e.g. after OEM battery kill).
 
 TaskManager.defineTask(TASK_BACKGROUND_FETCH, async () => {
+  void logger.debug('bgTask', 'BACKGROUND_FETCH: handler started');
   try {
     const today  = new Date().toISOString().slice(0, 10);
     const tasks  = await dbGetTasksForDate(today);
@@ -124,6 +137,7 @@ TaskManager.defineTask(TASK_BACKGROUND_FETCH, async () => {
       rearmedCount++;
     }
 
+    void logger.debug('bgTask', `BACKGROUND_FETCH: re-armed ${rearmedCount} reminders`);
     console.log('[BgFetch] Re-armed', rearmedCount, 'upcoming task reminders');
 
     // ── Evening morning-digest scheduling ──────────────────────────────────
@@ -136,17 +150,21 @@ TaskManager.defineTask(TASK_BACKGROUND_FETCH, async () => {
         const settings = await dbGetSettings();
         if (settings.userProfile?.wakeUpTime) {
           await scheduleMorningDigest(settings.userProfile, tasks);
+          void logger.debug('bgTask', `BACKGROUND_FETCH: scheduled morning digest for ${settings.userProfile.wakeUpTime}`);
           console.log('[BgFetch] Scheduled morning digest for', settings.userProfile.wakeUpTime);
         }
       } catch (e) {
+        void logger.warn('bgTask', `BACKGROUND_FETCH: morning digest failed: ${String(e)}`);
         console.warn('[BgFetch] Morning digest scheduling failed:', e);
       }
     }
 
+    void logger.debug('bgTask', `BACKGROUND_FETCH: handler done (rearmed=${rearmedCount})`);
     return rearmedCount > 0
       ? BackgroundFetch.BackgroundFetchResult.NewData
       : BackgroundFetch.BackgroundFetchResult.NoData;
   } catch (e) {
+    void logger.warn('bgTask', `BACKGROUND_FETCH: handler threw: ${String(e)}`);
     console.warn('[BgFetch] handler failed:', e);
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
@@ -160,10 +178,11 @@ TaskManager.defineTask(TASK_BACKGROUND_FETCH, async () => {
 
 TaskManager.defineTask(TASK_NOTIFICATION_BG, async ({ data, error }: any) => {
   if (error) {
-    console.warn('[BgTask] NOTIFICATION_BG error:', error);
+    void logger.warn('bgTask', `NOTIFICATION_BG received error from OS: ${String(error)}`);
     return;
   }
 
+  void logger.debug('bgTask', 'NOTIFICATION_BG: handler started');
   try {
     const actionId: string  = data?.actionIdentifier ?? '';
     const notifData = data?.notification?.request?.content?.data as {
@@ -171,16 +190,24 @@ TaskManager.defineTask(TASK_NOTIFICATION_BG, async ({ data, error }: any) => {
     } | undefined;
 
     const taskId = notifData?.taskId;
-    if (!taskId) return;
+    if (!taskId) {
+      void logger.debug('bgTask', 'NOTIFICATION_BG: no taskId, skipping');
+      return;
+    }
 
+    void logger.debug('bgTask', `NOTIFICATION_BG: action=${actionId}, taskId=${taskId}`);
     const today = new Date().toISOString().slice(0, 10);
     const tasks = await dbGetTasksForDate(today);
     const task  = tasks.find((t) => t.id === taskId);
-    if (!task) return;
+    if (!task) {
+      void logger.debug('bgTask', `NOTIFICATION_BG: task ${taskId} not found in today's tasks`);
+      return;
+    }
 
     if (actionId === 'COMPLETE') {
       await dbUpdateTask({ ...task, status: 'completed' });
       await cancelTaskReminders(taskId);
+      void logger.debug('bgTask', `NOTIFICATION_BG: task ${taskId} marked complete`);
       console.log('[BgTask] Task completed from notification:', taskId);
     } else if (actionId === 'EXTEND') {
       // Extend by 15 min from the background
@@ -191,11 +218,15 @@ TaskManager.defineTask(TASK_NOTIFICATION_BG, async ({ data, error }: any) => {
         await cancelTaskReminders(t.id);
         if (t.status !== 'skipped') await scheduleTaskReminders(t);
       }
+      void logger.debug('bgTask', `NOTIFICATION_BG: task ${taskId} extended by ${EXTENSION}min`);
       console.log('[BgTask] Task extended from notification:', taskId);
     } else if (actionId === 'VIEW') {
       navigateToTask(taskId);
     }
+
+    void logger.debug('bgTask', `NOTIFICATION_BG: handler done (action=${actionId})`);
   } catch (e) {
+    void logger.warn('bgTask', `NOTIFICATION_BG: handler threw: ${String(e)}`);
     console.warn('[BgTask] NOTIFICATION_BG handler failed:', e);
   }
 });

@@ -2,7 +2,9 @@ modules = ["nodejs-20", "web", "bash"]
 
 [deployment]
 router = "application"
-deploymentTarget = "autoscale"
+deploymentTarget = "static"
+build = ["pnpm", "--filter", "@workspace/mockup-sandbox", "run", "build"]
+publicDir = "artifacts/mockup-sandbox/dist"
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -31,6 +33,18 @@ args = "Push FocusFlow-pc to GitHub"
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Start FocusFlow Ad"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Serve Docs Website"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start FocusFlow Accessibility Demo"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start FocusFlow Feature Videos"
 
 [[workflows.workflow]]
 name = "Push to GitHub"
@@ -78,6 +92,42 @@ task = "shell.exec"
 args = "PORT=3002 BASE_PATH=/ pnpm --filter @workspace/focusflow-ad run dev"
 waitForPort = 3002
 
+[[workflows.workflow]]
+name = "Serve Docs Website"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx -y serve docs --listen 3000 --no-clipboard"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Start FocusFlow Accessibility Demo"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=3003 BASE_PATH=/ pnpm --filter @workspace/focusflow-accessibility-demo run dev"
+waitForPort = 3003
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Start FocusFlow Feature Videos"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=6000 BASE_PATH=/ pnpm --filter @workspace/focusflow-feature-videos run dev"
+waitForPort = 6000
+
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
@@ -87,8 +137,16 @@ path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
 [[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
 localPort = 3002
 externalPort = 3002
+
+[[ports]]
+localPort = 3003
+externalPort = 3003
 
 [[ports]]
 localPort = 5000
@@ -97,6 +155,10 @@ externalPort = 80
 [[ports]]
 localPort = 5001
 externalPort = 3002
+
+[[ports]]
+localPort = 6000
+externalPort = 5173
 
 [[ports]]
 localPort = 8081

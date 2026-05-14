@@ -77,10 +77,12 @@ export function BlockedWordsModal({
 
   /**
    * Checks if defense PIN is needed before calling `action`.
-   * If requireDefensePin is false, or no hash is stored, runs action directly.
+   * Runs action directly only if requireDefensePin is false or no hash is stored.
+   * `locked` does NOT bypass the PIN check here — locked items are blocked
+   * from removal at the callsite before this function is reached.
    */
   const withDefensePin = (pendingKey: string | 'all', action: () => void) => {
-    if (!requireDefensePin || locked) {
+    if (!requireDefensePin) {
       action();
       return;
     }
@@ -146,6 +148,7 @@ export function BlockedWordsModal({
       onClose();
     } catch (e) {
       console.error('[BlockedWordsModal] save failed', e);
+      Alert.alert('Error', 'Failed to save keyword list. Please try again.');
     } finally {
       setSaving(false);
     }

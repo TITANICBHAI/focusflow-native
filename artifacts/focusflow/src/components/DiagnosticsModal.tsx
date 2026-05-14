@@ -28,6 +28,7 @@ interface Props {
 }
 
 const LEVEL_COLORS: Record<string, string> = {
+  DEBUG: '#5AC8FA',
   INFO: '#34C759',
   WARN: '#FF9500',
   ERROR: '#FF3B30',
@@ -92,7 +93,7 @@ export default function DiagnosticsModal({ visible, onClose }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const entries = await getRecentLogs(100);
+      const entries = await getRecentLogs(200);
       setLogs([...entries].reverse());
     } finally {
       setLoading(false);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Lock, Clock, Calendar, BarChart3, BellRing } from 'lucide-react';
+import RecordingButton from './components/RecordingButton';
 
 const SCENE_DURATIONS = [
   5000, // 0: Opening
@@ -24,32 +25,45 @@ export default function App() {
   }, [currentScene]);
 
   return (
-    <div className="relative w-full h-screen bg-dark-900 overflow-hidden font-sans">
-      <div className="noise-overlay" />
-      
-      {/* Background Layer */}
-      <motion.div 
-        className="absolute inset-0 opacity-40 mix-blend-screen"
-        animate={{
-          scale: [1, 1.05, 1],
-          opacity: currentScene === 0 ? 0.3 : 0.6
+    <div className="w-screen h-screen bg-black flex items-center justify-center overflow-hidden">
+      {/* 4:3 canvas — matches 1600×1200 or 1200×900 target */}
+      <div
+        id="ad-canvas"
+        className="relative bg-dark-900 overflow-hidden font-sans"
+        style={{
+          aspectRatio: '4 / 3',
+          height: 'min(100vh, calc(100vw * 3 / 4))',
+          width: 'min(100vw, calc(100vh * 4 / 3))',
         }}
-        transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
       >
-        <img 
-          src={`${import.meta.env.BASE_URL}assets/cinematic-bg.png`} 
-          alt="Cinematic Background" 
-          className="w-full h-full object-cover"
-        />
-      </motion.div>
+        <div className="noise-overlay" />
 
-      {/* Main Content Area */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <AnimatePresence mode="wait">
-          <Scene key={currentScene} sceneIndex={currentScene} />
-        </AnimatePresence>
+        {/* Background Layer */}
+        <motion.div
+          className="absolute inset-0 opacity-40 mix-blend-screen"
+          animate={{
+            scale: [1, 1.05, 1],
+            opacity: currentScene === 0 ? 0.3 : 0.6,
+          }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+        >
+          <img
+            src={`${import.meta.env.BASE_URL}assets/cinematic-bg.png`}
+            alt="Cinematic Background"
+            className="w-full h-full object-cover"
+          />
+        </motion.div>
+
+        {/* Main Content Area */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <AnimatePresence mode="wait">
+            <Scene key={currentScene} sceneIndex={currentScene} />
+          </AnimatePresence>
+        </div>
       </div>
 
+      {/* Recording controls — outside the canvas so they don't appear in the recording */}
+      <RecordingButton />
     </div>
   );
 }

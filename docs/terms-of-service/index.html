@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Terms of Service — FocusFlow</title>
   <meta name="description" content="Terms of Service for FocusFlow, an Android focus and app blocking app." />
+  <meta name="google-site-verification" content="sou-98cZYPWFJmbwxJgJptO-ZaIPNJqz2ven_iS4NjI" />
+  <meta name="msvalidate.01" content="FC2887EF2F94BFFE090CAB25A456AE86" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -45,10 +47,26 @@
       display: flex;
       gap: 1.2rem;
       flex-wrap: wrap;
+      align-items: center;
     }
     a { color: var(--accent); text-decoration: none; }
     a:hover { color: var(--text); }
     .nav-links a { color: var(--muted); font-size: 0.95rem; }
+    #lang-toggle {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.28rem 0.7rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-family: inherit;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #lang-toggle:hover { border-color: var(--accent); color: var(--text); }
+    .zh { display: none; }
+    [data-lang="zh"] .zh { display: block; }
+    [data-lang="zh"] .en { display: none; }
     main {
       width: min(920px, calc(100% - 2rem));
       margin: 0 auto;
@@ -115,73 +133,131 @@
 </head>
 <body>
   <nav>
-    <a class="brand" href="../">FocusFlow</a>
+    <a class="brand" href="../" style="display:flex;align-items:center;gap:0.5rem;">
+      <img src="../logo-transparent.png" alt="FocusFlow" width="28" height="28" style="border-radius:7px;" />
+      FocusFlow
+    </a>
     <div class="nav-links">
       <a href="../">Home</a>
+      <a href="../features/">Features</a>
       <a href="../privacy-policy/">Privacy</a>
       <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a>
+      <button id="lang-toggle">中文</button>
     </div>
   </nav>
 
   <main>
-    <p class="eyebrow">Terms of Service</p>
-    <h1>Use FocusFlow as a focus tool, not a safety-critical system.</h1>
-    <p class="intro">These terms explain the rules and limitations for using FocusFlow, an Android app that helps you block distracting apps and manage focus sessions.</p>
-    <p class="updated">Last updated: April 2026</p>
+    <p class="eyebrow en">Terms of Service</p>
+    <p class="eyebrow zh">服务条款</p>
+
+    <h1 class="en">Use FocusFlow as a focus tool, not a safety-critical system.</h1>
+    <h1 class="zh">将 FocusFlow 作为专注工具使用，而非安全关键系统。</h1>
+
+    <p class="intro en">These terms explain the rules and limitations for using FocusFlow, an Android app that helps you block distracting apps and manage focus sessions.</p>
+    <p class="intro zh">这些条款说明使用 FocusFlow（一款帮助您屏蔽干扰性应用并管理专注会话的 Android 应用）的规则和限制。</p>
+
+    <p class="updated en">Last updated: April 2026</p>
+    <p class="updated zh">最后更新：2026年4月</p>
 
     <section>
-      <h2>1. Acceptance</h2>
-      <p>By installing, building, or using FocusFlow, you unconditionally agree to these Terms. If you do not agree, uninstall the app immediately. <strong>These Terms may be changed, amended, or replaced at any time without prior notice.</strong> Continued use after any change constitutes your immediate, irrevocable acceptance of the updated Terms. You are solely responsible for reviewing these Terms periodically.</p>
+      <h2 class="en">1. Acceptance</h2>
+      <h2 class="zh">1. 接受条款</h2>
+      <p class="en">By installing, building, or using FocusFlow, you unconditionally agree to these Terms. If you do not agree, uninstall the app immediately. <strong>These Terms may be changed, amended, or replaced at any time without prior notice.</strong> Continued use after any change constitutes your immediate, irrevocable acceptance of the updated Terms. You are solely responsible for reviewing these Terms periodically.</p>
+      <p class="zh">通过安装、构建或使用 FocusFlow，您无条件同意这些条款。如果您不同意，请立即卸载该应用。<strong>这些条款可能随时更改、修正或替换，恕不另行通知。</strong>在任何变更后继续使用即表示您立即、不可撤销地接受更新后的条款。您有责任定期查看这些条款。</p>
     </section>
 
     <section>
-      <h2>2. What FocusFlow Does</h2>
-      <p>FocusFlow provides scheduling, reminders, focus sessions, standalone app blocking, daily allowances, blocked-word enforcement, overlays, notifications, and optional aversion deterrents to help reduce distractions on Android devices. All enforcement is performed locally on your device by the Android OS and is subject to hardware, software, and OS limitations beyond FocusFlow's control.</p>
+      <h2 class="en">2. What FocusFlow Does</h2>
+      <h2 class="zh">2. FocusFlow 的功能</h2>
+      <p class="en">FocusFlow provides scheduling, reminders, focus sessions, standalone app blocking, daily allowances, blocked-word enforcement, overlays, notifications, and optional aversion deterrents to help reduce distractions on Android devices. All enforcement is performed locally on your device by the Android OS and is subject to hardware, software, and OS limitations beyond FocusFlow's control.</p>
+      <p class="zh">FocusFlow 提供日程安排、提醒、专注会话、独立应用屏蔽、每日配额、屏蔽词执行、覆盖层、通知及可选的厌恶震慑功能，以帮助减少 Android 设备上的干扰。所有执行均由 Android 操作系统在您的设备本地进行，并受到 FocusFlow 无法控制的硬件、软件和操作系统限制。</p>
     </section>
 
     <section>
-      <h2>3. Your Sole Responsibility</h2>
-      <p>You are solely and exclusively responsible for all consequences of configuring, enabling, or disabling any blocking session. FocusFlow and TBTechs bear absolutely no responsibility for missed communications, missed alarms, missed appointments, accidents, injuries, financial losses, or any other outcome — foreseeable or unforeseeable — arising while any blocking feature is active or inactive. Use of FocusFlow is entirely at your own risk.</p>
+      <h2 class="en">3. Your Sole Responsibility</h2>
+      <h2 class="zh">3. 您的独自责任</h2>
+      <p class="en">You are solely and exclusively responsible for all consequences of configuring, enabling, or disabling any blocking session. FocusFlow and TBTechs bear absolutely no responsibility for missed communications, missed alarms, missed appointments, accidents, injuries, financial losses, or any other outcome — foreseeable or unforeseeable — arising while any blocking feature is active or inactive. Use of FocusFlow is entirely at your own risk.</p>
+      <p class="zh">您对配置、启用或禁用任何屏蔽会话的所有后果负完全和唯一责任。FocusFlow 和 TBTechs 对任何屏蔽功能在活跃或非活跃状态下产生的错过通讯、错过闹钟、错过约会、事故、伤害、财务损失或任何其他后果——无论可预见或不可预见——不承担任何责任。使用 FocusFlow 完全由您自行承担风险。</p>
     </section>
 
     <section>
-      <h2>4. Emergency Access Disclaimer</h2>
-      <p><strong>FocusFlow makes NO guarantee whatsoever that emergency services (112, 911, 999, or any equivalent) will be reachable during an active session.</strong> Android OS, OEM firmware (One UI, MIUI, ColorOS, etc.), carrier restrictions, or device state may prevent or delay emergency access in ways FocusFlow cannot detect or control. TBTechs is not liable — under any legal theory, in any jurisdiction — for any failure, delay, or inability to access emergency services while FocusFlow is installed, running, or active. <strong>DO NOT rely on FocusFlow in any safety-critical or emergency situation.</strong></p>
+      <h2 class="en">4. Emergency Access Disclaimer</h2>
+      <h2 class="zh">4. 紧急访问免责声明</h2>
+      <p class="en"><strong>FocusFlow makes NO guarantee whatsoever that emergency services (112, 911, 999, or any equivalent) will be reachable during an active session.</strong> Android OS, OEM firmware (One UI, MIUI, ColorOS, etc.), carrier restrictions, or device state may prevent or delay emergency access in ways FocusFlow cannot detect or control. TBTechs is not liable — under any legal theory, in any jurisdiction — for any failure, delay, or inability to access emergency services while FocusFlow is installed, running, or active. <strong>DO NOT rely on FocusFlow in any safety-critical or emergency situation.</strong></p>
+      <p class="zh"><strong>FocusFlow 不以任何方式保证在活跃会话期间可以联系到紧急服务（112、110、119 或任何等效号码）。</strong> Android 操作系统、OEM 固件（One UI、MIUI、ColorOS 等）、运营商限制或设备状态可能以 FocusFlow 无法检测或控制的方式阻止或延迟紧急访问。TBTechs 在任何法律理论下、任何司法管辖区内，对在 FocusFlow 安装、运行或活跃时无法、延迟或不能访问紧急服务不承担任何责任。<strong>请勿在任何安全关键或紧急情况下依赖 FocusFlow。</strong></p>
     </section>
 
     <section>
-      <h2>5. No Warranty</h2>
-      <p>TO THE FULLEST EXTENT PERMITTED BY LAW: FocusFlow is provided "AS IS" and "AS AVAILABLE" without any warranty of any kind, whether express, implied, or statutory. TBTechs explicitly disclaims any warranty that the app will function correctly on your device, Android version, or OEM configuration. Blocking may fail at any time for any reason, including OS updates, permission revocation, battery optimization, Doze mode, or OEM-specific process killing.</p>
+      <h2 class="en">5. No Warranty</h2>
+      <h2 class="zh">5. 无保证</h2>
+      <p class="en">TO THE FULLEST EXTENT PERMITTED BY LAW: FocusFlow is provided "AS IS" and "AS AVAILABLE" without any warranty of any kind, whether express, implied, or statutory. TBTechs explicitly disclaims any warranty that the app will function correctly on your device, Android version, or OEM configuration. Blocking may fail at any time for any reason, including OS updates, permission revocation, battery optimization, Doze mode, or OEM-specific process killing.</p>
+      <p class="zh">在法律允许的最大范围内：FocusFlow 按"现状"和"可用状态"提供，不附带任何形式的明示、暗示或法定保证。TBTechs 明确否认对应用能在您的设备、Android 版本或 OEM 配置上正确运行的任何保证。屏蔽功能可能随时因任何原因失败，包括操作系统更新、权限撤销、电池优化、Doze 模式或 OEM 特定进程终止。</p>
     </section>
 
     <section>
-      <h2>6. Limitation of Liability</h2>
-      <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW: TBTechs, its affiliates, officers, developers, and contributors shall not be liable for any damages of any kind — including direct, indirect, incidental, special, punitive, or consequential damages, personal injury, death, property damage, financial loss, or harm resulting from failure to access emergency services — arising out of or related to your use of or inability to use FocusFlow, regardless of the legal theory (contract, tort, strict liability, or otherwise), even if advised of the possibility of such damages. <strong>The aggregate total liability of TBTechs for any and all claims shall not exceed zero (USD $0).</strong> No legal action, arbitration, or proceeding against TBTechs may exceed this cap under any circumstances or jurisdiction.</p>
+      <h2 class="en">6. Limitation of Liability</h2>
+      <h2 class="zh">6. 责任限制</h2>
+      <p class="en">TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW: TBTechs, its affiliates, officers, developers, and contributors shall not be liable for any damages of any kind — including direct, indirect, incidental, special, punitive, or consequential damages, personal injury, death, property damage, financial loss, or harm resulting from failure to access emergency services — arising out of or related to your use of or inability to use FocusFlow, regardless of the legal theory (contract, tort, strict liability, or otherwise), even if advised of the possibility of such damages. <strong>The aggregate total liability of TBTechs for any and all claims shall not exceed zero (USD $0).</strong> No legal action, arbitration, or proceeding against TBTechs may exceed this cap under any circumstances or jurisdiction.</p>
+      <p class="zh">在适用法律允许的最大范围内：TBTechs、其附属公司、高管、开发者和贡献者对任何类型的损害——包括直接、间接、附带、特殊、惩罚性或后果性损害，人身伤害、死亡、财产损失、财务损失，或因无法访问紧急服务导致的伤害——概不负责，无论是否基于合同、侵权、严格责任或其他法律理论，即使已被告知此类损害的可能性。<strong>TBTechs 对任何及所有索赔的总责任不超过零（0美元）。</strong>在任何情况或司法管辖区内，针对 TBTechs 的任何法律行动、仲裁或程序均不得超过此上限。</p>
     </section>
 
     <section>
-      <h2>7. Acceptable Use</h2>
-      <ul>
+      <h2 class="en">7. Acceptable Use</h2>
+      <h2 class="zh">7. 可接受使用</h2>
+      <ul class="en">
         <li>Use FocusFlow only on devices you own or are authorized to manage.</li>
         <li>Do not use FocusFlow to monitor, restrict, or control another person without proper permission.</li>
         <li>Do not modify or distribute the app in a way that misrepresents its privacy behavior or permissions.</li>
         <li>Do not use the app for unlawful, harmful, or abusive purposes.</li>
       </ul>
+      <ul class="zh">
+        <li>仅在您拥有或被授权管理的设备上使用 FocusFlow。</li>
+        <li>未经适当许可，请勿使用 FocusFlow 监控、限制或控制他人。</li>
+        <li>请勿以错误描述其隐私行为或权限的方式修改或分发该应用。</li>
+        <li>请勿将该应用用于非法、有害或滥用目的。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>8. Changes to These Terms</h2>
-      <p>These Terms may be updated, replaced, or removed at any time without prior notice. The updated Terms are effective immediately upon publication. Your continued use of FocusFlow after any change — regardless of whether you have read the updated Terms — constitutes your unconditional acceptance.</p>
+      <h2 class="en">8. Changes to These Terms</h2>
+      <h2 class="zh">8. 条款变更</h2>
+      <p class="en">These Terms may be updated, replaced, or removed at any time without prior notice. The updated Terms are effective immediately upon publication. Your continued use of FocusFlow after any change — regardless of whether you have read the updated Terms — constitutes your unconditional acceptance.</p>
+      <p class="zh">这些条款可能随时更新、替换或删除，恕不另行通知。更新后的条款在发布后立即生效。在任何变更后继续使用 FocusFlow——无论您是否已阅读更新后的条款——均构成您的无条件接受。</p>
     </section>
 
     <section>
-      <h2>9. Contact</h2>
-      <p>For questions or issues, open an issue on the FocusFlow GitHub repository. Questions do not alter or waive any provision of these Terms.</p>
+      <h2 class="en">9. Contact</h2>
+      <h2 class="zh">9. 联系方式</h2>
+      <p class="en">For questions or issues, email us at <a href="mailto:tbtechsdev@gmail.com">tbtechsdev@gmail.com</a>. Questions do not alter or waive any provision of these Terms.</p>
+      <p class="zh">如有疑问或问题，请发送电子邮件至 <a href="mailto:tbtechsdev@gmail.com">tbtechsdev@gmail.com</a>。提问不会更改或放弃这些条款的任何条款。</p>
     </section>
   </main>
 
   <footer>
-    <p><a href="../">Home</a> · <a href="../privacy-policy/">Privacy Policy</a> · <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a></p>
+    <p><a href="../">Home</a> · <a href="../privacy-policy/">Privacy Policy</a> · <a href="../data-subject-rights/">Data Rights</a> · <a href="https://github.com/TITANICBHAI/focusflow-android">GitHub</a></p>
   </footer>
+
+  <script>
+  (function(){
+    var stored = localStorage.getItem('ff-lang');
+    var auto = (navigator.language || navigator.userLanguage || '').startsWith('zh');
+    var isZh = stored ? stored === 'zh' : auto;
+    function apply(zh){
+      document.documentElement.setAttribute('data-lang', zh ? 'zh' : 'en');
+      localStorage.setItem('ff-lang', zh ? 'zh' : 'en');
+      var btn = document.getElementById('lang-toggle');
+      if(btn) btn.textContent = zh ? 'EN' : '中文';
+    }
+    apply(isZh);
+    document.addEventListener('DOMContentLoaded', function(){
+      apply(isZh);
+      var btn = document.getElementById('lang-toggle');
+      if(btn) btn.addEventListener('click', function(){
+        var cur = document.documentElement.getAttribute('data-lang');
+        apply(cur !== 'zh');
+      });
+    });
+  })();
+  </script>
 </body>
 </html>

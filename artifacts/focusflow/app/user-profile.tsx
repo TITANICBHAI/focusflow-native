@@ -285,7 +285,12 @@ export default function UserProfileScreen() {
   const handleSkip = async () => {
     if (isEditMode) { router.back(); return; }
     // Mark onboarding done but don't save a profile
-    await updateSettings({ ...state.settings, onboardingComplete: true });
+    try {
+      await updateSettings({ ...state.settings, onboardingComplete: true });
+    } catch {
+      Alert.alert('Error', 'Failed to save settings. Please try again.');
+      return;
+    }
     try { await SharedPrefsModule.putString('onboarding_complete', 'true'); } catch { /* non-fatal */ }
     // Even when skipping the questionnaire, show the How-to-Use guide so the
     // brand-new user understands what the app does before landing on home.

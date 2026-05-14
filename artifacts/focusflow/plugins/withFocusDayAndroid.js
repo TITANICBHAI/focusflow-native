@@ -12,7 +12,7 @@
  *   8. Declares FocusFlowWidget (AppWidgetProvider) with APPWIDGET_UPDATE intent-filter
  *   9. Declares TaskAlarmActivity (full-screen alarm, showWhenLocked + turnScreenOn)
  *  10. Declares LauncherActivity with HOME + DEFAULT intent-filter
- *  11. Declares TaskAlarmModule service
+ *  11. Declares NetworkBlockerVpnService with BIND_VPN_SERVICE permission
  *  12. Adds <queries> block for Android 11+ package visibility
  *  13. Registers FocusDayPackage via withMainApplication (reliable for RN 0.76+)
  *  14. Copies all Kotlin source files from android-native/ into the project
@@ -137,6 +137,10 @@ function withFocusDayManifest(config) {
       // intent (PendingIntent used in setFullScreenIntent). Without it the notification
       // shows normally but never opens the full-screen activity.
       'android.permission.USE_FULL_SCREEN_INTENT',
+      // Required for NetworkBlockerVpnService — allows the app to establish a VPN tunnel
+      // that null-routes packets from blocked apps. Android enforces this separately from
+      // FOREGROUND_SERVICE; the service declaration also needs android:permission set.
+      'android.permission.BIND_VPN_SERVICE',
     ];
 
     const existing = (manifest.manifest['uses-permission'] || []).map(
@@ -424,6 +428,27 @@ function withFocusDayManifest(config) {
       });
     }
 
+    // ── NetworkBlockerVpnService ──────────────────────────────────────────────
+    // Null-routing VPN service that drops packets from blocked apps.
+    // android:permission BIND_VPN_SERVICE is mandatory — the system enforces it
+    // and will refuse to bind any service that lacks this permission declaration.
+    const vpnExists = (app.service || []).some(
+      (s) => s.$['android:name'] === 'com.tbtechs.focusflow.services.NetworkBlockerVpnService'
+    );
+    if (!vpnExists) {
+      if (!app.service) app.service = [];
+      app.service.push({
+        $: {
+          'android:name':       'com.tbtechs.focusflow.services.NetworkBlockerVpnService',
+          'android:permission': 'android.permission.BIND_VPN_SERVICE',
+          'android:exported':   'false',
+        },
+        'intent-filter': [{
+          action: [{ $: { 'android:name': 'android.net.VpnService' } }],
+        }],
+      });
+    }
+
     // ── <queries> block for Android 11+ package visibility ────────────────────
     // Without this, PackageManager.getInstalledPackages() returns an empty list
     // on API 30+ for user-installed apps (package visibility restrictions).
@@ -668,6 +693,106 @@ function withFocusDayProguard(config) {
   ]);
 }
 
+// ─── 6. Android Auto Backup — SQLite database protection ─────────────────────
+//
+// By default Android backs up app data to Google Drive (allowBackup=true).
+// Without explicit backup rules the agent may:
+//   a) Restore an old/empty DB snapshot on reinstall (looks like a "wipe").
+//   b) Omit the -wal and -shm sidecar files, producing a corrupt restore.
+//
+// This modifier:
+//   1. Writes res/xml/backup_rules.xml  (API < 31) explicitly including the
+//      focusday.db + WAL sidecar so the full database is captured.
+//   2. Writes res/xml/data_extraction_rules.xml (API 31+, Android 12+) with
+//      the same include rules for both cloud-backup and device-transfer.
+//   3. Sets android:fullBackupContent and android:dataExtractionRules on the
+//      <application> element so Android knows which rules file to use.
+//
+// expo-sqlite stores databases under Context.getFilesDir()/SQLite/ which maps
+// to domain="file" in the backup rules XML.
+
+function withFocusDayBackupRules(config) {
+  // Step A: write the XML resource files during prebuild
+  config = withDangerousMod(config, [
+    'android',
+    (cfg) => {
+      const platformRoot = cfg.modRequest.platformProjectRoot;
+      const xmlDir = path.join(platformRoot, 'app', 'src', 'main', 'res', 'xml');
+      fs.mkdirSync(xmlDir, { recursive: true });
+
+      // backup_rules.xml — used on Android < 12 (API level < 31)
+      const backupRules = `<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full-backup content rules for Android < 12 (API < 31).
+  expo-sqlite stores databases in Context.getFilesDir()/SQLite/
+  so domain="file" with path="SQLite/" covers all DB files.
+  Including the -wal and -shm sidecars ensures the backup is
+  consistent and no recent writes are lost on restore.
+-->
+<full-backup-content>
+    <include domain="file" path="SQLite/" />
+    <include domain="sharedpref" path="." />
+</full-backup-content>
+`;
+
+      // data_extraction_rules.xml — used on Android 12+ (API 31+)
+      const dataExtractionRules = `<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Data extraction rules for Android 12+ (API 31+).
+  Covers both cloud backup (Google Drive) and device-to-device
+  transfer (e.g. tap-to-transfer, Setup Wizard).
+  expo-sqlite path: Context.getFilesDir()/SQLite/
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="SQLite/" />
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="SQLite/" />
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>
+`;
+
+      const backupRulesPath = path.join(xmlDir, 'backup_rules.xml');
+      const dataExtractionPath = path.join(xmlDir, 'data_extraction_rules.xml');
+
+      fs.writeFileSync(backupRulesPath, backupRules, 'utf8');
+      fs.writeFileSync(dataExtractionPath, dataExtractionRules, 'utf8');
+
+      console.log('[withFocusDayAndroid] Wrote backup_rules.xml and data_extraction_rules.xml');
+      return cfg;
+    },
+  ]);
+
+  // Step B: set the manifest attributes that point to those XML files
+  config = withAndroidManifest(config, (cfg) => {
+    const app = cfg.modResults.manifest.application[0];
+
+    // android:allowBackup — must be true for Auto Backup to run
+    if (!app.$['android:allowBackup']) {
+      app.$['android:allowBackup'] = 'true';
+    }
+
+    // android:fullBackupContent — API < 31 backup rules
+    if (!app.$['android:fullBackupContent']) {
+      app.$['android:fullBackupContent'] = '@xml/backup_rules';
+      console.log('[withFocusDayAndroid] Set android:fullBackupContent=@xml/backup_rules');
+    }
+
+    // android:dataExtractionRules — API 31+ backup rules
+    if (!app.$['android:dataExtractionRules']) {
+      app.$['android:dataExtractionRules'] = '@xml/data_extraction_rules';
+      console.log('[withFocusDayAndroid] Set android:dataExtractionRules=@xml/data_extraction_rules');
+    }
+
+    return cfg;
+  });
+
+  return config;
+}
+
 // ─── Compose & export ─────────────────────────────────────────────────────────
 
 module.exports = function withFocusDayAndroid(config) {
@@ -677,6 +802,7 @@ module.exports = function withFocusDayAndroid(config) {
   config = withFocusDayPackageRegistration(config);
   config = withFocusDayBuildConfig(config);
   config = withFocusDayProguard(config);
+  config = withFocusDayBackupRules(config);
   return config;
 };
 

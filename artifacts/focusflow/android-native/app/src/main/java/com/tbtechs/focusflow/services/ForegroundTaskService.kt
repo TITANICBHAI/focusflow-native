@@ -16,6 +16,7 @@ import android.view.accessibility.AccessibilityManager
 import androidx.core.app.NotificationCompat
 import com.tbtechs.focusflow.R
 import com.tbtechs.focusflow.MainActivity
+import com.tbtechs.focusflow.services.NetworkBlockerVpnService
 import com.tbtechs.focusflow.services.WakeLockManager
 import com.tbtechs.focusflow.widget.FocusFlowWidget
 import org.json.JSONArray
@@ -74,6 +75,15 @@ class ForegroundTaskService : Service() {
 
         /** Cooldown: don't re-block the same package within this window (ms). */
         private const val FALLBACK_COOLDOWN_MS = 2_000L
+
+        /** How often the in-process VPN health check runs (ms). */
+        private const val VPN_HEALTH_CHECK_MS = 60_000L
+
+        /**
+         * How often the UsageStats-based allowance sync fires (ms).
+         * Every 60 s is accurate enough for a daily time budget and cheap on battery.
+         */
+        private const val ALLOWANCE_SYNC_MS = 60_000L
 
         /** Notification channel for full-screen block-overlay intent. */
         private const val BLOCK_ALERT_CHANNEL  = "focusday_block_alert"
@@ -198,6 +208,127 @@ class ForegroundTaskService : Service() {
     private var fallbackLastBlockedAtMs: Long   = 0L
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Secondary in-process VPN health check — runs every [VPN_HEALTH_CHECK_MS].
+     *
+     * The AccessibilityService runs the same check every 10 s, but
+     * ForegroundTaskService is typically hardier (it holds a foreground notification
+     * Android is reluctant to kill). Having a second, independent watcher here
+     * means the VPN is restarted quickly even on devices where the accessibility
+     * service is sluggish to recover.
+     *
+     * The AlarmManager-based [VpnWatchdogReceiver] is the ultimate fallback for
+     * full process-death scenarios; this runnable handles in-process silent kills.
+     */
+    private val vpnHealthRunnable = object : Runnable {
+        override fun run() {
+            checkAndHealVpn()
+            handler.postDelayed(this, VPN_HEALTH_CHECK_MS)
+        }
+    }
+
+    /**
+     * UsageStats-based allowance sync — runs every [ALLOWANCE_SYNC_MS] (60 s).
+     *
+     * Uses Android's UsageStatsManager (PACKAGE_USAGE_STATS permission) to read the
+     * *actual* foreground time each tracked app has accumulated since the start of today.
+     * This is the ground-truth source — it is device-managed, cannot be inflated by
+     * spurious accessibility events, and persists across service kills/reboots.
+     *
+     * Only updates `time_budget` entries in daily_allowance_used. The count and interval
+     * modes don't map cleanly onto the UsageStats API and keep their own tracking.
+     *
+     * The sync is additive — it only raises `usedMs` when UsageStats reports more time
+     * than the current stored value, so a freshly accumulated event-based write is never
+     * overwritten downward by a stale 60-second snapshot.
+     */
+    private val allowanceSyncRunnable = object : Runnable {
+        override fun run() {
+            try { syncAllowanceFromUsageStats() } catch (_: Exception) { /* best-effort */ }
+            handler.postDelayed(this, ALLOWANCE_SYNC_MS)
+        }
+    }
+
+    private fun syncAllowanceFromUsageStats() {
+        val configJson = blockPrefs.getString("daily_allowance_config", null) ?: return
+        if (configJson.isBlank() || configJson == "null") return
+
+        // Parse only time_budget packages — collect pkg → budgetMs
+        val timeBudgetPkgs = mutableMapOf<String, Long>()
+        try {
+            val arr = org.json.JSONArray(configJson)
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                if (obj.optString("mode") != "time_budget") continue
+                val pkg      = obj.optString("packageName", "")
+                val budgetMs = obj.optInt("budgetMinutes", 30).toLong() * 60_000L
+                if (pkg.isNotEmpty()) timeBudgetPkgs[pkg] = budgetMs
+            }
+        } catch (_: Exception) { return }
+        if (timeBudgetPkgs.isEmpty()) return
+
+        // Gate on Usage Access permission — AppOps check (mirrors UsageStatsModule)
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager ?: return
+        val mode   = appOps.checkOpNoThrow(
+            android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+            android.os.Process.myUid(), packageName
+        )
+        // MODE_ALLOWED or MODE_DEFAULT (some Samsung OneUI builds) are both acceptable
+        if (mode == android.app.AppOpsManager.MODE_IGNORED ||
+            mode == android.app.AppOpsManager.MODE_ERRORED) return
+
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE)
+            as? android.app.usage.UsageStatsManager ?: return
+
+        // Query from midnight today → now so we only count today's foreground time
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startOfDay = cal.timeInMillis
+        val now        = System.currentTimeMillis()
+        val today      = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                           .format(java.util.Date())
+
+        val statsMap = try {
+            usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, startOfDay, now)
+                ?.associateBy { it.packageName } ?: return
+        } catch (_: Exception) { return }
+
+        val usedJson = blockPrefs.getString("daily_allowance_used", "{}") ?: "{}"
+        val allUsed  = try { org.json.JSONObject(usedJson) } catch (_: Exception) { return }
+        var changed  = false
+
+        for ((pkg, budgetMs) in timeBudgetPkgs) {
+            val actualMs = (statsMap[pkg]?.totalTimeInForeground ?: 0L)
+                .coerceAtMost(budgetMs)
+            if (actualMs <= 0L) continue
+
+            val pkgUsed    = allUsed.optJSONObject(pkg) ?: org.json.JSONObject()
+            val storedDate = pkgUsed.optString("date", "")
+            val storedMs   = if (storedDate == today) pkgUsed.optLong("usedMs", 0L) else 0L
+
+            // Only raise — never lower — so an event-based write that is more recent
+            // than the last 60-second snapshot is never clobbered.
+            if (actualMs > storedMs) {
+                pkgUsed.put("mode",   "time_budget")
+                pkgUsed.put("date",   today)
+                pkgUsed.put("usedMs", actualMs)
+                allUsed.put(pkg, pkgUsed)
+                changed = true
+            }
+        }
+
+        if (changed) {
+            blockPrefs.edit()
+                .putString("daily_allowance_used", allUsed.toString())
+                .apply()
+        }
+    }
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             val remaining = endTimeMs - System.currentTimeMillis()
@@ -323,6 +454,12 @@ class ForegroundTaskService : Service() {
         // Start the fallback blocker poll — it self-disables instantly when
         // accessibility is active, so there is zero overhead in the normal path.
         handler.postDelayed(fallbackPollRunnable, FALLBACK_POLL_MS)
+        // Start the in-process VPN health check. First tick is staggered by
+        // half the interval so it doesn't race the AccessibilityService check.
+        handler.postDelayed(vpnHealthRunnable, VPN_HEALTH_CHECK_MS / 2)
+        // Start the UsageStats allowance sync. Staggered 10 s to let other
+        // startup work settle first. Runs every 60 s while the service is alive.
+        handler.postDelayed(allowanceSyncRunnable, 10_000L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -434,6 +571,8 @@ class ForegroundTaskService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(tickRunnable)
         handler.removeCallbacks(fallbackPollRunnable)
+        handler.removeCallbacks(vpnHealthRunnable)
+        handler.removeCallbacks(allowanceSyncRunnable)
         WakeLockManager.release()
         super.onDestroy()
     }
@@ -452,10 +591,95 @@ class ForegroundTaskService : Service() {
         WakeLockManager.release()
         // Stop all aversive deterrents (dim overlay, vibration) if they were running
         AversiveActionsManager.stopAll(this)
+        // Stop network blocking and restore connectivity if the restore flag is set
+        stopNetworkBlock()
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildIdleNotification())
         // Update widget to idle state
         FocusFlowWidget.pushWidgetUpdate(applicationContext)
+    }
+
+    /**
+     * Stops the VPN network blocker when a focus session ends.
+     * Only acts if net_block_enabled is true. Does NOT stop the VPN if a
+     * standalone block session is still active — the VPN must keep running
+     * for the standalone block even after the focus session ends.
+     */
+    private fun stopNetworkBlock() {
+        val prefs = getSharedPreferences(AppBlockerAccessibilityService.PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("net_block_enabled", false)) return
+        // Guard: if a standalone block is still active, leave the VPN running.
+        val saActive = prefs.getBoolean("standalone_block_active", false)
+        if (saActive) {
+            val untilMs = prefs.getLong("standalone_block_until_ms", 0L)
+            if (untilMs <= 0L || System.currentTimeMillis() < untilMs) return
+        }
+        try {
+            val intent = Intent(this, NetworkBlockerVpnService::class.java).apply {
+                action = NetworkBlockerVpnService.ACTION_STOP
+            }
+            startService(intent)
+        } catch (_: Exception) { /* service not running — nothing to stop */ }
+    }
+
+    // ─── VPN health check ──────────────────────────────────────────────────────
+
+    /**
+     * Checks whether the VPN tunnel should be running and restarts it if not.
+     * Mirrors the same logic in AppBlockerAccessibilityService but runs inside
+     * ForegroundTaskService, which is typically more resilient to OEM killers.
+     *
+     * Guards:
+     *   • net_block_self_heal must be true  (user opted in)
+     *   • net_block_vpn must be true        (VPN mechanism selected)
+     *   • VPN is not already running
+     *   • A blocking session is currently active
+     *   • VPN permission is still held
+     */
+    private fun checkAndHealVpn() {
+        val prefs = blockPrefs
+        if (!prefs.getBoolean("net_block_self_heal", false)) return
+        if (!prefs.getBoolean("net_block_vpn", false)) return
+        if (NetworkBlockerVpnService.isRunning) return
+
+        val now = System.currentTimeMillis()
+        val focusActive = prefs.getBoolean("focus_active", false).let { on ->
+            if (!on) false
+            else {
+                val endMs = prefs.getLong("task_end_ms", 0L)
+                endMs <= 0L || now < endMs
+            }
+        }
+        val saActive = prefs.getBoolean("standalone_block_active", false).let { on ->
+            if (!on) false
+            else {
+                val untilMs = prefs.getLong("standalone_block_until_ms", 0L)
+                untilMs <= 0L || now < untilMs
+            }
+        }
+        if (!focusActive && !saActive) return
+
+        // Cannot restart without VPN permission.
+        // Write the permission-lost flag so the JS layer can surface a re-grant prompt.
+        try {
+            if (android.net.VpnService.prepare(this) != null) {
+                prefs.edit().putBoolean("vpn_permission_lost", true).apply()
+                return
+            }
+        } catch (_: Exception) { return }
+
+        val pkgs   = prefs.getString("net_block_packages", "[]") ?: "[]"
+        val global = prefs.getBoolean("net_block_global", false)
+        val mode   = if (global) NetworkBlockerVpnService.MODE_GLOBAL
+                     else        NetworkBlockerVpnService.MODE_PER_APP
+        try {
+            val intent = Intent(this, NetworkBlockerVpnService::class.java).apply {
+                action = NetworkBlockerVpnService.ACTION_START
+                putExtra(NetworkBlockerVpnService.EXTRA_PACKAGES, pkgs)
+                putExtra(NetworkBlockerVpnService.EXTRA_MODE, mode)
+            }
+            startService(intent)
+        } catch (_: Exception) { /* best-effort */ }
     }
 
     // ─── Notification builders ─────────────────────────────────────────────────

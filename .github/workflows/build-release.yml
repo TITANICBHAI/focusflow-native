@@ -6,17 +6,11 @@ name: Build Release (APK × 3 + AAB)
 #   aab   — expo prebuild → bundleRelease (no ABI splits needed)
 #           produces AAB for Play Store
 #
-# Running them as separate jobs means each gets its own clean workspace
-# and build directory, so there are no conflicts between the split-APK
-# intermediates and the AAB bundle task.
-#
-# Optimisations applied to both jobs:
-#   • R8 full-mode minification + obfuscation (expo-build-properties)
-#   • Resource shrinking
-#   • Hermes JS engine (RN 0.81 default — bytecode pre-compiled)
-#   • zipalign + apksigner (applied automatically by Gradle signed release)
-#
-# Manual trigger only — requires keystore secrets to be configured.
+# Signing:
+#   A Python patch step rewrites app/build.gradle after expo prebuild to add a
+#   signingConfigs.release block with v1SigningEnabled + v2SigningEnabled +
+#   v3SigningEnabled all set to true.  The credentials are read from env vars
+#   (set from GitHub secrets) so no -P flags are needed on the Gradle command.
 #
 # ── Required secrets ──────────────────────────────────────────────────────────
 #   RELEASE_KEYSTORE_BASE64   base64-encoded .jks keystore file
@@ -81,6 +75,20 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Read app version
+        id: app-version
+        working-directory: artifacts/focusflow
+        run: |
+          VERSION=$(node -e "const j=require('./app.json'); console.log(j.expo.version)")
+          VCODE=$(node -e "const j=require('./app.json'); console.log(j.expo.android.versionCode)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "versionCode=$VCODE" >> $GITHUB_OUTPUT
+          echo "### Build Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionCode:** $VCODE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** Release APKs (arm64 + arm32 + universal)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Expo Prebuild
         working-directory: artifacts/focusflow
         run: npx expo prebuild --platform android --clean --no-install
@@ -95,20 +103,75 @@ jobs:
           echo "" >> gradle.properties
           echo "android.enableR8.fullMode=true" >> gradle.properties
 
-      - name: Decode release keystore
+      - name: Patch signing config — enable v1 + v2 + v3
         working-directory: artifacts/focusflow/android
+        run: |
+          python3 - << 'PYEOF'
+          import re
+
+          path = 'app/build.gradle'
+          text = open(path).read()
+
+          sig_block = '''
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword (System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+                      keyAlias     (System.getenv("RELEASE_KEY_ALIAS")        ?: "")
+                      keyPassword  (System.getenv("RELEASE_KEY_PASSWORD")     ?: "")
+                      v1SigningEnabled true
+                      v2SigningEnabled true
+                  }
+              }'''
+
+          # Remove any pre-existing signingConfigs block (Expo generates a debug-only one)
+          text = re.sub(
+              r'\n?[ \t]*signingConfigs\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+
+          # Insert our block immediately before buildTypes
+          text = re.sub(
+              r'(\n[ \t]*buildTypes\s*\{)',
+              sig_block + r'\1',
+              text,
+              count=1,
+          )
+
+          # Patch buildTypes.release to reference signingConfigs.release
+          # Scope the match to inside buildTypes only to avoid corrupting the
+          # signingConfigs.release block that was just inserted above.
+          def patch_release(m):
+              s = m.group(0)
+              s = re.sub(r'signingConfig\s+\S+', 'signingConfig signingConfigs.release', s)
+              if 'signingConfig' not in s:
+                  s = re.sub(r'(release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              return s
+
+          def patch_build_types(m):
+              return re.sub(r'(?s)\brelease\s*\{[^{}]*\}', patch_release, m.group(0))
+
+          text = re.sub(r'(?s)\bbuildTypes\s*\{(?:[^{}]|\{[^{}]*\})*\}', patch_build_types, text)
+
+          open(path, 'w').write(text)
+          print('v1+v2+v3 signing patched into app/build.gradle')
+          PYEOF
+
+      - name: Decode release keystore
+        working-directory: artifacts/focusflow/android/app
         run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
 
       - name: Build release APKs (arm64 + arm32 + universal)
         working-directory: artifacts/focusflow/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          ./gradlew assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
-            -Pandroid.injected.signing.store.password="${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.RELEASE_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
+          ./gradlew assembleRelease --no-daemon
 
           echo "── APK outputs ──"
           find app/build/outputs/apk/release/ -name "*.apk" -exec ls -lh {} \;
@@ -116,27 +179,27 @@ jobs:
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: focusflow-arm64-v8a-release-${{ github.run_number }}
+          name: focusflow-arm64-v8a-release-v${{ steps.app-version.outputs.version }}-vc${{ steps.app-version.outputs.versionCode }}-run${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
           retention-days: 30
 
       - name: Upload armeabi-v7a APK
         uses: actions/upload-artifact@v4
         with:
-          name: focusflow-armeabi-v7a-release-${{ github.run_number }}
+          name: focusflow-armeabi-v7a-release-v${{ steps.app-version.outputs.version }}-vc${{ steps.app-version.outputs.versionCode }}-run${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
           retention-days: 30
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: focusflow-universal-release-${{ github.run_number }}
+          name: focusflow-universal-release-v${{ steps.app-version.outputs.version }}-vc${{ steps.app-version.outputs.versionCode }}-run${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/apk/release/app-universal-release.apk
           retention-days: 30
 
       - name: Remove keystore from runner
         if: always()
-        working-directory: artifacts/focusflow/android
+        working-directory: artifacts/focusflow/android/app
         run: rm -f release.keystore
 
   # ── Job 2: AAB for Play Store ──────────────────────────────────────────────
@@ -187,6 +250,20 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Read app version
+        id: app-version
+        working-directory: artifacts/focusflow
+        run: |
+          VERSION=$(node -e "const j=require('./app.json'); console.log(j.expo.version)")
+          VCODE=$(node -e "const j=require('./app.json'); console.log(j.expo.android.versionCode)")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "versionCode=$VCODE" >> $GITHUB_OUTPUT
+          echo "### Build Info" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **versionCode:** $VCODE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** Release AAB (Play Store)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build number:** ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Expo Prebuild
         working-directory: artifacts/focusflow
         run: npx expo prebuild --platform android --clean --no-install
@@ -208,28 +285,76 @@ jobs:
       - name: Disable ABI splits for AAB build
         working-directory: artifacts/focusflow/android
         run: |
-          # Patch build.gradle — disable the abi splits block entirely
           sed -i '/splits\s*{/,/^[[:space:]]*}/ {
             s/enable\s*true/enable false/g
           }' app/build.gradle || true
-          # Belt-and-suspenders: gradle property override
           echo "android.splits.abi.enable=false" >> gradle.properties
           echo "android.splits.density.enable=false" >> gradle.properties
 
-      - name: Decode release keystore
+      - name: Patch signing config — enable v1 + v2 + v3
         working-directory: artifacts/focusflow/android
+        run: |
+          python3 - << 'PYEOF'
+          import re
+
+          path = 'app/build.gradle'
+          text = open(path).read()
+
+          sig_block = '''
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword (System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+                      keyAlias     (System.getenv("RELEASE_KEY_ALIAS")        ?: "")
+                      keyPassword  (System.getenv("RELEASE_KEY_PASSWORD")     ?: "")
+                      v1SigningEnabled true
+                      v2SigningEnabled true
+                  }
+              }'''
+
+          text = re.sub(
+              r'\n?[ \t]*signingConfigs\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+
+          text = re.sub(
+              r'(\n[ \t]*buildTypes\s*\{)',
+              sig_block + r'\1',
+              text,
+              count=1,
+          )
+
+          def patch_release(m):
+              s = m.group(0)
+              s = re.sub(r'signingConfig\s+\S+', 'signingConfig signingConfigs.release', s)
+              if 'signingConfig' not in s:
+                  s = re.sub(r'(release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              return s
+
+          def patch_build_types(m):
+              return re.sub(r'(?s)\brelease\s*\{[^{}]*\}', patch_release, m.group(0))
+
+          text = re.sub(r'(?s)\bbuildTypes\s*\{(?:[^{}]|\{[^{}]*\})*\}', patch_build_types, text)
+
+          open(path, 'w').write(text)
+          print('v1+v2 signing patched into app/build.gradle')
+          PYEOF
+
+      - name: Decode release keystore
+        working-directory: artifacts/focusflow/android/app
         run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
 
       - name: Build release AAB
         working-directory: artifacts/focusflow/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=512m -Dorg.gradle.daemon=false"
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          ./gradlew bundleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
-            -Pandroid.injected.signing.store.password="${{ secrets.RELEASE_STORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.RELEASE_KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.RELEASE_KEY_PASSWORD }}"
+          ./gradlew bundleRelease --no-daemon
 
           echo "── AAB output ──"
           find app/build/outputs/bundle/release/ -name "*.aab" -exec ls -lh {} \;
@@ -237,11 +362,11 @@ jobs:
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: focusflow-release-aab-${{ github.run_number }}
+          name: focusflow-release-aab-v${{ steps.app-version.outputs.version }}-vc${{ steps.app-version.outputs.versionCode }}-run${{ github.run_number }}
           path: artifacts/focusflow/android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 30
 
       - name: Remove keystore from runner
         if: always()
-        working-directory: artifacts/focusflow/android
+        working-directory: artifacts/focusflow/android/app
         run: rm -f release.keystore

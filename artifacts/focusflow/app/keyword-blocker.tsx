@@ -277,7 +277,7 @@ export default function KeywordBlockerScreen() {
         visible={modalVisible}
         words={blockedWords}
         locked={isLocked}
-        requireDefensePin={!isLocked}
+        requireDefensePin={true}
         onSave={handleSaveWords}
         onClose={() => setModalVisible(false)}
       />

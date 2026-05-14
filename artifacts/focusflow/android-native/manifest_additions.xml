@@ -43,6 +43,8 @@
     CHANGE_WIFI_STATE
     ACCESS_WIFI_STATE
     CHANGE_NETWORK_STATE
+    INTERNET                    (for VpnService tunnel interface)
+    BIND_VPN_SERVICE
     VIBRATE                     (for vibration harassment aversion layer)
     SCHEDULE_EXACT_ALARM        (for weekly temptation report alarm; optional, falls back to inexact)
     KILL_BACKGROUND_PROCESSES   (terminate the blocked app process after HOME press)
@@ -74,6 +76,22 @@
             <action android:name="android.intent.action.QUICKBOOT_POWERON" />
         </intent-filter>
     </receiver>
+
+    <!--
+      VpnWatchdogReceiver — fires every ~60 seconds via AlarmManager while a
+      blocking session with network-block enabled is active.
+
+      Purpose: detect and recover from VPN process death caused by Android
+      battery optimisers / OEM process schedulers (Samsung One UI, MIUI,
+      ColorOS). AlarmManager alarms survive process death (they live in
+      system_server), so this receiver is woken up by the OS even after the
+      app process has been fully killed, giving it a reliable window to
+      restart NetworkBlockerVpnService.
+
+      exported="false" — only our own AlarmManager alarm can trigger it.
+    -->
+    <receiver android:name="...services.VpnWatchdogReceiver"
+        android:exported="false" />
 
     <!--
       TemptationReportReceiver — fires every Sunday 08:00 via AlarmManager to
@@ -173,6 +191,21 @@
             <category android:name="android.intent.category.DEFAULT" />
         </intent-filter>
     </activity>
+
+    <!--
+      NetworkBlockerVpnService — null-routing VPN tunnel that drops all packets
+      for blocked apps. The BIND_VPN_SERVICE permission is required for all VPN
+      services; android:permission ensures only the system can bind to it.
+      Declared in the <application> block (NOT inside <queries>).
+    -->
+    <service
+        android:name="...services.NetworkBlockerVpnService"
+        android:permission="android.permission.BIND_VPN_SERVICE"
+        android:exported="false">
+        <intent-filter>
+            <action android:name="android.net.VpnService" />
+        </intent-filter>
+    </service>
 
   ══════════════════════════════════════════════════════════════════════════════
   ONE MANUAL STEP (cannot be scripted safely — edit the file directly)

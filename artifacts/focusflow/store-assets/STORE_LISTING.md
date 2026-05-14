@@ -1,5 +1,5 @@
 # FocusFlow — App Store Listing Document
-## Complete Metadata for Aptoide, Uptodown & Google Play Store
+## Complete Metadata for Uptodown, Aptoide, Huawei AppGallery & Google Play
 
 ---
 
@@ -7,9 +7,10 @@
 
 | Field | Value |
 |---|---|
-| **App Title** | FocusFlow — Deep Focus & App Blocker |
+| **App Title** | FocusFlow — Focus & App Blocker |
 | **Package Name** | com.tbtechs.focusflow |
-| **Version** | 1.0.0 |
+| **Version** | 1.0.3 |
+| **Version Code** | 4 |
 | **Developer / Company Name** | TB Techs |
 | **Category** | Productivity |
 | **Age Rating** | Everyone (3+) |
@@ -27,111 +28,271 @@
 |---|---|
 | **App Website** | https://titanicbhai.github.io/focusflow-android |
 | **Privacy Policy URL** | https://titanicbhai.github.io/focusflow-android/privacy-policy |
-| **Support Email** | support@tbtechs.dev *(update if different)* |
-| **GitHub / Social URL** | https://github.com/TITANICBHAI/focusflow-android |
-| **Google Play Listing URL** | *(fill once published)* |
+| **Support Email** | support@tbtechs.dev |
+| **GitHub** | https://github.com/TITANICBHAI/FocusFlow |
 
 ---
 
 ## SHORT DESCRIPTION (max 70–80 characters)
 
 ```
-Block distracting apps & stay laser-focused with AI scheduling.
+Block distracting apps and build better focus habits.
 ```
-**(63 characters)**
+**(54 characters)**
 
-*Alternative short descriptions:*
+*Alternatives:*
 - `Your personal focus enforcer — block apps, finish tasks.` (57 chars)
-- `Deep focus app blocker with smart daily scheduling.` (51 chars)
-- `Stop getting distracted. FocusFlow keeps you on track.` (55 chars)
+- `Deep focus, app blocking, and smart daily scheduling.` (53 chars)
 
 ---
 
 ## FULL DESCRIPTION (English)
 
 ```
-FocusFlow is your discipline operating system — the app that doesn't just remind you of tasks, it physically stops distractions so you can finish them.
+Struggling to stay focused? FocusFlow is the app that doesn't just remind 
+you to focus — it enforces it.
 
-Unlike ordinary to-do apps or timers, FocusFlow uses Android's Accessibility Service to enforce real focus sessions. When you start a focus block, non-essential apps are blocked at the system level until your task is done. No more doom-scrolling, no more "just five minutes" excuses.
+FocusFlow lets you block distracting apps during focus sessions so you can 
+actually finish what you started. Whether you're studying, working, or just 
+trying to use your phone less, FocusFlow gives you the tools to stay on 
+track without relying on willpower alone.
 
-── WHAT MAKES FOCUSFLOW DIFFERENT ──
+── CORE FEATURES ──
 
-✦ Hardware-Level App Blocking
-FocusFlow uses Android's Accessibility Service to block any app you choose during a focus session. Social media, games, shopping — locked out until you're done.
+App Blocking During Focus Sessions
+Choose which apps to block while you work. Social media, games, shopping — 
+locked away until your session ends. Non-essential apps redirect to a calm 
+blocking screen so you never lose momentum.
 
-✦ Intelligent Daily Scheduler
-Plan your entire day with an intelligent scheduling engine. It handles task conflicts, protects high-priority work, and rebalances your schedule if a task runs over.
+Always-On Block List
+Set specific apps to be blocked 24/7, not just during sessions. Great for 
+apps you want to cut out completely, like social media or games.
 
-✦ Focus Mode with Allowed Apps
-Not all apps are distractions. Whitelist your essential apps — Phone, WhatsApp, your work tools — while everything else stays locked.
+Standalone Timed Block
+Not in the mood for a full focus session? Set a timed block for any app for 
+any duration. The block stays active until the timer runs out — even if you 
+close the app.
 
-✦ Pomodoro Timer Built-In
-Use the classic 25-minute focus / 5-minute break cycle to power through deep work, or set your own custom durations.
+Daily App Allowance
+Give apps a daily time budget instead of blocking them outright. When the 
+limit is hit, the app is blocked for the rest of the day. Helps you use apps 
+intentionally without cutting them off completely.
 
-✦ Background Enforcement (Survives Minimise & Reboot)
-A foreground service keeps FocusFlow alive even when you minimise it. Boot recovery automatically restarts your session after a reboot.
+Keyword Blocker
+Block apps that contain specific words in their name or content — useful for 
+blocking whole categories of apps without listing each one manually.
 
-✦ Emergency Override (Logged)
-Life happens. An emergency override option is available, but every use is logged so you stay honest with yourself.
+Focus Sessions with Allowed Apps
+Not all apps are distractions. Whitelist your essential tools — Phone, 
+navigation, your work apps — while everything else stays locked.
 
-✦ Focus Violation Tracking
-Every attempt to open a blocked app is recorded. Review your violation history to understand your distraction patterns.
+Pomodoro Timer
+Built-in Pomodoro support with customisable focus and break durations. Work 
+in structured intervals and track your sessions over time.
 
-✦ Statistics & Accountability
-See your daily task completion rate, total tasks done, and focus streaks over time.
+Greyout / Recurring Block Schedule
+Set recurring time windows when distracting apps automatically fade to grey 
+and become inaccessible — like evenings or work hours — without starting a 
+full session.
 
-✦ Timeline & List Views
-Switch between a visual timeline of your day and a clean task list — whichever helps you think clearer.
+Block Enforcement & Defence
+PIN-protect your block settings so you can't weaken your own rules in a 
+moment of weakness. System-level protections prevent bypassing the blocker 
+by switching launchers or uninstalling the app during a session.
+
+VPN-Based Network Block
+Block specific apps from accessing the internet during focus sessions using 
+a local VPN — no external server, no data ever leaves your device.
+
+Home Launcher Mode
+FocusFlow can act as your home launcher during a session, preventing you 
+from leaving to open blocked apps.
+
+Focus Violation Tracking
+Every attempt to open a blocked app during a session is logged locally. 
+Review your patterns and see where your attention actually goes.
+
+Statistics & Streaks
+See your daily focus stats, completion streaks, productivity scores, and 
+week-over-week trends — all stored locally on your device.
+
+Task Management
+Create tasks, assign durations, and track completions. Plan your day inside 
+the app and see how your actual focus time compares to your plan.
+
+Daily & Weekly Reports
+Get a clear view of how your week went — total focus time, tasks completed, 
+streaks, and areas to improve.
+
+Emergency Override
+Life happens. You can always override a block in a genuine emergency. Every 
+override is logged so you stay honest with yourself.
+
+Boot Recovery
+Your block and session settings survive a reboot. If your phone restarts 
+during a session, FocusFlow restores your block automatically.
 
 ── WHO IS FOCUSFLOW FOR? ──
 
 • Students who need to study without distractions
-• Remote workers fighting notification overload
-• Entrepreneurs who want to protect deep-work time
-• Anyone who picks up their phone every 5 minutes
+• Remote workers battling notification overload
+• Anyone trying to use their phone more intentionally
+• People who want real enforcement, not just reminders
 
-── PERMISSIONS EXPLAINED ──
+── YOUR PRIVACY MATTERS ──
 
-FocusFlow requires several system-level permissions to enforce focus sessions. Here's why each is needed:
+FocusFlow works entirely on your device. It has no account system, no 
+analytics, no ads, and makes zero network requests. Everything — your tasks, 
+settings, focus history, and block lists — stays on your phone and is never 
+shared with anyone.
 
-• Accessibility Service — Required to detect and block access to non-allowed apps in real time.
-• Usage Stats — Required to identify which app the user has opened.
-• System Alert Window — Required to display the "App Blocked" overlay screen.
-• Foreground Service — Required to keep the timer and blocker running when you leave the app.
-• Exact Alarm — Required for scheduled task notifications and reminders.
+── HOW PERMISSIONS ARE USED ──
 
-No location, camera, microphone, or storage access is ever requested. FocusFlow does not collect or transmit any personal data.
+FocusFlow is transparent about every permission it uses:
+
+• Accessibility Service — Detects which app you open so it can block 
+  distractions in real time. It only reads the name of the active app. 
+  It cannot see your messages, passwords, or anything on screen.
+
+• Usage Stats — Shows you your own app usage and focus violation history 
+  inside the app. This data never leaves your device.
+
+• Display Over Other Apps — Shows the "App Blocked" screen when you try 
+  to open a blocked app. Nothing is recorded.
+
+• Foreground Service — Keeps the focus timer and blocker running when you 
+  switch to another app. Standard for any timer or active background task.
+
+• Exact Alarm — Fires task reminders at your scheduled times.
+
+• Query All Packages — Lets you browse your installed apps when building 
+  your block list. No app data is collected.
+
+• Request Delete Packages — Used only to let you uninstall apps from within 
+  FocusFlow's block list manager. The system handles the actual uninstall 
+  dialog — FocusFlow never removes apps on its own.
+
+No location. No camera. No microphone. No storage. No account. No internet.
 
 ── OPEN SOURCE ──
 
-FocusFlow's source code is available on GitHub: https://github.com/TITANICBHAI/focusflow-android
+FocusFlow is fully open source. You can read the complete source code — 
+including the accessibility service implementation — on GitHub:
+https://github.com/TITANICBHAI/FocusFlow
 
-Build your focus. Protect your time. Get things done.
+Build your focus. Protect your time.
 ```
 
 ---
 
-## RELEASE NOTES (v1.0.0 — Initial Release)
+## RELEASE NOTES (v1.0.3)
 
 ```
-🚀 Welcome to FocusFlow v1.0.0!
+FocusFlow v1.0.3 — Stability & Enforcement Improvements
 
-This is the first public release of FocusFlow — your personal focus enforcer.
+This update focuses on making blocking more reliable and consistent.
 
-What's included in this release:
-• System-level app blocking via Accessibility Service
-• Intelligent daily task scheduler with conflict resolution
-• Built-in Pomodoro timer (25m / 5m)
-• Timeline and list view for daily planning
-• Allowed-app whitelist (whitelist your essential tools)
-• Emergency override with activity logging
-• Focus violation history and statistics
-• Boot recovery — your sessions survive a reboot
-• Background enforcement via foreground service
+What's new:
+• Standalone timed block now applies correctly even when the app database 
+  is slow to initialise — the block always goes through
+• Daily allowance entries now save reliably on all devices
+• Keyword blocker and recurring schedule saves are now fault-tolerant
+• Block Enforcement screen: all toggle saves now surface errors clearly 
+  instead of failing silently
+• Home Launcher settings saves improved for all configurations
+• Onboarding: settings save failures now show a clear error instead of 
+  getting stuck silently
 
-We built FocusFlow to help people who genuinely struggle with distraction. If you find it useful, please leave a review — it helps more people discover the app.
+Bug fixes:
+• Fixed: Save button in Standalone Block modal appearing to do nothing on 
+  some devices (root cause: database initialisation race condition)
+• Fixed: Blocked words and recurring schedules not applying after save on 
+  cold launch
+• Fixed: Block Defence toggles silently failing on some OEM devices
 
-Found a bug or have a feature request? Open an issue on GitHub: https://github.com/TITANICBHAI/focusflow-android
+If you've had issues with blocks not applying after saving — this update 
+fixes that.
+```
+
+---
+
+## UPTODOWN — SPECIFIC FIELDS
+
+| Field | Fill With |
+|---|---|
+| **Version** | 1.0.3 |
+| **License** | Free |
+| **Development Stage** | Final Release |
+| **Min SDK Version** | 8.0 (Android 8.0) |
+| **Max SDK Version** | 15 (Android 15) |
+| **Short Description** | Block distracting apps and build better focus habits. |
+| **Full Description** | *(use Full Description above)* |
+| **New Features in this Version** | *(use Release Notes above)* |
+| **YouTube Video URL** | *(add once uploaded)* |
+| **File Languages** | English |
+
+---
+
+## UPTODOWN — REVIEWER MESSAGE (Accessibility Permission Appeal)
+
+> Paste this into the reviewer notes / appeal form when submitting or resubmitting.
+
+```
+Dear Uptodown Review Team,
+
+Thank you for reviewing FocusFlow. I'd like to clarify exactly how our app 
+uses the Accessibility Service, since I understand this permission requires 
+additional scrutiny.
+
+WHAT THE ACCESSIBILITY SERVICE DOES IN FOCUSFLOW:
+
+FocusFlow's entire purpose is to help users block distracting apps during 
+focus sessions they choose to start. The Accessibility Service is the only 
+Android API that provides real-time foreground app detection without root 
+access.
+
+Specifically, the service listens ONLY to TYPE_WINDOW_STATE_CHANGED events. 
+When this event fires, FocusFlow reads the package name of the newly active 
+app (e.g. "com.instagram.android") and checks it against the user's local 
+block list. If the app is blocked, FocusFlow displays a full-screen overlay 
+redirecting the user back to their task.
+
+WHAT THE ACCESSIBILITY SERVICE DOES NOT DO:
+
+• It does NOT read any on-screen text, messages, passwords, or content
+• It does NOT log keystrokes or capture any user input
+• It does NOT access contacts, SMS, call logs, or any personal data
+• It does NOT transmit any data off the device — ever
+• Phone and emergency apps are unconditionally whitelisted and can NEVER 
+  be blocked
+
+WHY NO ALTERNATIVE API WORKS:
+
+UsageStatsManager and ActivityManager only provide historical or polled 
+data — they cannot detect an app switch in real time. Without real-time 
+detection, a user could open a blocked app and use it for several seconds 
+before a polling check could catch it. The Accessibility Service is the 
+only way to enforce an immediate redirect.
+
+This is the same approach used by all legitimate parental control and 
+focus apps on Android (Google's own Digital Wellbeing, ActionDash, 
+StayFree, AppBlock, etc.).
+
+TRANSPARENCY:
+
+• The accessibility service description shown to users in Android Settings 
+  clearly explains what it does
+• Our full source code is publicly available for inspection:
+  https://github.com/TITANICBHAI/FocusFlow
+  The relevant file is: AppBlockerAccessibilityService.kt
+• Our privacy policy is at:
+  https://titanicbhai.github.io/focusflow-android/privacy-policy
+
+We believe FocusFlow meets Uptodown's guidelines and we're happy to provide 
+any additional information or source code access needed for your review.
+
+Thank you for your time.
+— TB Techs
 ```
 
 ---
@@ -167,196 +328,130 @@ Found a bug or have a feature request? Open an issue on GitHub: https://github.c
 | Device info | No | — |
 | Financial info | No | — |
 
-**Data shared with third parties:** None  
-**Data encrypted in transit:** N/A (no network data)  
+**Data shared with third parties:** None
+**Data encrypted in transit:** N/A (no network data)
 **Users can delete their data:** Yes (clear app data)
 
-### Short Description (Google Play — 80 char max)
+### Google Play — Accessibility Declaration
+
+**Does your app use the Android Accessibility API?**
+→ Yes
+
+**Which features require it?**
 ```
-Block distracting apps & stay laser-focused with smart scheduling.
+FocusFlow uses the Accessibility Service to detect in real time when the 
+user opens an app that is on their personal block list during a focus 
+session. When a blocked app is detected, FocusFlow immediately displays a 
+blocking screen redirecting the user to their task.
+
+This is the only technically viable method for real-time foreground app 
+detection on Android without root access. UsageStatsManager and 
+ActivityManager are polling-based — they cannot intercept an app launch 
+instantly. Without the Accessibility API, real-time blocking is not 
+possible.
+
+The service listens exclusively to TYPE_WINDOW_STATE_CHANGED events and 
+reads only the package name of the active window. No screen content, text, 
+keystrokes, or personal data is ever read or recorded.
 ```
+
+**Does your app collect or share any data via the Accessibility API?**
+```
+No. The only information read from accessibility events is the package name 
+of the foreground app. This package name is:
+
+1. Compared locally against the user's block list (stored in SQLite on-device)
+2. Optionally logged locally so the user can review their own focus violations
+3. Never transmitted off the device under any circumstances
+4. Never shared with any third party
+
+FocusFlow has no analytics SDK, no crash reporting SDK, no advertising SDK, 
+and makes zero network requests.
+```
+
+### Google Play — Sensitive Permissions Summary
+
+| Permission | Why It's Needed | Data Collected | Data Transmitted |
+|---|---|---|---|
+| `BIND_ACCESSIBILITY_SERVICE` | Real-time foreground app detection for blocking | Package name of active app only | Never |
+| `PACKAGE_USAGE_STATS` | Show user their own focus violation history | Local usage events | Never |
+| `SYSTEM_ALERT_WINDOW` | Display "App Blocked" overlay | None | Never |
+| `QUERY_ALL_PACKAGES` | Let user browse installed apps to build block list | None | Never |
+| `REQUEST_DELETE_PACKAGES` | Let user remove apps via system uninstall dialog | None | Never |
+| `FOREGROUND_SERVICE` | Keep focus timer running when app is minimised | None | Never |
+| `SCHEDULE_EXACT_ALARM` | Fire task reminders at exact scheduled times | None | Never |
 
 ---
 
-## APTOIDE CONNECT — SPECIFIC FIELDS
+## APTOIDE — SPECIFIC FIELDS
 
 | Field | Fill With |
 |---|---|
-| **Application Title** | FocusFlow — Deep Focus & App Blocker |
-| **Application Privacy Policy URL** | https://titanicbhai.github.io/focusflow-android/privacy-policy |
-| **Application Support Email Address** | support@tbtechs.dev |
-| **Company/Application Website** | https://titanicbhai.github.io/focusflow-android |
-| **Company/Application Social Network URL** | https://github.com/TITANICBHAI/focusflow-android |
+| **Application Title** | FocusFlow — Focus & App Blocker |
+| **Privacy Policy URL** | https://titanicbhai.github.io/focusflow-android/privacy-policy |
+| **Support Email** | support@tbtechs.dev |
+| **Website** | https://titanicbhai.github.io/focusflow-android |
 | **Company Legal Name** | TB Techs |
 | **Category** | Productivity |
 | **Age Rating** | Everyone |
-| **Does your app have in-app purchases?** | NO (already selected in your screenshot) |
-| **Title (Listing Language)** | FocusFlow — Deep Focus & App Blocker |
+| **In-App Purchases** | No |
 | **Description** | *(use Full Description above)* |
 | **Release Notes** | *(use Release Notes above)* |
 
-### Aptoide Image Requirements
+### Aptoide — Reviewer Message
 
-| Asset | Size | Notes |
-|---|---|---|
-| **Icon** | 512 × 512 px | Already in `assets/images/icon.png` — export at 512×512 |
-| **Feature Graphic** | 1024 × 500 px | See generated asset in store-assets/ |
-| **Screenshots** | Min 320px wide | At least 2 required |
+```
+FocusFlow uses Android's Accessibility Service exclusively to detect 
+foreground app changes and block non-allowed apps during user-initiated 
+focus sessions.
+
+The service listens only to TYPE_WINDOW_STATE_CHANGED events to read the 
+package name of the currently active app. It does NOT read on-screen text, 
+log keystrokes, capture passwords, or observe any content within apps.
+
+All data stays on-device. No network requests. Full source code available:
+https://github.com/TITANICBHAI/FocusFlow
+Relevant file: AppBlockerAccessibilityService.kt
+```
 
 ---
 
-## UPTODOWN — SPECIFIC FIELDS
+## HUAWEI APPGALLERY — SENSITIVE PERMISSION DESCRIPTION
 
-| Field | Fill With |
-|---|---|
-| **Version** | 1.0.0 |
-| **License** | Free |
-| **Development Stage** | Final Release |
-| **Min SDK Version** | 8.0 (Android 8.0) |
-| **Max SDK Version** | 15 (Android 15) |
-| **Short Description** | Block distracting apps & stay laser-focused with smart scheduling. |
-| **Full Description** | *(use Full Description above)* |
-| **New Features in this Version** | *(use Release Notes above)* |
-| **YouTube Video URL** | *(add once uploaded)* |
-| **File Languages** | English |
+```
+FocusFlow uses android.permission.BIND_ACCESSIBILITY_SERVICE exclusively 
+to detect which app is in the foreground by listening to 
+TYPE_WINDOW_STATE_CHANGED events. When a user opens a blocked app during a 
+focus session, the service reads only the package name of that app and 
+displays a blocking overlay. It does not read, access, collect, store, or 
+transmit any SMS messages, call logs, passwords, screen content, or personal 
+data. Phone and dialer apps are unconditionally whitelisted — calls are 
+never blocked. The BIND_ACCESSIBILITY_SERVICE permission is not used for any 
+purpose other than real-time foreground app detection for user-initiated 
+blocking sessions.
+```
+
+*(Select "Display caller IDs and block harassment" as the closest matching 
+scenario checkbox. The description above clarifies no SMS/call data is accessed.)*
 
 ---
 
 ## KEYWORDS / TAGS
 
 ```
-focus, productivity, app blocker, pomodoro, deep work, distraction blocker, 
-study timer, task manager, scheduler, accessibility, time management, 
-focus mode, digital wellbeing, screen time, anti-distraction
+focus, productivity, app blocker, pomodoro, deep work, distraction blocker,
+study timer, task manager, digital wellbeing, screen time, focus mode,
+anti-distraction, time management, daily allowance, keyword blocker,
+always-on block, standalone block, focus session, work timer, habit
 ```
-
----
-
-## MESSAGE FOR APTOIDE REVIEWER
-
-```
-FocusFlow uses Android's Accessibility Service exclusively to detect foreground 
-app changes and block non-allowed apps during user-initiated focus sessions. 
-
-The service only listens to TYPE_WINDOW_STATE_CHANGED and 
-TYPE_WINDOW_CONTENT_CHANGED events to read the package name of the currently 
-active app window. It does NOT read any on-screen text, log keystrokes, 
-capture user input, intercept passwords, or observe any content within apps.
-
-When a blocked app is detected, FocusFlow displays a full-screen overlay 
-(via SYSTEM_ALERT_WINDOW) redirecting the user back to FocusFlow. The session 
-is always user-initiated and user-controlled. An emergency override is available 
-at any time.
-
-PACKAGE_USAGE_STATS is used only to display the user's own focus violation 
-history locally inside the app. QUERY_ALL_PACKAGES is used only to let the 
-user build their own allowed-app whitelist. No data ever leaves the device. 
-No analytics, no tracking, no network transmission of any kind.
-
-The app is fully open source for inspection:
-https://github.com/TITANICBHAI/focusflow-android
-
-Relevant source files:
-- AppBlockerAccessibilityService.kt (the accessibility service implementation)
-- ForegroundTaskService.kt (background enforcement)
-```
-
----
-
-## GOOGLE PLAY CONSOLE — ACCESSIBILITY DECLARATION
-*(Fill this in under App content → Sensitive app permissions → Accessibility)*
-
-### Question: Does your app use the Android Accessibility API?
-**Answer: Yes**
-
-### Question: Which features in your app require the Android Accessibility API?
-
-```
-FocusFlow's core feature — real-time app blocking during focus sessions — 
-requires the Accessibility API. Specifically:
-
-The app uses AccessibilityService to listen for TYPE_WINDOW_STATE_CHANGED 
-events, which fire when the user switches to a different app. This allows 
-FocusFlow to detect the package name of the newly opened app and immediately 
-display a blocking overlay if that app is not on the user's allowed list.
-
-This is the ONLY technically viable method to achieve real-time foreground 
-app detection on Android without requiring root access. No alternative API 
-(UsageStatsManager, ActivityManager) provides real-time window change events — 
-they are polling-based and introduce delays that would allow a user to use a 
-blocked app before the block is enforced.
-
-Without the Accessibility API, the core focus enforcement feature of the app 
-cannot function.
-```
-
-### Question: Does your app collect or share any data enabled by the Accessibility API?
-
-```
-No. FocusFlow does not collect, store, or transmit any data obtained via the 
-Accessibility API. The only information read from the accessibility events is 
-the package name of the foreground app (e.g., "com.instagram.android"). This 
-package name is:
-
-1. Compared locally against the user's allowed-app list (stored in SQLite on-device)
-2. Logged locally to an on-device SQLite database if the app is blocked (so 
-   the user can review their own focus violations)
-3. Never transmitted off-device under any circumstances
-4. Never shared with any third party
-
-The app has no analytics SDK, no crash reporting SDK, no advertising SDK, and 
-makes zero network requests related to accessibility data.
-```
-
-### Question: Is the Accessibility Service description clearly shown to users?
-
-```
-Yes. During onboarding, FocusFlow presents a dedicated permissions screen that:
-1. Explains in plain language what the Accessibility Service does ("detects 
-   which app you open so it can block distractions during your focus sessions")
-2. Explains what it does NOT do ("it cannot read your messages, passwords, or 
-   anything on your screen")
-3. Requires the user to manually enable the service in Android Settings — 
-   FocusFlow never auto-enables it
-4. Allows the user to disable the service at any time from Android Settings
-
-The service label and description in the manifest are human-readable and 
-accurately describe the service's purpose.
-```
-
-### Google Play — Sensitive Permissions Summary Table
-
-| Permission | Why It's Needed | Data Collected | Data Transmitted |
-|---|---|---|---|
-| `BIND_ACCESSIBILITY_SERVICE` | Detect foreground app changes in real time to enforce focus blocking | Package name of active app only | Never |
-| `PACKAGE_USAGE_STATS` | Show user their own app-usage history and violation log | Local usage events | Never |
-| `SYSTEM_ALERT_WINDOW` | Display the "App Blocked" overlay over the blocked app | None | Never |
-| `QUERY_ALL_PACKAGES` | Let user build their allowed-app whitelist | None | Never |
-| `FOREGROUND_SERVICE` | Keep focus timer running when app is minimised | None | Never |
-| `SCHEDULE_EXACT_ALARM` | Fire task reminders at the exact scheduled time | None | Never |
-
-### Google Play — App Content Declaration (Data Safety form)
-
-When filling the Data Safety section in Play Console, answer as follows:
-
-**Does your app collect or share any of the required user data types?**  
-→ Select **No** for all categories EXCEPT:
-
-**App activity → App interactions:**  
-→ Select YES, then:
-- Data collected: "Which apps are opened while a focus session is active (package names only)"  
-- Shared with third parties: **No**
-- Data can be deleted by user: **Yes** (clear app data)
-- Data is encrypted in transit: **N/A** (stays on device, never transmitted)
-- Processing purpose: **App functionality** (enforcing the user's own focus session rules)
 
 ---
 
 ## ASSETS CHECKLIST
 
-- [ ] App Icon — 512 × 512 px PNG (from `assets/images/icon.png`)
-- [ ] Feature Graphic — 1024 × 500 px (for Aptoide & Google Play)
+- [ ] App Icon — 512 × 512 px PNG (`assets/images/icon.png`)
+- [ ] Feature Graphic — 1024 × 500 px (Aptoide & Google Play)
 - [ ] Screenshots — at least 3 phone screenshots (portrait)
 - [ ] Promo Video — uploaded to YouTube, URL added to listings
 - [ ] APK / AAB file — built via EAS Build
-- [ ] Privacy Policy page — live at the URL listed above
+- [ ] Privacy Policy — live at URL listed above

@@ -14,6 +14,70 @@ type Entry = {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '1.2.0',
+    date: 'May 2026',
+    sections: [
+      {
+        heading: 'Analog Clock Launcher',
+        icon: 'time-outline',
+        items: [
+          'New analog clock option for the launcher home screen — canvas-drawn hour, minute, and second hands with hour tick marks and indigo accent matching the dark launcher aesthetic',
+          'Clock style preference persisted via SharedPrefs and synced on every settings change — switching between digital and analog survives reboots and session restarts',
+        ],
+      },
+      {
+        heading: 'Nuclear Mode & Block Overlay Bridges',
+        icon: 'nuclear-outline',
+        items: [
+          'NuclearModeModule JS bridge: requestUninstallApp, requestUninstallApps, isAppInstalled — connects the React Native control plane to the Kotlin uninstall dialog launcher',
+          'BlockOverlayModule JS bridge: setOverlayQuote, setCustomQuotes, clearCustomQuote, setOverlayWallpaper, clearOverlayWallpaper, getDefaultQuotes, getOverlaySettings — full overlay customisation now accessible from JS',
+        ],
+      },
+      {
+        heading: 'Cross-OEM Power Menu & Uninstall Blocking',
+        icon: 'shield-checkmark-outline',
+        items: [
+          'Power menu intercept now covers 15+ OEM SystemUI variants: Xiaomi/MIUI, OnePlus/OxygenOS, Oppo/ColorOS, Realme, Huawei/EMUI, Vivo/Funtouch, Motorola, Asus/ZenUI, Nothing OS, Nokia/HMD, Sony Xperia',
+          'Retry now fires on systemGuard alone — no longer requires an active focus or standalone session to keep the power menu protected',
+          'Uninstall blocking expanded to include OEM package installers and OEM Settings apps across Samsung legacy, Xiaomi, Realme, Vivo, OnePlus, Motorola, Asus, and Nokia devices',
+        ],
+      },
+      {
+        heading: 'VPN Integration in Focus Sessions',
+        icon: 'wifi-outline',
+        items: [
+          'NetworkBlockModule is now wired directly into startFocusMode — when VPN blocking is enabled, the network block starts automatically at session start without any extra tap',
+          'stopFocusMode calls stopNetworkBlock unconditionally on session end, ensuring the VPN tunnel is always released cleanly',
+        ],
+      },
+      {
+        heading: 'Privacy & Legal',
+        icon: 'document-text-outline',
+        items: [
+          'Privacy Policy and Terms of Service links updated throughout the app to point to focusflowapp.pages.dev',
+          'Terms of Service screen now includes a "Read full Terms online" button matching the privacy screen',
+          'GitHub reference removed from Terms contact section — replaced with website URL',
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.0.3',
+    date: 'May 2026',
+    sections: [
+      {
+        heading: 'Database Reliability',
+        icon: 'shield-checkmark-outline',
+        items: [
+          'WAL checkpoint on app background — every time FocusFlow moves to the background, a FULL WAL checkpoint is triggered so the on-disk database is always in sync before Android can back it up or trim the process',
+          'Android Auto Backup now correctly includes the SQLite database and its WAL/SHM sidecar files — tasks, settings, and streaks are restored from Google Drive after a reinstall instead of resetting to a blank state',
+          'Backup rules configured for both Android < 12 (fullBackupContent) and Android 12+ (dataExtractionRules), covering cloud backup and device-to-device transfer',
+          'SharedPreferences (privacy accepted, onboarding complete) always included in backups alongside the database, preventing onboarding screens from reappearing after a restore',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.0.2',
     date: 'May 2026',
     sections: [
@@ -48,6 +112,16 @@ const CHANGELOG: Entry[] = [
           'Safe-mode escape closed: System Protection (already locked on during standalone blocks) catches and dismisses the power menu before Safe mode can be tapped',
           'Launcher lock: while a standalone block is active, the "Default home app" chooser in Android Settings is intercepted and closed — you cannot switch away from FocusFlow until the block ends',
           'New "Home Launcher" section in Block Enforcement → dedicated settings page with status card, pinned apps, drawer visibility controls, appearance options (wallpaper, clock style), and launcher protections',
+        ],
+      },
+      {
+        heading: 'VPN Network Blocking',
+        icon: 'shield-outline',
+        items: [
+          'New global "Network blocking (VPN)" toggle in Block Enforcement → System Protection — tunnels all blocked apps through a local VPN to cut their internet access entirely',
+          'Per-app VPN control: each app in the Standalone Block list now has an independent "Add network block (VPN)" toggle — enable it only for the apps that need network cut, leave others untouched',
+          'VPN toggle follows the same lock-during-active-block pattern as all other System Protection toggles',
+          'Native: new setNetworkBlockEnabled and setVpnSelectedPackages bridge methods; AccessibilityService filters VPN by selected packages (global mode when list is empty)',
         ],
       },
     ],
@@ -366,6 +440,7 @@ const CHANGELOG: Entry[] = [
         icon: 'globe-outline',
         items: [
           'URL-bar scanning in Chrome, Firefox, Samsung Internet, Brave, Edge, DuckDuckGo and more',
+          'VPN-based null-routing for blocked apps',
           'Greyout schedule — pre-committed time-window blocks',
         ],
       },
@@ -376,7 +451,7 @@ const CHANGELOG: Entry[] = [
           'Settings sub-pages blocked: accessibility, clear data, date/time, usage access, battery optimisation, developer options, reset',
           'BootReceiver — service restarts after reboot',
           'Device Admin prevents uninstallation during active blocks',
-          'FocusLauncherActivity for nuclear focus mode',
+          'FocusLauncherActivity for deep focus lockdown',
         ],
       },
       {

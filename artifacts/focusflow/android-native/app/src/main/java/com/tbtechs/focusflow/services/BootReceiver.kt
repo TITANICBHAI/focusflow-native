@@ -59,9 +59,6 @@ class BootReceiver : BroadcastReceiver() {
         // before reboot to make the session appear expired.
         // If the wall clock was set forward by X ms, (now - lastWrittenMs) > durationMs
         // even though real elapsed time is < durationMs — mismatch reveals tampering.
-        // We re-derive estimated end from write time + remaining duration at write time.
-        val remainingAtWrite = endTimeMs - lastWrittenMs
-        val estimatedEnd = lastWrittenMs + remainingAtWrite  // same as endTimeMs, tautology guard
         val secondaryValid = durationMs > 0L && lastWrittenMs > 0L &&
                              (now - lastWrittenMs) < durationMs + 60_000L
 
@@ -80,11 +77,26 @@ class BootReceiver : BroadcastReceiver() {
                 nextName?.let { putExtra(ForegroundTaskService.EXTRA_NEXT_NAME, it) }
             }
             startService(context, serviceIntent)
+
+            // Rearm the VPN watchdog alarm — it was cancelled when the process
+            // was killed. If network blocking was active it will restart the VPN
+            // within one watchdog interval without the user noticing.
+            val netBlockEnabled = prefs.getBoolean("net_block_enabled", false)
+            val selfHeal        = prefs.getBoolean("net_block_self_heal", false)
+            if (netBlockEnabled && selfHeal) {
+                VpnWatchdogReceiver.schedule(context)
+            }
         } else {
             // ── Clear any stale focus flag, then start IDLE to keep process alive ──
             if (focusActive) {
                 prefs.edit().putBoolean("focus_active", false).apply()
             }
+            // Huawei AppGallery rule 2.19: only auto-start the idle foreground
+            // service if the user has completed onboarding and explicitly
+            // authorised background operation. The flag is written by the JS
+            // onboarding screen on first-run completion via SharedPrefsModule.
+            val consented = prefs.getString("user_consented_background_service", null) == "true"
+            if (!consented) return
             val idleIntent = Intent(context, ForegroundTaskService::class.java).apply {
                 this.action = ForegroundTaskService.ACTION_SET_IDLE
             }

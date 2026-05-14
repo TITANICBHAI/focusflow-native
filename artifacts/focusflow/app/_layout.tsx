@@ -35,7 +35,9 @@ import { navigateToTask, consumePendingTaskNavigation } from '@/navigation/navig
 import { registerBackgroundFetch, registerOverrunCheckTask } from '@/tasks/backgroundTasks';
 import { BlockedAppOverlay } from '@/components/BlockedAppOverlay';
 import { AchievementCelebrationModal } from '@/components/AchievementCelebrationModal';
+import { VpnPermissionLostBanner } from '@/components/VpnPermissionLostBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorAlertBanner } from '@/components/ErrorAlertBanner';
 import { logger } from '@/services/startupLogger';
 
 // ─── Deferred notification action store ──────────────────────────────────────
@@ -335,6 +337,29 @@ function AchievementCelebrationHost() {
   return <AchievementCelebrationModal milestone={milestone} onDismiss={handleDismiss} />;
 }
 
+// ─── VPN permission guard ─────────────────────────────────────────────────────
+// Shows VpnPermissionLostBanner whenever VPN blocking is enabled but the
+// Android system VPN permission has been silently revoked. Runs inside
+// AppProvider so it can read settings without a separate context call.
+
+function VpnPermissionHost() {
+  const { state } = useApp();
+  // Merge always-on and standalone VPN packages — mirrors what _syncSystemGuard does.
+  // This is the exact package set the VPN tunnel should cover when restarted.
+  const vpnPackages = Array.from(
+    new Set([
+      ...(state.settings.alwaysOnVpnPackages ?? []),
+      ...(state.settings.standaloneVpnPackages ?? []),
+    ]),
+  );
+  return (
+    <VpnPermissionLostBanner
+      vpnBlockEnabled={state.settings.vpnBlockEnabled ?? false}
+      vpnPackages={vpnPackages}
+    />
+  );
+}
+
 // ─── React component ──────────────────────────────────────────────────────────
 
 export default function RootLayout() {
@@ -377,6 +402,8 @@ export default function RootLayout() {
             <OnboardingGuard />
             <BlockedAppOverlay />
             <AchievementCelebrationHost />
+            <VpnPermissionHost />
+            <ErrorAlertBanner />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="privacy-policy" options={{ headerShown: false, presentation: 'fullScreenModal' }} />

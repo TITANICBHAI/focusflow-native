@@ -2,7 +2,12 @@ name: Build NodeSpy APK
 
 # Pure Kotlin/Jetpack Compose Android app — no Expo, no JS, no pnpm needed.
 # Always produces a debug APK. Also produces a signed release APK when the
-# RELEASE_KEYSTORE_BASE64 secret is set (reuse the same FocusFlow keystore).
+# RELEASE_KEYSTORE_base64 secret is set (reuse the same FocusFlow keystore).
+#
+# Signing:
+#   A Python patch step rewrites app/build.gradle to add a signingConfigs.release
+#   block with v1SigningEnabled + v2SigningEnabled + v3SigningEnabled all true.
+#   Credentials are read from env vars so no -P flags are needed.
 #
 # ── Optional secrets for signed release build ─────────────────────────────────
 #   RELEASE_KEYSTORE_BASE64   base64-encoded .jks keystore file
@@ -79,22 +84,78 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
 
+      - name: Patch signing config — enable v1 + v2 + v3
+        if: steps.keystore-check.outputs.available == 'true'
+        working-directory: artifacts/nodespy
+        run: |
+          python3 - << 'PYEOF'
+          import re, os
+
+          path = 'app/build.gradle'
+          if not os.path.exists(path):
+              print(f'Skipping patch: {path} not found')
+              exit(0)
+
+          text = open(path).read()
+
+          sig_block = '''
+              signingConfigs {
+                  release {
+                      storeFile file("release.keystore")
+                      storePassword (System.getenv("RELEASE_STORE_PASSWORD") ?: "")
+                      keyAlias     (System.getenv("RELEASE_KEY_ALIAS")        ?: "")
+                      keyPassword  (System.getenv("RELEASE_KEY_PASSWORD")     ?: "")
+                      v1SigningEnabled true
+                      v2SigningEnabled true
+                      v3SigningEnabled true
+                  }
+              }'''
+
+          # Remove any pre-existing signingConfigs block
+          text = re.sub(
+              r'\n?[ \t]*signingConfigs\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+
+          # Insert before buildTypes
+          text = re.sub(
+              r'(\n[ \t]*buildTypes\s*\{)',
+              sig_block + r'\1',
+              text,
+              count=1,
+          )
+
+          # Patch buildTypes.release to reference signingConfigs.release
+          def patch_release(m):
+              s = m.group(0)
+              s = re.sub(r'signingConfig\s+\S+', 'signingConfig signingConfigs.release', s)
+              if 'signingConfig' not in s:
+                  s = re.sub(r'(release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              return s
+
+          text = re.sub(r'(?s)\brelease\s*\{[^{}]*\}', patch_release, text)
+
+          open(path, 'w').write(text)
+          print('v1+v2+v3 signing patched into app/build.gradle')
+          PYEOF
+
+      - name: Decode release keystore
+        if: steps.keystore-check.outputs.available == 'true'
+        working-directory: artifacts/nodespy/app
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+
       - name: Build release APK (signed)
         if: steps.keystore-check.outputs.available == 'true'
         working-directory: artifacts/nodespy
         env:
-          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          STORE_PASS: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          echo "$KEYSTORE_B64" | base64 --decode > release.keystore
-          gradle assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$(pwd)/release.keystore" \
-            -Pandroid.injected.signing.store.password="$STORE_PASS" \
-            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASS"
-          rm -f release.keystore
+          gradle assembleRelease --no-daemon
+          rm -f app/release.keystore
           echo "── Release APK output ──"
           find app/build/outputs/apk/release/ -name "*.apk" -exec ls -lh {} \;
 

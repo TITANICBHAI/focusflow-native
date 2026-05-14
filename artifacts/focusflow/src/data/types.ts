@@ -85,6 +85,17 @@ export interface RecurringBlockSchedule {
   endHour: number;
   endMin: number;
   enabled: boolean;
+  /**
+   * When true, network blocking (VPN) is also applied to all packages in
+   * this schedule during its time window, independently of the overlay block.
+   * An app can have VPN blocking enabled here without being in the block list.
+   */
+  vpnEnabled?: boolean;
+  /**
+   * Packages to network-block (VPN) during this schedule's window.
+   * If empty and vpnEnabled is true, falls back to blocking all `packages`.
+   */
+  vpnPackages?: string[];
 }
 
 export interface UserProfile {
@@ -151,6 +162,12 @@ export interface AppSettings {
    */
   alwaysOnPackages?: string[];
   /**
+   * Packages that should have network blocking (VPN) applied continuously,
+   * matching the always-on block enforcement. Can overlap with or differ from
+   * alwaysOnPackages — VPN can be enabled without an overlay block.
+   */
+  alwaysOnVpnPackages?: string[];
+  /**
    * When true, any packages added via standalone block are automatically
    * mirrored into `alwaysOnPackages` so they stay blocked after the timed
    * session expires. Default false.
@@ -193,6 +210,25 @@ export interface AppSettings {
   blockInstallActionsEnabled: boolean;   // Intercept Play Store / packageinstaller install/update/uninstall confirmation dialogs
   blockYoutubeShortsEnabled: boolean;    // Intercept the YouTube Shorts player (YouTube itself stays usable)
   blockInstagramReelsEnabled: boolean;   // Intercept the Instagram Reels player / clips viewer (Instagram itself stays usable)
+  vpnBlockEnabled: boolean;             // Tunnel blocked apps through VPN to cut their network access (requires VPN permission)
+  standaloneVpnPackages: string[];      // Per-app VPN: packages selected to receive network blocking in addition to accessibility blocking
+  /**
+   * When true, the VPN block automatically restarts itself if it gets disconnected
+   * mid-session (e.g. user pulls down quick-settings tile and taps disconnect).
+   * Implemented by two complementary native mechanisms:
+   *   1. NetworkBlockerVpnService.onRevoke() schedules a restart after 3 s.
+   *   2. AppBlockerAccessibilityService checks VPN health every 10 s.
+   */
+  vpnSelfHealEnabled?: boolean;
+  /**
+   * When true, disabling any block-enforcement toggle (always-on, system guard,
+   * VPN block, etc.) requires the Defense Password — if one is set.
+   * When false, toggles work freely with no password gate.
+   * User chooses this during onboarding; can also be changed in Settings.
+   * Defaults to false so first-time users aren't immediately blocked.
+   */
+  pinProtectionEnabled?: boolean;
+
   // ── Home Launcher ──────────────────────────────────────────────────────────
   // FocusFlow can act as the device's home screen. When set as default launcher,
   // every app tap routes through FocusFlow first — instant enforcement with no
@@ -240,6 +276,31 @@ export interface AppSettings {
   pendingPresets?: PendingPresets;
 }
 
+/**
+ * A custom node-blocking rule derived from NodeSpy captures or compatible
+ * JSON exports. The AccessibilityService uses these to detect and intercept
+ * specific UI nodes (e.g. addictive feed elements) inside a target app.
+ */
+export interface CustomNodeRule {
+  id: string;
+  label: string;
+  pkg: string;
+  matchResId?: string;
+  matchText?: string;
+  matchCls?: string;
+  /** 'overlay' = show block overlay, 'home' = go home immediately */
+  action: 'overlay' | 'home';
+  enabled: boolean;
+  importedAt: string;
+  confidence?: number;
+  qualityTier?: 'strong' | 'medium' | 'weak';
+  selectorType?: string;
+  stability?: number;
+  warnings?: string[];
+  captureTimestamp?: number;
+  sourceName?: string;
+}
+
 /** Preset payload from a `.focusflow` import that has not been applied yet. */
 export interface PendingPresets {
   blockApps?: { packages: string[]; sourceName?: string; importedAt: string };
@@ -256,6 +317,7 @@ export interface PendingPresets {
     blockInstallActionsEnabled?: boolean;
     blockYoutubeShortsEnabled?: boolean;
     blockInstagramReelsEnabled?: boolean;
+    vpnBlockEnabled?: boolean;
     blockedWords?: string[];
     sourceName?: string;
     importedAt: string;

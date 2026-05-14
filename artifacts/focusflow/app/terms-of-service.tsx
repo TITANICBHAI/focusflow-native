@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
 import { COLORS, FONT, RADIUS, SPACING } from '@/styles/theme';
+
+const TERMS_URL = 'https://focusflowapp.pages.dev/terms-of-service/';
 
 export default function TermsOfServiceScreen() {
   const { theme } = useTheme();
@@ -67,8 +69,17 @@ export default function TermsOfServiceScreen() {
         </TosSection>
 
         <TosSection title="10. Contact">
-          For questions about these terms, reach out via the app's GitHub page or through the Play Store listing contact details. Questions do not alter or waive any provision of these Terms.
+          For questions about these terms, email us at tbtechsdev@gmail.com or visit focusflowapp.pages.dev. Questions do not alter or waive any provision of these Terms.
         </TosSection>
+
+        <TouchableOpacity
+          style={styles.fullLinkBtn}
+          onPress={() => Linking.openURL(TERMS_URL)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="open-outline" size={14} color={COLORS.primary} />
+          <Text style={styles.fullLinkText}>Read the full Terms of Service online</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.backBtnBottom}
@@ -154,6 +165,19 @@ const styles = StyleSheet.create({
     fontSize: FONT.sm,
     lineHeight: 21,
   },
+  fullLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '44',
+    backgroundColor: COLORS.primaryLight,
+  },
+  fullLinkText: { color: COLORS.primary, fontSize: FONT.sm, fontWeight: '700' },
   backBtnBottom: {
     flexDirection: 'row',
     alignItems: 'center',
