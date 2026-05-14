@@ -46,6 +46,10 @@ args = "Start FocusFlow Accessibility Demo"
 task = "workflow.run"
 args = "Start FocusFlow Feature Videos"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Deploy Feature Videos to GitHub Pages"
+
 [[workflows.workflow]]
 name = "Push to GitHub"
 author = "agent"
@@ -127,6 +131,17 @@ outputType = "console"
 task = "shell.exec"
 args = "PORT=6000 BASE_PATH=/ pnpm --filter @workspace/focusflow-feature-videos run dev"
 waitForPort = 6000
+
+[[workflows.workflow]]
+name = "Deploy Feature Videos to GitHub Pages"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/scripts run github:deploy-pages"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
